@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.1**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.2**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -31,8 +31,8 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | Key | Description |
 | --- | --- |
 | `APP_PORT` | Port the app listens on. Default `5050`. |
-| `APP_BASE_URL` | Public URL used in reset emails. |
-| `SECRET_KEY` | Random secret for sessions and reset links. Generated on first run. |
+| `APP_BASE_URL` | Public URL used in reset emails. Empty means `http://localhost:APP_PORT`. |
+| `SECRET_KEY` | Random secret for sessions and reset links. Generated on first run if empty. |
 | `GMAIL_USER` | Gmail address used to send emails. |
 | `GMAIL_APP_PASSWORD` | Gmail App Password (not your normal password). |
 | `DATABASE_PATH` | SQLite file. Default `data/nomad.db`. |

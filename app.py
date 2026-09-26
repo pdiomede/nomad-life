@@ -1,5 +1,7 @@
 """Nomad Life: track your yearly movements and keep your receipts in one place."""
+import hashlib
 import os
+import secrets
 import uuid
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
@@ -18,9 +20,19 @@ import db
 from countries import COUNTRIES
 from mailer import send_email
 
-APP_VERSION = "0.0.1"
+APP_VERSION = "0.0.2"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "heic", "webp"}
+# Content types are derived from the extension, never from the browser.
+MIME_TYPES = {
+    "pdf": "application/pdf",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "heic": "image/heic",
+    "webp": "image/webp",
+}
+ALLOWED_EXTENSIONS = set(MIME_TYPES)
+COUNTRY_LOOKUP = {c.casefold(): c for c in COUNTRIES}
 DOCUMENT_KINDS = OrderedDict([
     ("rental_contract", "Rental contract"),
     ("accommodation", "Hotel / home rent"),
@@ -37,16 +49,42 @@ def _abs(path):
     return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
 
 
+def password_fingerprint(password_hash):
+    """Short digest of the password hash. Changes whenever the password changes."""
+    return hashlib.sha256(password_hash.encode()).hexdigest()[:16]
+
+
 class User(UserMixin):
     def __init__(self, row):
         self.id = row["id"]
         self.email = row["email"]
+        self.fingerprint = password_fingerprint(row["password_hash"])
+
+    def get_id(self):
+        # Binding the session to the password means a reset signs out every other session.
+        return f"{self.id}:{self.fingerprint}"
+
+
+def load_or_create_secret(path):
+    """Return a persistent random secret so sessions never use a guessable key."""
+    try:
+        with open(path) as fh:
+            key = fh.read().strip()
+        if key:
+            return key
+    except FileNotFoundError:
+        pass
+    key = secrets.token_hex(32)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(key)
+    return key
 
 
 def create_app(overrides=None):
     app = Flask(__name__)
     app.config.update(
-        SECRET_KEY=os.getenv("SECRET_KEY") or "dev-only-change-me",
+        SECRET_KEY=os.getenv("SECRET_KEY", "").strip(),
         APP_PORT=int(os.getenv("APP_PORT", "5050")),
         APP_BASE_URL=os.getenv("APP_BASE_URL", ""),
         GMAIL_USER=os.getenv("GMAIL_USER", ""),
@@ -62,15 +100,25 @@ def create_app(overrides=None):
     os.makedirs(app.config["UPLOAD_DIR"], exist_ok=True)
     app.teardown_appcontext(db.close_db)
 
+    if not app.config["SECRET_KEY"]:
+        app.config["SECRET_KEY"] = load_or_create_secret(
+            os.path.join(os.path.dirname(app.config["DATABASE_PATH"]), ".secret_key"))
+    if not app.config["APP_BASE_URL"]:
+        # Never build reset links from the request Host header.
+        app.config["APP_BASE_URL"] = f"http://localhost:{app.config['APP_PORT']}"
+
     CSRFProtect(app)
     login_manager = LoginManager(app)
     login_manager.login_view = "login"
     login_manager.login_message_category = "info"
 
     @login_manager.user_loader
-    def load_user(user_id):
-        row = db.query("SELECT * FROM users WHERE id = ?", (user_id,), one=True)
-        return User(row) if row else None
+    def load_user(session_id):
+        uid, _, fingerprint = session_id.partition(":")
+        row = db.query("SELECT * FROM users WHERE id = ?", (uid,), one=True)
+        if row is None or password_fingerprint(row["password_hash"]) != fingerprint:
+            return None
+        return User(row)
 
     @app.context_processor
     def inject_globals():
@@ -145,13 +193,17 @@ def documents_for(year_id, movement_id=None):
                     (movement_id,))
 
 
-def save_upload(file, kind, year_id, movement_id=None):
+def file_ext(name):
+    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
+
+def save_upload(file, kind, year_id, movement_id=None, required=True):
     """Store an uploaded file. Returns an error message or None."""
     from flask import current_app
     if not file or not file.filename:
-        return None
+        return "Please choose a file to upload." if required else None
     name = secure_filename(file.filename) or "file"
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    ext = file_ext(name)
     if ext not in ALLOWED_EXTENSIONS:
         return "Unsupported file type. Allowed: " + ", ".join(sorted(ALLOWED_EXTENSIONS))
     if kind not in DOCUMENT_KINDS:
@@ -161,26 +213,39 @@ def save_upload(file, kind, year_id, movement_id=None):
     stored = f"{uuid.uuid4().hex}.{ext}"
     path = os.path.join(user_dir, stored)
     file.save(path)
-    db.execute(
-        "INSERT INTO documents (user_id, year_id, movement_id, kind, original_name, "
-        "stored_name, mime, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (current_user.id, year_id, movement_id, kind, name, stored,
-         file.mimetype or "application/octet-stream", os.path.getsize(path)))
+    try:
+        db.execute(
+            "INSERT INTO documents (user_id, year_id, movement_id, kind, original_name, "
+            "stored_name, mime, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (current_user.id, year_id, movement_id, kind, name, stored,
+             MIME_TYPES[ext], os.path.getsize(path)))
+    except Exception:
+        os.remove(path)  # no orphan file when the row could not be saved
+        raise
     return None
 
 
 def remove_files(rows):
+    """Delete stored files. Call only after the matching rows are deleted and committed."""
     from flask import current_app
     for doc in rows:
         path = os.path.join(current_app.config["UPLOAD_DIR"], str(doc["user_id"]),
                             doc["stored_name"])
-        if os.path.exists(path):
+        try:
             os.remove(path)
+        except FileNotFoundError:
+            pass
+
+
+def normalize_country(value):
+    """Collapse spacing and map to the canonical country name when known."""
+    value = " ".join(value.split())
+    return COUNTRY_LOOKUP.get(value.casefold(), value)
 
 
 def validate_movement(form, year):
-    city = form.get("city", "").strip()
-    country = form.get("country", "").strip()
+    city = " ".join(form.get("city", "").split())
+    country = normalize_country(form.get("country", ""))
     start = parse_date(form.get("start_date"))
     end = parse_date(form.get("end_date"))
     if not city or not country:
@@ -200,11 +265,18 @@ def compute_stats(year_row, movements):
     y = year_row["year"]
     first, last = date(y, 1, 1), date(y, 12, 31)
     total = (last - first).days + 1
+    base_name = normalize_country(year_row["base_country"])
+    base = base_name.casefold()
+    # Countries are compared case insensitively so "portugal" and "Portugal" are one country.
+    names = {base: base_name}
     assigned = {}
     for m in sorted(movements, key=lambda r: r["start_date"]):
+        name = normalize_country(m["country"])
+        key = name.casefold()
+        names.setdefault(key, name)
         d, end = parse_date(m["start_date"]), parse_date(m["end_date"])
         while d <= end:
-            assigned[d] = m["country"]
+            assigned[d] = key
             d += timedelta(days=1)
 
     today = date.today()
@@ -212,7 +284,6 @@ def compute_stats(year_row, movements):
 
     per_country = {}
     per_country_so_far = {}
-    base = year_row["base_country"]
     d = first
     while d <= last:
         c = assigned.get(d, base)
@@ -221,7 +292,7 @@ def compute_stats(year_row, movements):
             per_country_so_far[c] = per_country_so_far.get(c, 0) + 1
         d += timedelta(days=1)
 
-    rows = [{"country": c, "days": n, "so_far": per_country_so_far.get(c, 0),
+    rows = [{"country": names[c], "days": n, "so_far": per_country_so_far.get(c, 0),
              "pct": round(n * 100 / total, 1), "is_base": c == base,
              "over_threshold": n >= RESIDENCE_THRESHOLD}
             for c, n in per_country.items()]
@@ -256,9 +327,14 @@ def register_routes(app):
             elif db.query("SELECT 1 FROM users WHERE email = ?", (email,), one=True):
                 flash("An account with this email already exists.", "error")
             else:
-                uid = db.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)",
-                                 (email, generate_password_hash(password)))
-                login_user(User({"id": uid, "email": email}))
+                pw_hash = generate_password_hash(password)
+                try:
+                    uid = db.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)",
+                                     (email, pw_hash))
+                except db.IntegrityError:  # same email registered concurrently
+                    flash("An account with this email already exists.", "error")
+                    return render_template("auth/signup.html")
+                login_user(User({"id": uid, "email": email, "password_hash": pw_hash}))
                 flash("Welcome to Nomad Life! Start by setting up your year.", "success")
                 return redirect(url_for("index"))
         return render_template("auth/signup.html")
@@ -291,10 +367,9 @@ def register_routes(app):
             email = request.form.get("email", "").strip().lower()
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
             if row:
-                token = serializer().dumps({"uid": row["id"], "h": row["password_hash"][-16:]})
-                base = app.config["APP_BASE_URL"].rstrip("/")
-                link = (base + url_for("reset", token=token)) if base \
-                    else url_for("reset", token=token, _external=True)
+                token = serializer().dumps(
+                    {"uid": row["id"], "h": password_fingerprint(row["password_hash"])})
+                link = app.config["APP_BASE_URL"].rstrip("/") + url_for("reset", token=token)
                 send_email(email, "Reset your Nomad Life password",
                            "Hi,\n\nUse the link below to reset your Nomad Life password. "
                            f"It expires in 1 hour.\n\n{link}\n\n"
@@ -314,7 +389,7 @@ def register_routes(app):
             flash("This reset link is not valid.", "error")
             return redirect(url_for("forgot"))
         row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
-        if not row or row["password_hash"][-16:] != data.get("h"):
+        if not row or password_fingerprint(row["password_hash"]) != data.get("h"):
             flash("This reset link has already been used.", "error")
             return redirect(url_for("forgot"))
         if request.method == "POST":
@@ -351,20 +426,21 @@ def register_routes(app):
                 year = int(request.form.get("year", ""))
             except ValueError:
                 year = 0
-            city = request.form.get("base_city", "").strip()
-            country = request.form.get("base_country", "").strip()
+            city = " ".join(request.form.get("base_city", "").split())
+            country = normalize_country(request.form.get("base_country", ""))
             if not 1970 <= year <= 2100:
                 flash("Please enter a valid year.", "error")
             elif not city or not country:
                 flash("Base city and country are required.", "error")
-            elif db.query("SELECT 1 FROM years WHERE user_id = ? AND year = ?",
-                          (current_user.id, year), one=True):
-                flash(f"You already have a workspace for {year}.", "error")
             else:
-                db.execute("INSERT INTO years (user_id, year, base_city, base_country) "
-                           "VALUES (?, ?, ?, ?)", (current_user.id, year, city, country))
-                flash(f"Year {year} created with base in {city}, {country}.", "success")
-                return redirect(url_for("dashboard", year=year))
+                try:
+                    db.execute("INSERT INTO years (user_id, year, base_city, base_country) "
+                               "VALUES (?, ?, ?, ?)", (current_user.id, year, city, country))
+                except db.IntegrityError:  # UNIQUE (user_id, year)
+                    flash(f"You already have a workspace for {year}.", "error")
+                else:
+                    flash(f"Year {year} created with base in {city}, {country}.", "success")
+                    return redirect(url_for("dashboard", year=year))
         return render_template("year_new.html", default_year=date.today().year)
 
     @app.route("/year/<int:year>")
@@ -389,8 +465,8 @@ def register_routes(app):
         if request.method == "POST":
             action = request.form.get("action")
             if action == "update":
-                city = request.form.get("base_city", "").strip()
-                country = request.form.get("base_country", "").strip()
+                city = " ".join(request.form.get("base_city", "").split())
+                country = normalize_country(request.form.get("base_country", ""))
                 if not city or not country:
                     flash("Base city and country are required.", "error")
                 else:
@@ -402,10 +478,11 @@ def register_routes(app):
                                   year_row["id"])
                 flash(err or "Document uploaded.", "error" if err else "success")
             elif action == "delete_year":
-                if request.form.get("confirm_year") == str(year):
-                    remove_files(db.query("SELECT * FROM documents WHERE year_id = ?",
-                                          (year_row["id"],)))
+                if request.form.get("confirm_year", "").strip() == str(year):
+                    docs = db.query("SELECT * FROM documents WHERE year_id = ?",
+                                    (year_row["id"],))
                     db.execute("DELETE FROM years WHERE id = ?", (year_row["id"],))
+                    remove_files(docs)
                     flash(f"Year {year} deleted.", "info")
                     return redirect(url_for("index"))
                 flash("Type the year to confirm deletion.", "error")
@@ -428,7 +505,7 @@ def register_routes(app):
                     (year_row["id"], data["city"], data["country"], data["start_date"],
                      data["end_date"], data["notes"]))
                 err = save_upload(request.files.get("file"), request.form.get("kind"),
-                                  year_row["id"], mid)
+                                  year_row["id"], mid, required=False)
                 if err:
                     flash(err, "error")
                 flash(f"Movement to {data['city']} added.", "success")
@@ -460,8 +537,9 @@ def register_routes(app):
                                   year_row["id"], movement_id)
                 flash(err or "Document uploaded.", "error" if err else "success")
             elif action == "delete":
-                remove_files(documents_for(year_row["id"], movement_id))
+                docs = documents_for(year_row["id"], movement_id)
                 db.execute("DELETE FROM movements WHERE id = ?", (movement_id,))
+                remove_files(docs)
                 flash("Movement deleted.", "info")
                 return redirect(url_for("dashboard", year=m["year"]))
             return redirect(url_for("movement_edit", movement_id=movement_id))
@@ -482,16 +560,19 @@ def register_routes(app):
     def document(doc_id):
         doc = get_document_or_404(doc_id)
         folder = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id))
-        return send_from_directory(folder, doc["stored_name"], mimetype=doc["mime"],
+        mime = MIME_TYPES.get(file_ext(doc["stored_name"]), "application/octet-stream")
+        resp = send_from_directory(folder, doc["stored_name"], mimetype=mime,
                                    as_attachment=request.args.get("download") == "1",
                                    download_name=doc["original_name"])
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        return resp
 
     @app.route("/documents/<int:doc_id>/delete", methods=["POST"])
     @login_required
     def document_delete(doc_id):
         doc = get_document_or_404(doc_id)
-        remove_files([doc])
         db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        remove_files([doc])
         flash("Document deleted.", "info")
         return redirect(request.referrer or url_for("index"))
 

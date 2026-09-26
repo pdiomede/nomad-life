@@ -4,6 +4,8 @@ import sqlite3
 
 from flask import current_app, g
 
+IntegrityError = sqlite3.IntegrityError
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,9 +70,11 @@ def close_db(_exc=None):
 def init_db(path):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     conn = sqlite3.connect(path)
-    conn.executescript(SCHEMA)
-    conn.commit()
-    conn.close()
+    try:
+        conn.executescript(SCHEMA)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def query(sql, args=(), one=False):
@@ -82,6 +86,11 @@ def query(sql, args=(), one=False):
 
 def execute(sql, args=()):
     db = get_db()
-    cur = db.execute(sql, args)
-    db.commit()
+    try:
+        cur = db.execute(sql, args)
+        db.commit()
+    except sqlite3.Error:
+        # Do not leave a half-open transaction (and its write lock) on the connection.
+        db.rollback()
+        raise
     return cur.lastrowid
