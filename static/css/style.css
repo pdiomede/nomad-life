@@ -301,7 +301,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
 .hero-lead { font-size: 18px; color: var(--muted); margin: 18px 0 30px; max-width: 520px; }
 .hero-preview { position: relative; isolation: isolate; padding: 0 0 28px 28px; }
 .hero-preview::before { content: ""; position: absolute; inset: 12% 6% 18% 14%; background: var(--gradient); filter: blur(56px); opacity: 0.28; z-index: -1; }
-.preview-card { margin: 0; padding: 24px; }
+/* The bottom padding leaves an empty strip for the floating receipt card to overlap. */
+.preview-card { margin: 0; padding: 24px 24px 64px; }
 .preview-card .bars { margin: 18px 0; }
 .preview-card .pill { display: table; margin-left: auto; }  /* keep clear of the floating receipt card */
 .preview-receipt { position: absolute; left: 0; bottom: 0; margin: 0; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
@@ -334,6 +335,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
   .hero h1 { font-size: 32px; }
   .hero-lead { font-size: 16px; }
   .hero-preview { padding: 0; }
+  .preview-card { padding: 24px; }
   .preview-receipt { position: static; margin-top: 12px; }
   .features, .step-list { grid-template-columns: minmax(0, 1fr); }
   .steps { margin: 48px 0 36px; }
