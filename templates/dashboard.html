@@ -59,16 +59,16 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>Dates</th><th>Location</th><th class="num">Days</th><th class="num">Docs</th><th></th></tr>
+          <tr><th>Dates</th><th>Location</th><th class="num">Days</th><th class="num hide-sm">Docs</th><th class="hide-sm"></th></tr>
         </thead>
         <tbody>
           {% for m in movements %}
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
-            <td class="nowrap">{{ m.start_date }} <span class="muted">to</span> {{ m.end_date }}</td>
-            <td><strong>{{ m.city }}</strong><div class="muted small">{{ m.country }}</div></td>
+            <td class="dates"><span class="nowrap">{{ m.start_date }}</span> <span class="muted">to</span> <span class="nowrap">{{ m.end_date }}</span></td>
+            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"><strong>{{ m.city }}</strong></a><div class="muted small">{{ m.country }}</div></td>
             <td class="num">{{ ((m.end_date | todate) - (m.start_date | todate)).days + 1 }}</td>
-            <td class="num">{{ m.doc_count }}</td>
-            <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}">Open</a></td>
+            <td class="num hide-sm">{{ m.doc_count }}</td>
+            <td class="right hide-sm"><a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}">Open</a></td>
           </tr>
           {% endfor %}
         </tbody>

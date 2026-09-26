@@ -34,7 +34,7 @@
       <a href="{{ url_for('document', doc_id=d.id) }}" target="_blank" rel="noopener">{{ d.original_name }}</a>
       <div class="muted small">
         <span class="tag">{{ document_kinds.get(d.kind, 'Other') }}</span>
-        {{ (d.size / 1024) | round(0) | int }} KB, uploaded {{ d.uploaded_at[:10] }}
+        {{ d.size | filesize }}, uploaded {{ d.uploaded_at[:10] }}
       </div>
     </div>
     <a class="btn btn-ghost btn-sm" href="{{ url_for('document', doc_id=d.id, download=1) }}">Download</a>

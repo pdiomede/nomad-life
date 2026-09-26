@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Not found | Nomad Life{% endblock %}
+{% block content %}
+<div class="narrow">
+  <div class="card empty-state">
+    <p class="eyebrow">Error 404</p>
+    <h1>Page not found</h1>
+    <p class="muted">This page does not exist or is not part of your workspace.</p>
+    <a class="btn btn-primary" href="{{ url_for('index') }}">Go to dashboard</a>
+  </div>
+</div>
+{% endblock %}

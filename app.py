@@ -9,7 +9,7 @@ from flask import (Flask, abort, flash, redirect, render_template, request,
                    send_from_directory, url_for)
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_user, logout_user)
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFError, CSRFProtect
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
@@ -78,11 +78,21 @@ def create_app(overrides=None):
                 "document_kinds": DOCUMENT_KINDS}
 
     app.add_template_filter(parse_date, "todate")
+    app.add_template_filter(format_size, "filesize")
 
     @app.errorhandler(413)
     def too_large(_e):
         flash("The file is too large.", "error")
         return redirect(request.referrer or url_for("index"))
+
+    @app.errorhandler(CSRFError)
+    def csrf_error(_e):
+        flash("Your session expired. Please try again.", "error")
+        return redirect(request.referrer or url_for("index"))
+
+    @app.errorhandler(404)
+    def not_found(_e):
+        return render_template("404.html"), 404
 
     register_routes(app)
     return app
@@ -100,6 +110,14 @@ def parse_date(value):
         return datetime.strptime(value, "%Y-%m-%d").date()
     except (TypeError, ValueError):
         return None
+
+
+def format_size(size):
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.0f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
 
 
 def get_year_or_404(year):
@@ -427,7 +445,10 @@ def register_routes(app):
             if action == "update":
                 data, err = validate_movement(request.form, m["year"])
                 if err:
+                    # Re-render so the user keeps what they typed.
                     flash(err, "error")
+                    return render_template("movement.html", y=year_row, m=m, form=request.form,
+                                           docs=documents_for(year_row["id"], movement_id))
                 else:
                     db.execute("UPDATE movements SET city = ?, country = ?, start_date = ?, "
                                "end_date = ?, notes = ? WHERE id = ?",
