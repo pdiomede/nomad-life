@@ -26,7 +26,8 @@ DISCLAIMER = ("Nomad Life is a personal organizer, not tax advice. "
               "Residence rules differ by country.")
 RULES = [
     "Dates are inclusive: a stay from 1 to 3 March counts 3 days.",
-    "Days not covered by any stay count toward your base country.",
+    "Days not covered by any stay count toward your base country once they have passed. "
+    "Planned stays count in full; future days without a stay are not counted yet.",
     "A day shared by two stays, such as a travel day, counts toward the stay that started later.",
     "A side trip inside a longer stay counts toward the side trip. When two stays start on "
     "the same day, the shorter one wins; with identical dates, the one added last wins.",
@@ -118,6 +119,7 @@ class PackageData:
     stays: list = field(default_factory=list)
     receipts: list = field(default_factory=list)
     include_notes: bool = False
+    upcoming_days: int = 0   # future days not covered by a stay, not counted anywhere yet
 
     @property
     def root(self):
@@ -277,6 +279,8 @@ def summary_blocks(data):
         (f"At least {data.threshold} days in base country", yes_no),
         ("Days abroad", str(data.abroad_days)),
     ]
+    if data.upcoming_days:
+        full_year.append(("Days still to come without a stay", str(data.upcoming_days)))
     if data.status == "past":
         blocks += [("heading", f"Final numbers for {y}"), ("kv", full_year)]
     elif data.status == "current":
@@ -287,15 +291,16 @@ def summary_blocks(data):
                 (f"Days in base country, {base_name}", str(data.base_so_far)),
                 ("Days abroad", str(data.abroad_so_far)),
             ]),
-            ("heading", "Projected full year"),
+            ("heading", "Full year with planned trips"),
             ("kv", full_year),
-            ("note", "Projected numbers include the trips you have already planned and assume "
-                     "you stay in your base country on every other remaining day."),
+            ("note", "These numbers add the trips you have already planned. Days still to come "
+                     "without a stay are not counted toward any country yet."),
         ]
     else:
         blocks += [
-            ("note", f"{y} has not started yet. All numbers below are projected."),
-            ("heading", "Projected full year"),
+            ("note", f"{y} has not started yet. Only the trips you have already planned are "
+                     "counted."),
+            ("heading", "Full year with planned trips"),
             ("kv", full_year),
         ]
 
@@ -309,7 +314,8 @@ def summary_blocks(data):
         if so_far:
             row.append(str(c.so_far))
         rows.append(row)
-    rows.append(["Total", "", str(sum(c.days for c in data.countries)), "100.0%"]
+    counted = sum(c.days for c in data.countries)
+    rows.append(["Total", "", str(counted), f"{counted * 100 / data.total_days:.1f}%"]
                 + ([str(data.elapsed)] if so_far else []))
     blocks.append(("table", {"columns": columns, "rows": rows,
                              "widths": [44, 10, 12, 14] + ([14] if so_far else []),
@@ -533,9 +539,9 @@ def readme_text(data):
     ] + [f"  - {rule}" for rule in RULES]
     if data.status == "current":
         lines += ["", f"The year is not over. Numbers are shown so far (as of {data.as_of.isoformat()}) "
-                      "and projected for the full year."]
+                      "and for the full year with the trips already planned."]
     elif data.status == "future":
-        lines += ["", "The year has not started yet. All numbers are projected."]
+        lines += ["", "The year has not started yet. Only the trips already planned are counted."]
     if data.missing:
         lines += ["", "Missing receipts (recorded in Nomad Life but not found on the server):"]
         lines += [f"  - {r.name} ({stay_label(data, r.stay_number)})" for r in data.missing]

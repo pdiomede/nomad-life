@@ -42,7 +42,7 @@ class FormTests(AppTestCase):
     def test_base_form_keeps_typed_values_after_an_error(self):
         html = self.client.post("/year/2025/base", data={
             "action": "update", "base_city": "   ", "base_country": "Spain"}).data.decode()
-        self.assertIn("Base city and country are required.", html)
+        self.assertIn("Base country and city are required.", html)
         self.assertIn('value="Spain"', html)
 
     def test_cancel_returns_to_the_movement_page_of_the_list(self):

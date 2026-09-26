@@ -54,7 +54,8 @@ class PackageContentsTests(AppTestCase):
         stats, movements = self.stats()
         _, zf = self.package(2026)
         totals = self.read_csv(zf, "country-totals.csv")
-        self.assertEqual(sum(int(r["days"]) for r in totals), 365)
+        # Future days without a stay are not counted yet; the rest add up to the year.
+        self.assertEqual(sum(int(r["days"]) for r in totals) + stats["upcoming"], 365)
         self.assertEqual({r["country"]: int(r["days"]) for r in totals},
                          {r["country"]: r["days"] for r in stats["rows"]})
         self.assertEqual({r["country"]: int(r["so_far"]) for r in totals},
@@ -81,8 +82,12 @@ class PackageContentsTests(AppTestCase):
         self.add_movement(2028, "Rome", "Italy", "2028-02-28", "2028-03-01")
         _, zf = self.package(2028)
         totals = self.read_csv(zf, "country-totals.csv")
-        self.assertEqual(sum(int(r["days"]) for r in totals), 366)
-        self.assertEqual({r["country"]: int(r["days"]) for r in totals}["Italy"], 3)
+        self.assertEqual({r["country"]: int(r["days"]) for r in totals}, {"Italy": 3, "Portugal": 0})
+        with self.app.test_request_context():
+            year_row = db.query("SELECT * FROM years WHERE year = 2028", one=True)
+            text = package.summary_text(appmod.build_package_data(year_row, False))
+        self.assertIn("(366 days)", text)
+        self.assertIn("Days still to come without a stay: 363", text)
 
     def test_receipts_are_byte_identical(self):
         _, zf = self.package(2026)
@@ -302,7 +307,7 @@ class PackageSummaryTests(AppTestCase):
         self.new_year(this_year)
         text = self.summary(this_year)
         self.assertIn(f"So far (as of {date.today().isoformat()})", text)
-        self.assertIn("Projected full year", text)
+        self.assertIn("Full year with planned trips", text)
         self.assertNotIn("Final numbers", text)
 
     def test_past_year_shows_final_numbers_only(self):
@@ -311,7 +316,7 @@ class PackageSummaryTests(AppTestCase):
         text = self.summary(last_year)
         self.assertIn(f"Final numbers for {last_year}", text)
         self.assertNotIn("So far", text)
-        self.assertNotIn("Projected", text)
+        self.assertNotIn("planned trips", text)
 
     def test_future_year_is_projected(self):
         next_year = date.today().year + 1

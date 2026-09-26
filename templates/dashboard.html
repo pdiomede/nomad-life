@@ -134,7 +134,7 @@
     <div class="card-head">
       <h2>Days per country</h2>
     </div>
-    <p class="muted small">Full year view. Days not covered by a movement count toward your base country. A day shared by two stays, such as a travel day, counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest). The marker shows the {{ stats.threshold }} day line.</p>
+    <p class="muted small">Days not covered by a movement count toward your base country once they have passed; movements count in full, also future ones. A day shared by two stays, such as a travel day, counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest). The marker shows the {{ stats.threshold }} day line.</p>
     <ul class="bars">
       {% for r in stats.rows %}
       <li>

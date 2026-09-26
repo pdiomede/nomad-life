@@ -6,6 +6,20 @@ All notable changes to this project are documented in this file.
 
 First stable release. Nomad Life now covers the full workflow it was built for: track every day of a solar year by country, keep the receipts that prove it, and hand your accountant one package with the summary, spreadsheets and files. From here on, versions follow semantic versioning.
 
+### Added
+
+- New accounts confirm their email address. Signing up sends a confirmation link, and the account can be used only after opening it. An account not confirmed within 20 minutes is deleted, so nobody can register with an address they do not own. Signing up again before confirming starts over with the new password, signing in before confirming sends a fresh link, and resetting the password also confirms the account. Accounts created before this change are already confirmed.
+- Confirmation and password reset emails are designed emails with the Nomad Life logo, readable in light and dark mode, with a plain text version for mail apps that prefer it.
+- At most one email per account per minute, so sign up, sign in or "Forgot password" cannot be used to flood someone's inbox.
+- Messages at the top of the page (for example "You have been signed out.") have an x on the right to dismiss them.
+
+### Changed
+
+- Days without a stay count toward the base country only once they have passed; logged stays still count in full, including future ones. A year that has not started, or the rest of the current year, no longer shows every remaining day as spent in the base country. The accountant package lists those days as "Days still to come without a stay".
+- Forms ask for the country before the city.
+- The footer link is no longer underlined (it still underlines on hover).
+- Stylesheet and script links change whenever those files change, so browsers load updates at once instead of keeping a cached copy for up to a week.
+
 ### Fixed
 
 - Notes with line breaks were refused as "more than 5000 characters" even though the text box allowed them, because each line break counted twice. Stays saved with longer notes before 0.0.11 can be edited again without shortening them.

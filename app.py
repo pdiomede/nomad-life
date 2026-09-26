@@ -5,6 +5,7 @@ import mimetypes
 import os
 import re
 import secrets
+import time
 from urllib.parse import quote, urlencode
 import uuid
 from collections import OrderedDict
@@ -25,7 +26,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
-from mailer import send_email
+from mailer import LOGO_CID, send_email
 
 APP_VERSION = "1.0.0"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,8 +73,14 @@ SEO_TITLE = "Digital nomad day tracker and receipt vault | Nomad Life"
 SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and keep rental contracts, "
                    "hotel bills and flight tickets in one place. Free for digital nomads.")
 # Paths that need an account. Kept out of search engines via robots.txt.
-PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/"]
+PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/"]
 RESET_TOKEN_MAX_AGE = 3600
+# A new account must be confirmed from its email within this time, or it is deleted.
+VERIFY_MINUTES = 20
+PURGE_EVERY_SECONDS = 60
+# At most one email per account in this time, so sign up, sign in or "forgot password" cannot
+# be used to flood someone's inbox (and get the Gmail account blocked for spam).
+EMAIL_COOLDOWN_SECONDS = 60
 
 # config.env is the source of truth, as the README says: it overrides variables that happen to
 # be exported in the shell (SECRET_KEY or DATABASE_PATH from another project, for example).
@@ -211,6 +218,8 @@ def create_app(overrides=None):
     db.init_db(app.config["DATABASE_PATH"])
     os.makedirs(app.config["UPLOAD_DIR"], exist_ok=True)
     app.teardown_appcontext(db.close_db)
+    with app.app_context():
+        purge_unverified()
 
     if not app.config["SECRET_KEY"]:
         app.config["SECRET_KEY"] = load_or_create_secret(
@@ -240,14 +249,33 @@ def create_app(overrides=None):
     @login_manager.user_loader
     def load_user(session_id):
         uid, _, fingerprint = session_id.partition(":")
-        row = db.query("SELECT * FROM users WHERE id = ?", (uid,), one=True)
+        row = db.query("SELECT * FROM users WHERE id = ? AND verified_at IS NOT NULL", (uid,),
+                       one=True)
         if row is None or password_fingerprint(row["password_hash"]) != fingerprint:
             return None
         return User(row)
 
+    # Unconfirmed accounts are removed once their time is up. The auth pages purge on every
+    # request, so a late link or sign in never sees them; this hook cleans up in between.
+    last_purge = [0.0]
+
+    @app.before_request
+    def purge_now_and_then():
+        if time.monotonic() - last_purge[0] >= PURGE_EVERY_SECONDS:
+            last_purge[0] = time.monotonic()
+            purge_unverified()
+
+    # CSS and JS are cached for a week, so their URLs change whenever their content does,
+    # also between releases.
+    digest = hashlib.sha256()
+    for name in ("css/style.css", "js/theme.js"):
+        with open(os.path.join(app.static_folder, name), "rb") as fh:
+            digest.update(fh.read())
+    asset_version = digest.hexdigest()[:10]
+
     @app.context_processor
     def inject_globals():
-        return {"app_version": APP_VERSION, "countries": COUNTRIES, "country_data": COUNTRY_DATA,
+        return {"app_version": APP_VERSION, "asset_version": asset_version, "countries": COUNTRIES, "country_data": COUNTRY_DATA,
                 "document_kinds": DOCUMENT_KINDS,
                 "max_receipt_bytes": app.config["MAX_RECEIPT_BYTES"],
                 "max_receipt_label": format_size(app.config["MAX_RECEIPT_BYTES"], "down"),
@@ -290,9 +318,64 @@ def create_app(overrides=None):
 
 # ---------- helpers ----------
 
-def serializer():
+def serializer(salt="password-reset"):
+    """Signed tokens for emailed links. Each kind of link has its own salt, so a password
+    reset link can never confirm an account and a confirmation link can never reset one."""
     from flask import current_app
-    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="password-reset")
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt=salt)
+
+
+def purge_unverified():
+    """Delete accounts that were not confirmed within VERIFY_MINUTES. An account that holds
+    data is never one of them (it can only come from a server running an older version), so it
+    is kept rather than deleted with everything in it."""
+    db.execute("DELETE FROM users WHERE verified_at IS NULL AND created_at <= datetime('now', ?) "
+               "AND NOT EXISTS (SELECT 1 FROM years WHERE years.user_id = users.id)",
+               (f"-{VERIFY_MINUTES} minutes",))
+
+
+def email_allowed(user_id):
+    """Claim the right to email this account now. False if an email went out less than
+    EMAIL_COOLDOWN_SECONDS ago."""
+    with db.transaction() as conn:
+        cur = conn.execute("UPDATE users SET email_sent_at = CURRENT_TIMESTAMP WHERE id = ? AND "
+                           "(email_sent_at IS NULL OR email_sent_at <= datetime('now', ?))",
+                           (user_id, f"-{EMAIL_COOLDOWN_SECONDS} seconds"))
+        return cur.rowcount == 1
+
+
+def plural(n, word):
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def minutes_left(row):
+    """Whole minutes before an unconfirmed account is deleted (at least 1)."""
+    created = datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    left = created + timedelta(minutes=VERIFY_MINUTES) - datetime.now(timezone.utc)
+    return max(math.ceil(left.total_seconds() / 60), 1)
+
+
+def email_link(endpoint, **values):
+    from flask import current_app
+    return current_app.config["APP_BASE_URL"].rstrip("/") + url_for(endpoint, **values)
+
+
+def send_template_email(to, subject, name, **context):
+    """Render templates/email/<name>.txt and .html and send them as one email."""
+    from flask import current_app
+    site = current_app.config["APP_BASE_URL"].rstrip("/") + "/"
+    context.update(subject=subject, email=to, site_url=site, logo_cid=LOGO_CID,
+                   site_host=site.split("://", 1)[-1].rstrip("/"))
+    text = render_template(f"email/{name}.txt", **context)
+    html = render_template(f"email/{name}.html", **context)
+    return send_email(to, subject, text, html)
+
+
+def send_verification(row):
+    token = serializer("email-verify").dumps(
+        {"uid": row["id"], "h": password_fingerprint(row["password_hash"])})
+    return send_template_email(row["email"], "Confirm your Nomad Life account", "verify",
+                               link=email_link("verify", token=token), minutes=minutes_left(row))
 
 
 def parse_date(value):
@@ -544,7 +627,7 @@ def validate_movement(form, year, current_notes=None):
     start = parse_date(form.get("start_date"))
     end = parse_date(form.get("end_date"))
     if not city or not country:
-        return None, "City and country are required."
+        return None, "Country and city are required."
     if not start or not end:
         return None, "Please provide valid start and end dates."
     if end < start:
@@ -738,11 +821,11 @@ def build_package_data(year_row, include_notes):
         base_days=stats["base_days"], abroad_days=stats["abroad_days"], base_so_far=base_so_far,
         abroad_so_far=stats["elapsed"] - base_so_far, threshold=stats["threshold"],
         base_ok=stats["base_ok"], countries=countries, stays=stays, receipts=receipts,
-        include_notes=include_notes)
+        include_notes=include_notes, upcoming_days=stats["upcoming"])
 
 
 def compute_stats(year_row, movements):
-    """Count days per country. Days not covered by a movement count as base."""
+    """Count days per country. Past days not covered by a movement count as base."""
     y = year_row["year"]
     first, last = date(y, 1, 1), date(y, 12, 31)
     total = (last - first).days + 1
@@ -772,14 +855,17 @@ def compute_stats(year_row, movements):
     for mid in assigned_mv.values():
         counted[mid] = counted.get(mid, 0) + 1
 
-    per_country = {}
+    # Logged stays count in full, also future ones. A day without a stay counts toward the
+    # base country only once it has passed: nobody knows yet where the rest of the year goes.
+    per_country = {base: 0}
     per_country_so_far = {}
     d = first
     while d <= last:
-        c = assigned.get(d, base)
-        per_country[c] = per_country.get(c, 0) + 1
-        if d <= elapsed_end:
-            per_country_so_far[c] = per_country_so_far.get(c, 0) + 1
+        c = assigned.get(d, base if d <= elapsed_end else None)
+        if c is not None:
+            per_country[c] = per_country.get(c, 0) + 1
+            if d <= elapsed_end:
+                per_country_so_far[c] = per_country_so_far.get(c, 0) + 1
         d += timedelta(days=1)
 
     rows = [{"country": names[c], "days": n, "so_far": per_country_so_far.get(c, 0),
@@ -787,9 +873,11 @@ def compute_stats(year_row, movements):
              "over_threshold": n >= RESIDENCE_THRESHOLD}
             for c, n in per_country.items()]
     rows.sort(key=lambda r: (-r["days"], r["country"]))
-    base_days = per_country.get(base, 0)
+    base_days = per_country[base]
+    counted_days = sum(per_country.values())
     return {"total": total, "rows": rows, "base_days": base_days, "counted": counted,
-            "abroad_days": total - base_days, "threshold": RESIDENCE_THRESHOLD,
+            "abroad_days": counted_days - base_days, "upcoming": total - counted_days,
+            "threshold": RESIDENCE_THRESHOLD,
             "base_ok": base_days >= RESIDENCE_THRESHOLD,
             "elapsed": max((elapsed_end - first).days + 1, 0)}
 
@@ -805,6 +893,7 @@ def register_routes(app):
         if current_user.is_authenticated:
             return redirect(url_for("index"))
         if request.method == "POST":
+            purge_unverified()
             email = request.form.get("email", "").strip().lower()
             password = request.form.get("password", "")
             confirm = request.form.get("confirm", "")
@@ -814,29 +903,84 @@ def register_routes(app):
                 flash("Password must be at least 8 characters.", "error")
             elif password != confirm:
                 flash("Passwords do not match.", "error")
-            elif db.query("SELECT 1 FROM users WHERE email = ?", (email,), one=True):
-                flash("An account with this email already exists.", "error")
             else:
                 pw_hash = generate_password_hash(password)
-                try:
-                    uid = db.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)",
-                                     (email, pw_hash))
-                except db.IntegrityError:  # same email registered concurrently
+                with db.transaction() as conn:
+                    old = conn.execute(
+                        "SELECT verified_at IS NOT NULL AS taken, email_sent_at > datetime('now', "
+                        "?) AS recent FROM users WHERE email = ?",
+                        (f"-{EMAIL_COOLDOWN_SECONDS} seconds", email)).fetchone()
+                    if not old or not (old["taken"] or old["recent"]):
+                        # Signing up again before confirming starts over: the newest password
+                        # and link win, and links sent before stop working.
+                        conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL",
+                                     (email,))
+                        uid = conn.execute("INSERT INTO users (email, password_hash, email_sent_at) "
+                                           "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                                           (email, pw_hash)).lastrowid
+                if old and old["taken"]:
                     flash("An account with this email already exists.", "error")
                     return render_template("auth/signup.html")
-                login_user(User({"id": uid, "email": email, "password_hash": pw_hash}))
-                flash("Welcome to Nomad Life! Start by setting up your year.", "success")
-                return redirect(url_for("index"))
+                if old and old["recent"]:
+                    flash(f"We just sent a confirmation link to {email}. Please check your inbox, "
+                          "or wait a minute before signing up again.", "info")
+                    return render_template("auth/signup.html")
+                row = db.query("SELECT * FROM users WHERE id = ?", (uid,), one=True)
+                if not send_verification(row):
+                    db.execute("DELETE FROM users WHERE id = ? AND verified_at IS NULL", (uid,))
+                    flash("We could not send the confirmation email. Please try again in a few "
+                          "minutes.", "error")
+                    return render_template("auth/signup.html")
+                flash(f"We sent a confirmation link to {email}. Open it within {VERIFY_MINUTES} "
+                      "minutes to activate your account.", "info")
+                return redirect(url_for("login"))
         return render_template("auth/signup.html")
+
+    @app.route("/verify/<token>")
+    def verify(token):
+        purge_unverified()
+        try:
+            data = serializer("email-verify").loads(token, max_age=VERIFY_MINUTES * 60)
+        except SignatureExpired:
+            flash("This confirmation link has expired, so the account was removed. Please sign "
+                  "up again.", "error")
+            return redirect(url_for("signup"))
+        except BadSignature:
+            flash("This confirmation link is not valid.", "error")
+            return redirect(url_for("signup"))
+        row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
+        if row and row["verified_at"] is not None:
+            flash("Your email is already confirmed. Please sign in.", "info")
+            return redirect(url_for("login"))
+        if not row or password_fingerprint(row["password_hash"]) != data.get("h"):
+            flash("This confirmation link is no longer valid. If you signed up more than once, "
+                  "use the link in the newest email; otherwise, sign up again.", "error")
+            return redirect(url_for("signup"))
+        db.execute("UPDATE users SET verified_at = CURRENT_TIMESTAMP WHERE id = ? AND "
+                   "verified_at IS NULL", (row["id"],))
+        flash("Your email is confirmed. Please sign in to start.", "success")
+        return redirect(url_for("login"))
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if current_user.is_authenticated:
             return redirect(url_for("index"))
         if request.method == "POST":
+            purge_unverified()
             email = request.form.get("email", "").strip().lower()
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
             if row and check_password_hash(row["password_hash"], request.form.get("password", "")):
+                if row["verified_at"] is None:
+                    if not email_allowed(row["id"]):
+                        flash(f"Please confirm your email first, with the link we sent to {email} "
+                              "a moment ago.", "info")
+                    elif send_verification(row):
+                        flash(f"Please confirm your email first. We sent a new link to {email}; "
+                              f"it works for {plural(minutes_left(row), 'more minute')}.", "info")
+                    else:
+                        flash("Please confirm your email first, with the link we sent when you "
+                              "signed up.", "error")
+                    return render_template("auth/login.html")
                 login_user(User(row), remember=bool(request.form.get("remember")))
                 return redirect(safe_next(request.args.get("next", "")) or url_for("index"))
             flash("Invalid email or password.", "error")
@@ -851,22 +995,22 @@ def register_routes(app):
     @app.route("/forgot", methods=["GET", "POST"])
     def forgot():
         if request.method == "POST":
+            purge_unverified()
             email = request.form.get("email", "").strip().lower()
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
-            if row:
+            if row and email_allowed(row["id"]):
                 token = serializer().dumps(
                     {"uid": row["id"], "h": password_fingerprint(row["password_hash"])})
-                link = app.config["APP_BASE_URL"].rstrip("/") + url_for("reset", token=token)
-                send_email(email, "Reset your Nomad Life password",
-                           "Hi,\n\nUse the link below to reset your Nomad Life password. "
-                           f"It expires in 1 hour.\n\n{link}\n\n"
-                           "If you did not request this, you can ignore this email.\n")
+                send_template_email(email, "Reset your Nomad Life password", "reset",
+                                    link=email_link("reset", token=token),
+                                    hours=RESET_TOKEN_MAX_AGE // 3600)
             flash("If that email is registered, a reset link is on its way.", "info")
             return redirect(url_for("login"))
         return render_template("auth/forgot.html")
 
     @app.route("/reset/<token>", methods=["GET", "POST"])
     def reset(token):
+        purge_unverified()
         try:
             data = serializer().loads(token, max_age=RESET_TOKEN_MAX_AGE)
         except SignatureExpired:
@@ -876,7 +1020,10 @@ def register_routes(app):
             flash("This reset link is not valid.", "error")
             return redirect(url_for("forgot"))
         row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
-        if not row or password_fingerprint(row["password_hash"]) != data.get("h"):
+        if not row:
+            flash("This reset link is no longer valid.", "error")
+            return redirect(url_for("forgot"))
+        if password_fingerprint(row["password_hash"]) != data.get("h"):
             flash("This reset link has already been used.", "error")
             return redirect(url_for("forgot"))
         if request.method == "POST":
@@ -886,7 +1033,9 @@ def register_routes(app):
             elif password != request.form.get("confirm", ""):
                 flash("Passwords do not match.", "error")
             else:
-                db.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                # The link came by email, so it also confirms an account still waiting for it.
+                db.execute("UPDATE users SET password_hash = ?, verified_at = COALESCE(verified_at, "
+                           "CURRENT_TIMESTAMP) WHERE id = ?",
                            (generate_password_hash(password), row["id"]))
                 flash("Your password has been updated. Please sign in.", "success")
                 return redirect(url_for("login"))
@@ -941,7 +1090,7 @@ def register_routes(app):
             if not 1970 <= year <= 2100:
                 flash("Please enter a valid year.", "error")
             elif not city or not country:
-                flash("Base city and country are required.", "error")
+                flash("Base country and city are required.", "error")
             else:
                 try:
                     db.execute("INSERT INTO years (user_id, year, base_city, base_country) "
@@ -983,7 +1132,7 @@ def register_routes(app):
                 city = " ".join(request.form.get("base_city", "").split())
                 country = normalize_country(request.form.get("base_country", ""))
                 if not city or not country:
-                    flash("Base city and country are required.", "error")
+                    flash("Base country and city are required.", "error")
                     return render_template("base_location.html", y=year_row, form=request.form,
                                            docs=documents_for(year_row["id"]))
                 else:

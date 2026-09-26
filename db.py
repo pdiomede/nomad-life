@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    verified_at TEXT,
+    email_sent_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS years (
@@ -74,8 +76,40 @@ def init_db(path):
     try:
         conn.executescript(SCHEMA)
         conn.commit()
+        migrate(conn)
     finally:
         conn.close()
+
+
+def _has_column(conn, table, column):
+    return any(row[1] == column for row in conn.execute(f"PRAGMA table_info({table})"))
+
+
+# (table, new column, statements that add it). Columns are only ever added, in this order.
+MIGRATIONS = [
+    # New accounts must confirm their email. Accounts made before that count as confirmed,
+    # so the cleanup of unconfirmed accounts never removes them.
+    ("users", "verified_at", ["ALTER TABLE users ADD COLUMN verified_at TEXT",
+                              "UPDATE users SET verified_at = created_at"]),
+    # When the last email went to the account, to limit how often one can be sent.
+    ("users", "email_sent_at", ["ALTER TABLE users ADD COLUMN email_sent_at TEXT"]),
+]
+
+
+def migrate(conn):
+    """Bring a database made by an older version up to date. Safe to run on every start."""
+    for table, column, statements in MIGRATIONS:
+        if _has_column(conn, table, column):
+            continue
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if not _has_column(conn, table, column):  # another process may have won
+                for sql in statements:
+                    conn.execute(sql)
+        except BaseException:
+            conn.rollback()
+            raise
+        conn.commit()
 
 
 def query(sql, args=(), one=False):

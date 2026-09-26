@@ -6,7 +6,7 @@
     <div>
       <p class="eyebrow">Solar year setup</p>
       <h1>Set up your year</h1>
-      <p class="muted">Choose the year and the city you consider your base. Every day not covered by a movement counts toward your base country.</p>
+      <p class="muted">Choose the year and the city you consider your base. Every day not covered by a movement counts toward your base country once it has passed.</p>
     </div>
   </div>
   <div class="card">
@@ -18,12 +18,12 @@
       </div>
       <div class="grid-2">
         <div class="field">
-          <label for="base_city">Base city</label>
-          <input id="base_city" name="base_city" value="{{ request.form.base_city }}" placeholder="Lisbon" required>
-        </div>
-        <div class="field">
           <label for="base_country">Base country</label>
           <input id="base_country" name="base_country" list="country-list" data-country-combo autocomplete="off" value="{{ request.form.base_country }}" placeholder="Portugal" required>
+        </div>
+        <div class="field">
+          <label for="base_city">Base city</label>
+          <input id="base_city" name="base_city" value="{{ request.form.base_city }}" placeholder="Lisbon" required>
         </div>
       </div>
       <button class="btn btn-primary" type="submit">Create year</button>

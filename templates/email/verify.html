@@ -1,0 +1,10 @@
+{% extends "email/_layout.html" %}
+{% set p = "margin:0 0 14px; font-size:15px; line-height:1.6; color:#303549;" %}
+{% block preheader %}Confirm your email within {{ minutes }} minute{{ "s" if minutes != 1 }} to activate your account.{% endblock %}
+{% block heading %}Confirm your email{% endblock %}
+{% block body %}
+<p class="nl-text" style="{{ p }}">Thanks for signing up for Nomad Life. Please confirm that <strong>{{ email }}</strong> is your email address.</p>
+<p class="nl-text" style="{{ p }}">The link works for <strong>{{ minutes }} minute{{ "s" if minutes != 1 }}</strong>. If you do not confirm in time, the account is removed and this address can be used to sign up again.</p>
+{% endblock %}
+{% block button %}Confirm my email{% endblock %}
+{% block note %}If you did not sign up for Nomad Life, you can ignore this email and the account will be removed.{% endblock %}

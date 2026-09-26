@@ -148,7 +148,8 @@ p { margin: 0; }
 
 /* Footer */
 .footer { border-top: 1px solid var(--border); padding: 18px 0; font-size: 13px; }
-.footer a { text-decoration: underline; text-underline-offset: 2px; }  /* not colour alone */
+.footer a { text-decoration: none; }
+.footer a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .footer-inner { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
 /* Utility */
@@ -218,10 +219,18 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 
 /* Flash messages */
 .flashes { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
-.flash { overflow-wrap: anywhere; padding: 11px 14px; border-radius: 6px; font-size: 14px; border: 1px solid transparent; }
+.flash { display: flex; align-items: flex-start; gap: 12px; overflow-wrap: anywhere; padding: 11px 14px; border-radius: 6px; font-size: 14px; border: 1px solid transparent; }
 .flash-success { background: var(--success-bg); color: var(--success-text); border-color: rgba(70, 188, 75, 0.3); }
 .flash-error { background: var(--error-bg); color: var(--error-text); border-color: rgba(242, 90, 90, 0.3); }
 .flash-info, .flash-message { background: var(--info-bg); color: var(--info); border-color: rgba(0, 98, 210, 0.2); }
+.flash-text { flex: 1; min-width: 0; }
+.flash-close {
+  flex: none; width: 24px; height: 24px; margin: -3px -6px -3px auto; display: grid; place-items: center;
+  border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; opacity: 0.8;
+}
+.flash-close:hover { opacity: 1; background: rgba(127, 127, 127, 0.16); }
+.flash-close:focus-visible { opacity: 1; outline: 2px solid currentColor; outline-offset: 1px; }
+.main:focus { outline: none; }
 
 /* Auth */
 .auth-wrap { display: grid; place-items: center; padding: 24px 0; }

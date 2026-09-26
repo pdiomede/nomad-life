@@ -20,11 +20,11 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 
 | File | Role |
 | --- | --- |
-| `app.py` | Flask app factory, config (`config.env`), auth (sign up, sign in, password reset tokens, session fingerprint), years, movements, movements pagination (`paginate`, `page_window`, `page_size`, `dashboard_url`, `back_to_movement`), day math (`compute_stats`, `stay_order`, `overlap_notes`), uploads (`save_upload`, per receipt limit, per user quota), downloads, accountant package route (`year_package`, `build_package_data`, `can_download_package`), landing, robots.txt, sitemap.xml, SEO and share metadata (`site_meta`), 404 handler |
+| `app.py` | Flask app factory, config (`config.env`), auth (sign up, email confirmation `verify` and `purge_unverified`, email cooldown `email_allowed`, sign in, password reset tokens, session fingerprint, `send_template_email`), years, movements, movements pagination (`paginate`, `page_window`, `page_size`, `dashboard_url`, `back_to_movement`), day math (`compute_stats`, `stay_order`, `overlap_notes`), uploads (`save_upload`, per receipt limit, per user quota), downloads, accountant package route (`year_package`, `build_package_data`, `can_download_package`), landing, robots.txt, sitemap.xml, SEO and share metadata (`site_meta`), 404 handler |
 | `package.py` | Annual accountant package: summary model, PDF (fpdf2), CSV with formula protection, safe ZIP paths, streaming ZIP with manifest and checksums |
 | `tests/` | `unittest` suite (`python -m unittest`), helpers with an isolated app per test |
-| `db.py` | SQLite schema, per request connection, `query`, `execute`, `transaction` (BEGIN IMMEDIATE) |
-| `mailer.py` | Gmail SMTP for reset emails, console fallback |
+| `db.py` | SQLite schema, `MIGRATIONS` applied by `migrate()` on start, per request connection, `query`, `execute`, `transaction` (BEGIN IMMEDIATE) |
+| `mailer.py` | Gmail SMTP for confirmation and reset emails: `build_message` (text + HTML + inline logo), `send_email`, console fallback |
 | `countries.py` | Canonical country names used for normalization and suggestions |
 | `runWebApp.sh` | Launcher: Python check, config creation, venv, requirements, port parsing, freeing the port, start |
 | `requirements.txt`, `config.env.example` | Dependencies and settings (`APP_PORT`, `APP_BASE_URL`, `SECRET_KEY`, Gmail, storage paths, `MAX_RECEIPT_MB`, `USER_QUOTA_MB`) |
@@ -34,8 +34,9 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 | `templates/movement.html`, `base_location.html`, `year_new.html` | Forms for movements, base location and documents, new year |
 | `templates/_macros.html`, `_theme_toggle.html`, `_countries.html` | Upload form, document list, delete form, square page links (`pagination`), theme toggle, country data |
 | `templates/auth/*.html` | Sign in, sign up, forgot and reset password |
+| `templates/email/*` | Email layout (`_layout.html`, light and dark), confirmation and reset emails in HTML and plain text |
 | `static/css/style.css` | All styles, light and dark tokens, responsive rules |
-| `static/js/theme.js` | Theme toggle, delete confirmations, country combobox, file checks (size, quota), download busy state (`nl_download` cookie), copy link, native share |
+| `static/js/theme.js` | Theme toggle, flash message close buttons, delete confirmations, country combobox, file checks (size, quota), download busy state (`nl_download` cookie), copy link, native share |
 | `static/404.html` | Standalone 404 page (served by the app and usable by a web server) |
 | `static/fonts/*` | Flag font (Twemoji), DejaVu Sans and IPAGothic for the PDF, with license files |
 | `static/site.webmanifest`, `static/img/*` | Install metadata, logo, icons, social preview image |
@@ -47,11 +48,12 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 1. **Read every file completely**, top to bottom, before judging it. Do not skim. Keep notes of assumptions each function makes.
 2. **Run the app** with `./runWebApp.sh` (it creates `config.env` on first run). Use a throwaway `DATABASE_PATH` and `UPLOAD_DIR` for experiments, or the Flask test client with `create_app({...})` overrides.
 3. **Trace these flows end to end**, in the code and in the running app:
-   - Sign up, sign in (with and without "remember me"), sign out, forgot password, reset link (valid, expired, reused, tampered), sessions after a reset.
+   - Sign up, confirmation link (valid, expired after 20 minutes, replaced by a new sign up, reused, tampered), sign in before confirming, cleanup of unconfirmed accounts, one email per minute, sign in (with and without "remember me"), sign out, forgot password, reset link (valid, expired, reused, tampered), sessions after a reset.
+   - Emails: HTML and text versions, inline logo, light and dark mode.
    - Create a year, edit the base, delete a year (confirm text, files removed, space freed).
    - Add, edit, delete movements, including invalid dates, dates outside the year, leap years, same day stays, overlapping and nested stays, travel days shared by two stays.
    - Movements pages: 10, 11, 20 and 21 movements, bad `page` and `per_page` values, page size choice, deleting the last row of the last page, "Back" from a movement, stats identical on every page.
-   - Day math: days per country, base days, days abroad, "so far" counts, year elapsed, the 183 day label, counted days per stay. Check against hand computed expectations.
+   - Day math: days per country, base days (only past days without a stay), days abroad, "so far" counts, year elapsed, the 183 day label, counted days per stay, future years. Check against hand computed expectations.
    - Receipts: upload on base and movement pages and while creating a movement, allowed and rejected types, non Latin file names, empty files, exact limit, over limit, over quota, parallel uploads, download, inline view, delete, other users trying to access them.
    - Landing page, "Launch app", share buttons, copy link, robots.txt, sitemap.xml, 404 for unknown URLs and for other users' resources.
    - Launcher: missing or odd `config.env` values, busy port, broken venv, missing tools.

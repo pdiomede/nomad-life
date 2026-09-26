@@ -18,12 +18,12 @@
       <input type="hidden" name="action" value="update">
       <div class="grid-2">
         <div class="field">
-          <label for="city">City</label>
-          <input id="city" name="city" value="{{ form.city or '' }}" placeholder="Bali" required>
-        </div>
-        <div class="field">
           <label for="country">Country</label>
           <input id="country" name="country" list="country-list" data-country-combo autocomplete="off" value="{{ form.country or '' }}" placeholder="Indonesia" required>
+        </div>
+        <div class="field">
+          <label for="city">City</label>
+          <input id="city" name="city" value="{{ form.city or '' }}" placeholder="Bali" required>
         </div>
         <div class="field">
           <label for="start_date">From</label>

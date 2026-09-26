@@ -9,16 +9,16 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - A simple landing page that explains the app, with a "Launch app" button to sign in.
 - Share buttons for X, LinkedIn, Facebook, WhatsApp, Telegram and Reddit, with a link preview image.
 - A friendly 404 page for wrong links.
-- One private workspace per user with sign up, sign in and password reset by email (Gmail).
+- One private workspace per user with sign up, sign in and password reset by email (Gmail). New accounts confirm their email with a link, and accounts not confirmed within 20 minutes are deleted.
 - One workspace per solar year, each with a base city and country.
-- Log movements with date range, city and country.
+- Log movements with date range, country and city.
 - The movements list shows 10 per page, with numbered square page buttons and a choice of 10, 25 or 50 per page.
 - Searchable country picker with flags. Type a name, a common alternative (UK, USA, Holland) or a country code.
 - Edit or delete every entry: years, movements and documents. Deleting always asks twice.
 - Accountant package: one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.
 - Upload receipts per movement (hotel or home rent, flight tickets) and documents for the base (rental contract).
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
-- Days per country for the year, with a 183 day indicator.
+- Days per country for the year, with a 183 day indicator. Days without a stay count toward the base country once they have passed; logged stays count in full, also future ones.
 - Light and dark mode, inspired by the Aave color palette.
 - Everything stored locally: SQLite database in `data/`, files in `uploads/`.
 
@@ -39,8 +39,8 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | Key | Description |
 | --- | --- |
 | `APP_PORT` | Port the app listens on. Default `5050`. |
-| `APP_BASE_URL` | Public URL used in reset emails, link previews and share buttons. Empty means `http://localhost:APP_PORT`. When it starts with `https://`, sign in cookies are only sent over HTTPS. |
-| `SECRET_KEY` | Random secret for sessions and reset links. Generated on first run if empty. |
+| `APP_BASE_URL` | Public URL used in confirmation and reset emails, link previews and share buttons. Empty means `http://localhost:APP_PORT`. When it starts with `https://`, sign in cookies are only sent over HTTPS. |
+| `SECRET_KEY` | Random secret for sessions, confirmation and reset links. Generated on first run if empty. |
 | `GMAIL_USER` | Gmail address used to send emails. |
 | `GMAIL_APP_PASSWORD` | Gmail App Password (not your normal password). |
 | `DATABASE_PATH` | SQLite file. Default `data/nomad.db`. |
@@ -48,13 +48,13 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | `MAX_RECEIPT_MB` | Max size of a single receipt in MB. Default `10`. Older configs using `MAX_UPLOAD_MB` still work. |
 | `USER_QUOTA_MB` | Total receipt storage per user in MB, across all years. Default `500`. |
 
-To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, reset links are printed in the terminal.
+To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, confirmation and reset links are printed in the terminal.
 
 ## Accountant package
 
 On each year's dashboard, "Download accountant package" builds one ZIP you can hand to your accountant:
 
-- `summary.pdf`: base, days in the base country and the 183 day line, days abroad, days per country, travel timeline, the counting rules and a receipt index. For the current year it shows numbers so far and projected for the full year.
+- `summary.pdf`: base, days in the base country and the 183 day line, days abroad, days per country, travel timeline, the counting rules and a receipt index. For the current year it shows numbers so far and for the full year with the trips already planned.
 - `timeline.csv` and `country-totals.csv`: the same numbers for Excel or LibreOffice (UTF-8, with protection against spreadsheet formulas).
 - `receipts/`: the original files, byte for byte, in one folder per stay plus `receipts/base`.
 - `manifest.csv`: every file with its size and SHA-256 checksum. Receipts missing on the server are listed as missing.

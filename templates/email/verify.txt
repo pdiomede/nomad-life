@@ -1,0 +1,12 @@
+Hi,
+
+Thanks for signing up for Nomad Life. Please confirm that {{ email }} is your email address by opening the link below within {{ minutes }} minute{{ "s" if minutes != 1 }}:
+
+{{ link }}
+
+If you do not confirm in time, the account is removed and this address can be used to sign up again.
+
+If you did not sign up for Nomad Life, you can ignore this email and the account will be removed.
+
+Nomad Life
+{{ site_url }}

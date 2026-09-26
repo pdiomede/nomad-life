@@ -387,4 +387,24 @@
       }
     });
   });
+
+  // Flash messages: show the close button and remove the message when it is clicked.
+  // Focus moves to the next message's button, or to the page content after the last one.
+  document.querySelectorAll("[data-dismiss-flash]").forEach(function (close) {
+    close.hidden = false;
+    close.addEventListener("click", function () {
+      var flash = close.closest(".flash");
+      var list = flash.parentNode;
+      var sibling = flash.nextElementSibling || flash.previousElementSibling;
+      list.removeChild(flash);
+      if (sibling) {
+        sibling.querySelector("[data-dismiss-flash]").focus();
+        return;
+      }
+      var main = list.parentNode;
+      main.removeChild(list);
+      main.setAttribute("tabindex", "-1");
+      main.focus();
+    });
+  });
 })();

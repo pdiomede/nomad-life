@@ -2,12 +2,14 @@
 import csv
 import io
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
 import unittest
 import uuid
 import zipfile
+from unittest import mock
 
 import app as appmod
 
@@ -19,8 +21,33 @@ class AppTestCase(unittest.TestCase):
             "TESTING": True, "WTF_CSRF_ENABLED": False, "SECRET_KEY": "test-secret",
             "DATABASE_PATH": os.path.join(self.tmp, "test.db"),
             "UPLOAD_DIR": os.path.join(self.tmp, "uploads"),
+            # config.env may hold real Gmail credentials: tests must never send email.
+            "GMAIL_USER": "", "GMAIL_APP_PASSWORD": "",
         })
         self.client = self.app.test_client()
+        self.outbox = []
+        patcher = mock.patch.object(appmod, "send_email", side_effect=self._record_email)
+        self.send_email = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _record_email(self, to, subject, text, html=None):
+        self.outbox.append({"to": to, "subject": subject, "text": text, "html": html})
+        return True
+
+    def age_emails(self, seconds=61):
+        """Pretend the last emails went out long enough ago to send another one."""
+        with self.db() as conn:
+            conn.execute("UPDATE users SET email_sent_at = datetime('now', ?)",
+                         (f"-{seconds} seconds",))
+
+    def last_link(self, to=None, kind="verify"):
+        """Path of the newest emailed link of this kind (optionally to one address)."""
+        for mail in reversed(self.outbox):
+            if to is None or mail["to"] == to:
+                found = re.search(rf"https?://[^/\s]+(/{kind}/\S+)", mail["text"])
+                if found:
+                    return found.group(1)
+        raise AssertionError(f"no {kind} link was emailed")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -32,10 +59,12 @@ class AppTestCase(unittest.TestCase):
         conn.row_factory = sqlite3.Row
         return conn
 
-    def signup(self, email="a@example.com", client=None):
+    def signup(self, email="a@example.com", client=None, password="password1"):
+        """Sign up, open the confirmation link from the email, then sign in."""
         client = client or self.client
-        client.post("/signup", data={"email": email, "password": "password1",
-                                     "confirm": "password1"})
+        client.post("/signup", data={"email": email, "password": password, "confirm": password})
+        client.get(self.last_link(email))
+        client.post("/login", data={"email": email, "password": password})
         return client
 
     def new_year(self, year, base_city="Lisbon", base_country="Portugal", client=None):
