@@ -1,0 +1,90 @@
+"""Shared helpers: an isolated app (temporary database and upload folder) per test."""
+import csv
+import io
+import os
+import shutil
+import sqlite3
+import tempfile
+import unittest
+import uuid
+import zipfile
+
+import app as appmod
+
+
+class AppTestCase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="nomadlife-test-")
+        self.app = appmod.create_app({
+            "TESTING": True, "WTF_CSRF_ENABLED": False, "SECRET_KEY": "test-secret",
+            "DATABASE_PATH": os.path.join(self.tmp, "test.db"),
+            "UPLOAD_DIR": os.path.join(self.tmp, "uploads"),
+        })
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    # --- data helpers ---
+
+    def db(self):
+        conn = sqlite3.connect(self.app.config["DATABASE_PATH"])
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def signup(self, email="a@example.com", client=None):
+        client = client or self.client
+        client.post("/signup", data={"email": email, "password": "password1",
+                                     "confirm": "password1"})
+        return client
+
+    def new_year(self, year, base_city="Lisbon", base_country="Portugal", client=None):
+        (client or self.client).post("/year/new", data={
+            "year": str(year), "base_city": base_city, "base_country": base_country})
+        with self.db() as conn:
+            return conn.execute("SELECT id, user_id FROM years WHERE year = ? ORDER BY id DESC",
+                                (year,)).fetchone()
+
+    def add_movement(self, year, city, country, start, end, notes=""):
+        self.client.post(f"/year/{year}/movements/new", data={
+            "city": city, "country": country, "start_date": start, "end_date": end,
+            "notes": notes})
+        with self.db() as conn:
+            return conn.execute("SELECT max(id) FROM movements").fetchone()[0]
+
+    def upload(self, url, name, body, kind="other"):
+        return self.client.post(url, data={"action": "upload", "kind": kind,
+                                           "file": (io.BytesIO(body), name)},
+                                content_type="multipart/form-data")
+
+    def insert_document(self, year_row, original_name, body, movement_id=None, kind="other",
+                        ext="pdf"):
+        """Insert a document directly, bypassing upload cleaning, to test package safety."""
+        stored = f"{uuid.uuid4().hex}.{ext}"
+        folder = os.path.join(self.app.config["UPLOAD_DIR"], str(year_row["user_id"]))
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, stored), "wb") as fh:
+            fh.write(body)
+        with self.db() as conn:
+            conn.execute(
+                "INSERT INTO documents (user_id, year_id, movement_id, kind, original_name, "
+                "stored_name, mime, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (year_row["user_id"], year_row["id"], movement_id, kind, original_name, stored,
+                 "application/pdf", len(body)))
+        return stored
+
+    # --- package helpers ---
+
+    def package(self, year, notes=False, client=None):
+        resp = (client or self.client).get(f"/year/{year}/package" + ("?notes=1" if notes else ""))
+        self.assertEqual(resp.status_code, 200, resp.data[:200])
+        return resp, zipfile.ZipFile(io.BytesIO(resp.data))
+
+    @staticmethod
+    def root(zf):
+        return zf.namelist()[0].split("/")[0]
+
+    def read_csv(self, zf, name):
+        raw = zf.read(f"{self.root(zf)}/{name}")
+        self.assertTrue(raw.startswith(b"\xef\xbb\xbf"), f"{name} should start with a UTF-8 BOM")
+        return list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))))

@@ -293,6 +293,40 @@
     updateFlag();
   });
 
+  // Downloads (accountant package): show a busy state and block double clicks until the
+  // server answers. The response sets a cookie with the token we sent, which ends the wait.
+  document.querySelectorAll("form[data-download]").forEach(function (form) {
+    var btn = form.querySelector("[type=submit]");
+    var label = btn ? btn.textContent : "";
+    var timer = null;
+    var readCookie = function () {
+      var m = document.cookie.match(/(?:^|; )nl_download=([^;]*)/);
+      return m ? m[1] : "";
+    };
+    var done = function () {
+      clearInterval(timer);
+      document.cookie = "nl_download=; Max-Age=0; path=/; SameSite=Lax";
+      if (btn) { btn.disabled = false; btn.textContent = label; btn.removeAttribute("aria-busy"); }
+    };
+    form.addEventListener("submit", function (e) {
+      if (btn && btn.disabled) { e.preventDefault(); return; }
+      var token = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+      var field = form.querySelector('input[name="dl"]');
+      if (field) field.value = token;
+      if (btn) {
+        // Disable after the browser has taken the form data, so the request still goes out.
+        setTimeout(function () {
+          btn.disabled = true; btn.textContent = "Preparing package..."; btn.setAttribute("aria-busy", "true");
+        }, 0);
+      }
+      var started = Date.now();
+      clearInterval(timer);
+      timer = setInterval(function () {
+        if (readCookie() === token || Date.now() - started > 60000) done();
+      }, 400);
+    });
+  });
+
   // Share buttons: copy the landing page link, and use the device share sheet when available.
   document.querySelectorAll("[data-copy-link]").forEach(function (btn) {
     btn.addEventListener("click", function () {

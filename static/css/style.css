@@ -329,6 +329,12 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
 .confirm-dialog .field { margin-top: 14px; }
 .confirm-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 
+/* Accountant package */
+.package-card { display: flex; flex-direction: column; gap: 12px; }
+.package-card .card-head { margin-bottom: 0; }
+.package-form { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.package-form .btn { white-space: normal; text-align: center; }
+
 /* Row actions and document editing */
 .row-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
 .row-actions form { margin: 0; }

@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.0.7] - 2026-09-26
+
+### Added
+
+- Accountant package: "Download accountant package" on each year's dashboard builds one ZIP with `summary.pdf`, `timeline.csv`, `country-totals.csv`, the original receipts in one folder per stay, `manifest.csv` with SHA-256 checksums and a `README.txt`.
+- The PDF shows base, days in the base country and the 183 day line, days abroad, days per country, travel timeline with counted days, the counting rules, a receipt index and the not tax advice note on every page. The current year shows numbers so far and projected.
+- Optional "Include my notes" (off by default).
+- The package is streamed as it is built, with flat memory use, and is never stored, so it does not count against storage.
+- Safe file names inside the ZIP (no path tricks, reserved or control characters, duplicates renamed), spreadsheet formula protection in CSV files, and missing receipts reported instead of failing.
+- Automated test suite in `tests/` (`python -m unittest`).
+- `fpdf2` dependency and bundled PDF fonts (DejaVu Sans, IPAGothic for Japanese names) with their licenses.
+
 ## [0.0.6] - 2026-09-26
 
 ### Added

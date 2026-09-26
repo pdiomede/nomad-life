@@ -45,7 +45,7 @@ source .venv/bin/activate
 req_hash="$(sha256sum requirements.txt 2>/dev/null || shasum -a 256 requirements.txt)"
 req_hash="${req_hash%% *}"
 if [[ ! -f .requirements.stamp ]] || [[ "$(cat .requirements.stamp)" != "$req_hash" ]] \
-   || ! "$VENV_PY" -c 'import flask, flask_login, flask_wtf, dotenv' 2>/dev/null; then
+   || ! "$VENV_PY" -c 'import flask, flask_login, flask_wtf, dotenv, fpdf' 2>/dev/null; then
   info "Installing requirements"
   "$VENV_PY" -m pip install --quiet --upgrade pip
   "$VENV_PY" -m pip install --quiet -r requirements.txt

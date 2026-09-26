@@ -90,6 +90,16 @@
   </section>
 
   <div class="side">
+  <section class="card package-card" aria-labelledby="package-title">
+    <div class="card-head"><h2 id="package-title">Accountant package</h2></div>
+    <p class="muted small">One ZIP for {{ y.year }}: a PDF summary, your timeline and country totals as spreadsheets, and every receipt, ready to share with your accountant.</p>
+    <form method="get" action="{{ url_for('year_package', year=y.year) }}" class="package-form" data-download>
+      <label class="check"><input type="checkbox" name="notes" value="1"> Include my notes</label>
+      <input type="hidden" name="dl" value="">
+      <button class="btn btn-primary" type="submit">Download accountant package</button>
+    </form>
+  </section>
+
   <section class="card storage-card">
     <div class="card-head">
       <h2>Receipt storage</h2>

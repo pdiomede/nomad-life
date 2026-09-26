@@ -20,7 +20,9 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 
 | File | Role |
 | --- | --- |
-| `app.py` | Flask app factory, config (`config.env`), auth (sign up, sign in, password reset tokens, session fingerprint), years, movements, day math (`compute_stats`, `stay_order`, `overlap_notes`), uploads (`save_upload`, per receipt limit, per user quota), downloads, landing, robots.txt, sitemap.xml, SEO and share metadata (`site_meta`), 404 handler |
+| `app.py` | Flask app factory, config (`config.env`), auth (sign up, sign in, password reset tokens, session fingerprint), years, movements, day math (`compute_stats`, `stay_order`, `overlap_notes`), uploads (`save_upload`, per receipt limit, per user quota), downloads, accountant package route (`year_package`, `build_package_data`, `can_download_package`), landing, robots.txt, sitemap.xml, SEO and share metadata (`site_meta`), 404 handler |
+| `package.py` | Annual accountant package: summary model, PDF (fpdf2), CSV with formula protection, safe ZIP paths, streaming ZIP with manifest and checksums |
+| `tests/` | `unittest` suite (`python -m unittest`), helpers with an isolated app per test |
 | `db.py` | SQLite schema, per request connection, `query`, `execute`, `transaction` (BEGIN IMMEDIATE) |
 | `mailer.py` | Gmail SMTP for reset emails, console fallback |
 | `countries.py` | Canonical country names used for normalization and suggestions |
@@ -35,6 +37,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 | `static/css/style.css` | All styles, light and dark tokens, responsive rules |
 | `static/js/theme.js` | Theme toggle, delete confirmations, file checks (size, quota), copy link, native share |
 | `static/404.html` | Standalone 404 page (served by the app and usable by a web server) |
+| `static/fonts/*` | Flag font (Twemoji), DejaVu Sans and IPAGothic for the PDF, with license files |
 | `static/site.webmanifest`, `static/img/*` | Install metadata, logo, icons, social preview image |
 | `README.md`, `CHANGELOG.md`, `LICENSE`, `.gitignore` | Docs and repo config |
 

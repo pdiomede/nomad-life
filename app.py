@@ -3,6 +3,7 @@ import hashlib
 import math
 import mimetypes
 import os
+import re
 import secrets
 from urllib.parse import quote, urlencode
 import uuid
@@ -21,10 +22,11 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
+import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import send_email
 
-APP_VERSION = "0.0.6"
+APP_VERSION = "0.0.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -520,6 +522,66 @@ def flash_overlaps(year_id, data, movement_id):
               "that started later, so check the dates if that is not intended.", "info")
 
 
+def can_download_package(user):
+    """Who may download the annual accountant package. Everyone for now; a future Pro plan
+    only needs to change this function."""
+    return True
+
+
+def build_package_data(year_row, include_notes):
+    """Collect everything the accountant package shows, using the same queries and helpers as
+    the dashboard so the numbers always match the screen."""
+    from flask import current_app
+    y = year_row["year"]
+    period = package.Period(date(y, 1, 1), date(y, 12, 31), str(y))
+    movements = db.query("SELECT * FROM movements WHERE year_id = ? "
+                         "ORDER BY start_date, end_date DESC, id", (year_row["id"],))
+    stats = compute_stats(year_row, movements)
+    today = date.today()
+    status = "past" if today > period.end else "future" if today < period.start else "current"
+    iso = lambda name: COUNTRY_CODES.get(normalize_country(name), "")
+    base_name = normalize_country(year_row["base_country"])
+    base_row = next((r for r in stats["rows"] if r["is_base"]), None)
+    base_so_far = base_row["so_far"] if base_row else 0
+
+    stays = []
+    for i, m in enumerate(movements, start=1):
+        stays.append(package.Stay(
+            number=i, start=m["start_date"], end=m["end_date"], city=m["city"],
+            country=normalize_country(m["country"]), iso=iso(m["country"]),
+            calendar_days=stay_length(m), counted_days=stats["counted"].get(m["id"], 0),
+            notes=m["notes"] or ""))
+    stay_by_movement = {m["id"]: s for m, s in zip(movements, stays)}
+
+    receipts = []
+    docs = db.query("SELECT * FROM documents WHERE year_id = ? "
+                    "ORDER BY movement_id IS NOT NULL, uploaded_at, id", (year_row["id"],))
+    folder = os.path.join(current_app.config["UPLOAD_DIR"], str(year_row["user_id"]))
+    for d in docs:
+        stay = stay_by_movement.get(d["movement_id"])
+        if stay:
+            stay.receipts += 1
+        path = os.path.join(folder, d["stored_name"])
+        exists = os.path.isfile(path)
+        receipts.append(package.Receipt(
+            stay_number=stay.number if stay else 0,
+            kind=DOCUMENT_KINDS.get(d["kind"], "Other"), name=d["original_name"],
+            ext=file_ext(d["stored_name"]), path=path, uploaded=local_date(d["uploaded_at"]),
+            size=os.path.getsize(path) if exists else d["size"], exists=exists))
+
+    countries = [package.CountryTotal(country=r["country"], iso=iso(r["country"]), days=r["days"],
+                                      share=r["pct"], so_far=r["so_far"], is_base=r["is_base"])
+                 for r in stats["rows"]]
+    return package.PackageData(
+        period=period, base_city=year_row["base_city"], base_country=base_name,
+        base_iso=iso(base_name), generated_at=datetime.now(), app_version=APP_VERSION,
+        status=status, as_of=today, total_days=stats["total"], elapsed=stats["elapsed"],
+        base_days=stats["base_days"], abroad_days=stats["abroad_days"], base_so_far=base_so_far,
+        abroad_so_far=stats["elapsed"] - base_so_far, threshold=stats["threshold"],
+        base_ok=stats["base_ok"], countries=countries, stays=stays, receipts=receipts,
+        include_notes=include_notes)
+
+
 def compute_stats(year_row, movements):
     """Count days per country. Days not covered by a movement count as base."""
     y = year_row["year"]
@@ -853,6 +915,27 @@ def register_routes(app):
         if row is None:
             abort(404)
         return row
+
+    @app.route("/year/<int:year>/package")
+    @login_required
+    def year_package(year):
+        """Annual accountant package: one ZIP streamed to the browser, built on demand and
+        never stored, so it does not count against the storage quota."""
+        year_row = get_year_or_404(year)
+        if not can_download_package(current_user):
+            flash("The accountant package is not available on your plan.", "error")
+            return redirect(url_for("dashboard", year=year))
+        data = build_package_data(year_row, include_notes=request.args.get("notes") == "1")
+        entries = package.prepare(data)
+        resp = Response(package.stream(data, entries), mimetype="application/zip")
+        resp.headers["Content-Disposition"] = f'attachment; filename="{package.zip_name(year)}"'
+        resp.headers["Cache-Control"] = "private, no-store"
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        token = request.args.get("dl", "")
+        if re.fullmatch(r"[A-Za-z0-9]{8,40}", token):
+            # Lets the page know the download started, so the button can leave its busy state.
+            resp.set_cookie("nl_download", token, max_age=120, samesite="Lax", path="/")
+        return resp
 
     @app.route("/documents/<int:doc_id>")
     @login_required

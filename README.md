@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.6**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.7**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -14,6 +14,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Log movements with date range, city and country.
 - Searchable country picker with flags. Type a name, a common alternative (UK, USA, Holland) or a country code.
 - Edit or delete every entry: years, movements and documents. Deleting always asks twice.
+- Accountant package: one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.
 - Upload receipts per movement (hotel or home rent, flight tickets) and documents for the base (rental contract).
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
 - Days per country for the year, with a 183 day indicator.
@@ -48,6 +49,24 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 
 To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, reset links are printed in the terminal.
 
+## Accountant package
+
+On each year's dashboard, "Download accountant package" builds one ZIP you can hand to your accountant:
+
+- `summary.pdf`: base, days in the base country and the 183 day line, days abroad, days per country, travel timeline, the counting rules and a receipt index. For the current year it shows numbers so far and projected for the full year.
+- `timeline.csv` and `country-totals.csv`: the same numbers for Excel or LibreOffice (UTF-8, with protection against spreadsheet formulas).
+- `receipts/`: the original files, byte for byte, in one folder per stay plus `receipts/base`.
+- `manifest.csv`: every file with its size and SHA-256 checksum. Receipts missing on the server are listed as missing.
+- `README.txt`: what each file is.
+
+Your notes are left out unless you tick "Include my notes". The package is built when you download it and never stored, so it does not use storage. The numbers are the same as on the dashboard. It is an organizer, not tax advice.
+
+## Tests
+
+```bash
+.venv/bin/python -m unittest
+```
+
 ## Link previews and 404 page
 
 Social networks read the preview image and text from `APP_BASE_URL`, so set it to your public address (for example `https://nomadlife.example.com`) once the app is online. Previews cannot work on `localhost`.
@@ -69,5 +88,7 @@ Day counts are an organizational aid, not tax advice. Residence rules differ by 
 ## License
 
 [MIT](LICENSE)
+
+The PDF summary is made with [fpdf2](https://github.com/py-pdf/fpdf2) (LGPL-3.0) using the bundled DejaVu Sans fonts (Bitstream Vera license, `static/fonts/LICENSE-DejaVu.txt`) and IPAGothic for Japanese names (IPA Font License, `static/fonts/LICENSE-IPAGothic.txt`).
 
 Country flags are drawn with the Twemoji Country Flags font (`static/fonts/TwemojiCountryFlags.woff2`) from [country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill). The flag artwork is from [Twemoji](https://github.com/twitter/twemoji), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
