@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Admin | Nomad Life{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Admin</p>
+    <h1>Accounts</h1>
+    <p class="muted">Default storage quota: {{ default_quota | filesize('down') }} per account (USER_QUOTA_MB). Admins come from ADMIN_EMAILS in config.env.</p>
+  </div>
+</div>
+
+<section class="stats admin-stats" aria-label="Totals">
+  <div class="card stat">
+    <p class="stat-label">Accounts</p>
+    <p class="stat-value">{{ totals.users }}</p>
+    <p class="muted small">{{ totals.disabled }} disabled, {{ totals.custom_quota }} with a custom quota</p>
+  </div>
+  <div class="card stat">
+    <p class="stat-label">Receipt storage used</p>
+    <p class="stat-value">{{ totals.storage | filesize('down') }}</p>
+    <p class="muted small">{{ totals.documents }} document{{ '' if totals.documents == 1 else 's' }}</p>
+  </div>
+  <div class="card stat">
+    <p class="stat-label">Years</p>
+    <p class="stat-value">{{ totals.years }}</p>
+  </div>
+  <div class="card stat">
+    <p class="stat-label">Movements</p>
+    <p class="stat-value">{{ totals.movements }}</p>
+  </div>
+</section>
+
+<section class="card admin-users" aria-labelledby="users-title">
+  <div class="card-head"><h2 id="users-title">Users</h2></div>
+  <ul class="admin-list">
+    {% for u in pager.rows %}
+    <li class="admin-user">
+      <div class="admin-user-main">
+        <p class="admin-email"><strong>{{ u.email }}</strong>
+          {% if u.is_admin %}<span class="tag">Admin</span>{% endif %}
+          {% if u.disabled %}<span class="pill pill-error">Disabled</span>{% endif %}
+          {% if not u.verified_at %}<span class="pill pill-warn">Email not confirmed</span>{% endif %}
+          {% if u.used > u.quota %}<span class="pill pill-warn">Over quota</span>{% endif %}
+        </p>
+        <p class="muted small">Joined {{ u.created_at | localdate }} &middot; last sign in {{ (u.last_login_at | localdate) if u.last_login_at else 'not recorded' }} &middot; {{ u.years }} year{{ '' if u.years == 1 else 's' }}</p>
+        <p class="small">{{ u.used | filesize('down') }} used of {{ u.quota | filesize('down') }}{% if u.quota_bytes is none %} <span class="muted">(default)</span>{% endif %}</p>
+      </div>
+      <div class="admin-actions">
+        <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}" class="admin-quota">
+          {{ ui.csrf() }}
+          <input type="hidden" name="action" value="quota">
+          <input type="hidden" name="page" value="{{ pager.page }}">
+          <label for="quota-{{ u.id }}" class="small">Quota in MB</label>
+          <input id="quota-{{ u.id }}" name="quota_mb" type="number" min="1" max="1048576" step="any" inputmode="decimal"
+                 value="{{ u.quota_mb }}"
+                 placeholder="Default" aria-describedby="quota-help-{{ u.id }}">
+          <button class="btn btn-ghost btn-sm" type="submit">Save</button>
+          <span class="visually-hidden" id="quota-help-{{ u.id }}">Leave empty to use the default quota.</span>
+        </form>
+        {% if u.id != current_user.id %}
+        <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}">
+          {{ ui.csrf() }}
+          <input type="hidden" name="action" value="{{ 'enable' if u.disabled else 'disable' }}">
+          <input type="hidden" name="page" value="{{ pager.page }}">
+          <button class="btn btn-ghost btn-sm" type="submit" aria-label="{{ 'Enable' if u.disabled else 'Disable' }} {{ u.email }}">{{ 'Enable' if u.disabled else 'Disable' }}</button>
+        </form>
+        {{ ui.delete_form(url_for('admin_user', user_id=u.id), 'the account ' ~ u.email ~ ' with all its years, movements and receipts', extra={'action': 'delete', 'page': pager.page, 'confirm_email': ''}, type_to_confirm=u.email, type_field='confirm_email', aria_label='Delete ' ~ u.email) }}
+        {% else %}
+        <span class="muted small">This is you</span>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if pager.pages > 1 %}
+  <div class="table-foot">
+    <p class="muted small">Showing {{ pager.first }} to {{ pager.last }} of {{ pager.total }} accounts</p>
+    {{ ui.pagination(pager, 'Account pages') }}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

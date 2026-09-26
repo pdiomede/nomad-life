@@ -3,8 +3,8 @@
 {% macro flag(country) %}{% set f = country | flag %}{% if f %}<span class="flag" aria-hidden="true">{{ f }}</span> {% endif %}{% endmacro %}
 
 {# Delete forms are intercepted by the two step confirmation dialog (static/js/theme.js). #}
-{% macro delete_form(action, what, label="Delete", extra={}, type_to_confirm=None, button_class="btn btn-danger-ghost btn-sm", aria_label=None) %}
-<form method="post" action="{{ action }}" data-confirm-delete="{{ what }}"{% if type_to_confirm %} data-confirm-type="{{ type_to_confirm }}"{% endif %}>
+{% macro delete_form(action, what, label="Delete", extra={}, type_to_confirm=None, button_class="btn btn-danger-ghost btn-sm", aria_label=None, type_field=None) %}
+<form method="post" action="{{ action }}" data-confirm-delete="{{ what }}"{% if type_to_confirm %} data-confirm-type="{{ type_to_confirm }}"{% endif %}{% if type_field %} data-confirm-field="{{ type_field }}"{% endif %}>
   {{ csrf() }}
   {% for k, v in extra.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
   <input type="hidden" name="confirm_delete" value="">

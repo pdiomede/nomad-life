@@ -28,7 +28,7 @@ import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -73,7 +73,9 @@ SEO_TITLE = "Digital nomad day tracker and receipt vault | Nomad Life"
 SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and keep rental contracts, "
                    "hotel bills and flight tickets in one place. Free for digital nomads.")
 # Paths that need an account. Kept out of search engines via robots.txt.
-PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/"]
+PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin"]
+ADMIN_USERS_PER_PAGE = 25
+MAX_QUOTA_MB = 1024 * 1024  # 1 TB, a sanity cap for quotas typed on the admin page
 RESET_TOKEN_MAX_AGE = 3600
 # A new account must be confirmed from its email within this time, or it is deleted.
 VERIFY_MINUTES = 20
@@ -114,6 +116,11 @@ class User(UserMixin):
         self.id = row["id"]
         self.email = row["email"]
         self.fingerprint = password_fingerprint(row["password_hash"])
+
+    @property
+    def is_admin(self):
+        from flask import current_app
+        return self.email in current_app.config["ADMIN_EMAILS"]
 
     def get_id(self):
         # Binding the session to the password means a reset signs out every other session.
@@ -156,6 +163,10 @@ def mb_setting(name, default, legacy=None):
     return math.ceil(value * MB)
 
 
+def admin_emails(raw):
+    return frozenset(e.strip().lower() for e in raw.replace(";", ",").split(",") if e.strip())
+
+
 def port_setting():
     """APP_PORT from config.env; empty means the default, anything else must be a real port."""
     raw = (os.getenv("APP_PORT") or "").strip() or "5050"
@@ -191,6 +202,8 @@ def create_app(overrides=None):
         APP_PORT=port_setting(),
         APP_BASE_URL=os.getenv("APP_BASE_URL", ""),
         GMAIL_USER=os.getenv("GMAIL_USER", ""),
+        # Accounts that may open /admin. Only config.env can grant it, never the app itself.
+        ADMIN_EMAILS=admin_emails(os.getenv("ADMIN_EMAILS", "")),
         GMAIL_APP_PASSWORD=os.getenv("GMAIL_APP_PASSWORD", "").replace(" ", ""),
         DATABASE_PATH=_abs(os.getenv("DATABASE_PATH", "data/nomad.db")),
         UPLOAD_DIR=_abs(os.getenv("UPLOAD_DIR", "uploads")),
@@ -252,6 +265,8 @@ def create_app(overrides=None):
         row = db.query("SELECT * FROM users WHERE id = ? AND verified_at IS NOT NULL", (uid,),
                        one=True)
         if row is None or password_fingerprint(row["password_hash"]) != fingerprint:
+            return None
+        if row["disabled"]:  # disabling an account ends its open sessions too
             return None
         return User(row)
 
@@ -495,9 +510,17 @@ def storage_used(user_id):
     return row["used"]
 
 
-def storage_summary(user_id):
+def user_quota(user_id):
+    """Storage quota in bytes: the one set on the admin page, else USER_QUOTA_MB."""
     from flask import current_app
-    quota = current_app.config["USER_QUOTA_BYTES"]
+    row = db.query("SELECT quota_bytes FROM users WHERE id = ?", (user_id,), one=True)
+    if row is not None and row["quota_bytes"] is not None:
+        return row["quota_bytes"]
+    return current_app.config["USER_QUOTA_BYTES"]
+
+
+def storage_summary(user_id):
+    quota = user_quota(user_id)
     used = storage_used(user_id)
     left = max(quota - used, 0)
     return {"used": used, "quota": quota, "left": left, "over": used > quota,
@@ -536,7 +559,7 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
     # Check both limits before anything is written to the uploads folder.
     size = upload_size(file)
     limit = current_app.config["MAX_RECEIPT_BYTES"]
-    quota = current_app.config["USER_QUOTA_BYTES"]
+    quota = user_quota(current_user.id)
     if size == 0:
         return "The file is empty. Please choose another file."
     if size > limit:
@@ -981,6 +1004,11 @@ def register_routes(app):
                         flash("Please confirm your email first, with the link we sent when you "
                               "signed up.", "error")
                     return render_template("auth/login.html")
+                if row["disabled"]:
+                    flash("This account is disabled. Please contact the administrator.", "error")
+                    return render_template("auth/login.html")
+                db.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
+                           (row["id"],))
                 login_user(User(row), remember=bool(request.form.get("remember")))
                 return redirect(safe_next(request.args.get("next", "")) or url_for("index"))
             flash("Invalid email or password.", "error")
@@ -1234,6 +1262,103 @@ def register_routes(app):
         return render_template("movement.html", y=year_row, m=m, form=m,
                                docs=documents_for(year_row["id"], movement_id),
                                back_url=back_to_movement(year_row, movement_id))
+
+    # --- admin ---
+
+    def require_admin():
+        # Same answer as for any page that is not yours: nothing to see here.
+        if not current_user.is_admin:
+            abort(404)
+
+    def admin_url(page=1):
+        return url_for("admin", page=page if page > 1 else None)
+
+    @app.route("/admin")
+    @login_required
+    def admin():
+        require_admin()
+        users = db.query(
+            "SELECT u.id, u.email, u.created_at, u.last_login_at, u.disabled, u.quota_bytes, "
+            "u.verified_at, "
+            "(SELECT COUNT(*) FROM years y WHERE y.user_id = u.id) AS years, "
+            "(SELECT COALESCE(SUM(size), 0) FROM documents d WHERE d.user_id = u.id) AS used "
+            "FROM users u ORDER BY u.created_at DESC, u.id DESC")
+        default_quota = app.config["USER_QUOTA_BYTES"]
+        users = [dict(u, quota=u["quota_bytes"] if u["quota_bytes"] is not None else default_quota,
+                      quota_mb=f"{u['quota_bytes'] / MB:.1f}".removesuffix(".0")
+                      if u["quota_bytes"] is not None else "",
+                      is_admin=u["email"] in app.config["ADMIN_EMAILS"])
+                 for u in users]
+        totals = {
+            "users": len(users),
+            "disabled": sum(1 for u in users if u["disabled"]),
+            "custom_quota": sum(1 for u in users if u["quota_bytes"] is not None),
+            "storage": sum(u["used"] for u in users),
+            "years": db.query("SELECT COUNT(*) AS n FROM years", one=True)["n"],
+            "movements": db.query("SELECT COUNT(*) AS n FROM movements", one=True)["n"],
+            "documents": db.query("SELECT COUNT(*) AS n FROM documents", one=True)["n"],
+        }
+        pager = paginate(users, request.args.get("page"), ADMIN_USERS_PER_PAGE,
+                         lambda n, _size: admin_url(n))
+        return render_template("admin.html", pager=pager, totals=totals,
+                               default_quota=default_quota)
+
+    @app.route("/admin/users/<int:user_id>", methods=["POST"])
+    @login_required
+    def admin_user(user_id):
+        require_admin()
+        row = db.query("SELECT * FROM users WHERE id = ?", (user_id,), one=True)
+        if row is None:
+            abort(404)
+        back = admin_url(to_int(request.form.get("page"), 1))
+        action = request.form.get("action")
+        email = row["email"]
+        if action in ("disable", "delete") and row["id"] == current_user.id:
+            flash("You cannot disable or delete your own admin account.", "error")
+        elif action == "quota":
+            raw = request.form.get("quota_mb", "").strip()
+            if not raw:
+                db.execute("UPDATE users SET quota_bytes = NULL WHERE id = ?", (user_id,))
+                flash(f"{email} now uses the default storage quota "
+                      f"({format_size(app.config['USER_QUOTA_BYTES'], 'down')}).", "success")
+            else:
+                try:
+                    mb = float(raw)
+                except ValueError:
+                    mb = -1
+                if not 1 <= mb <= MAX_QUOTA_MB:
+                    flash(f"Enter a storage quota between 1 and {MAX_QUOTA_MB} MB, or leave it "
+                          "empty for the default.", "error")
+                else:
+                    quota = math.ceil(mb * MB)
+                    db.execute("UPDATE users SET quota_bytes = ? WHERE id = ?", (quota, user_id))
+                    note = (" They already use more than that, so new uploads are blocked until "
+                            "they delete receipts.") if storage_used(user_id) > quota else ""
+                    flash(f"Storage quota for {email} set to {format_size(quota, 'down')}.{note}",
+                          "success")
+        elif action == "disable":
+            db.execute("UPDATE users SET disabled = 1 WHERE id = ?", (user_id,))
+            flash(f"{email} is disabled and signed out everywhere.", "info")
+        elif action == "enable":
+            db.execute("UPDATE users SET disabled = 0 WHERE id = ?", (user_id,))
+            flash(f"{email} can sign in again.", "success")
+        elif action == "delete":
+            if not delete_confirmed():
+                pass
+            elif request.form.get("confirm_email", "").strip().lower() != email:
+                flash("Type the email address to confirm the deletion.", "error")
+            else:
+                with db.transaction() as conn:  # list and delete together, see the year delete
+                    docs = conn.execute("SELECT * FROM documents WHERE user_id = ?",
+                                        (user_id,)).fetchall()
+                    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+                remove_files(docs)
+                try:
+                    os.rmdir(os.path.join(app.config["UPLOAD_DIR"], str(user_id)))
+                except OSError:
+                    pass  # missing, or holds files no row points to: leave them for the operator
+                flash(f"The account {email} and all its data were deleted.", "info")
+        return redirect(back)
 
     # --- documents ---
 

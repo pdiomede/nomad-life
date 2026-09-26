@@ -31,7 +31,8 @@
       field.value = value;
     };
     setHidden("confirm_delete", "2");
-    if (form.getAttribute("data-confirm-type")) setHidden("confirm_year", typed);
+    // The typed value goes to confirm_year (years) or the field the form names (accounts).
+    if (form.getAttribute("data-confirm-type")) setHidden(form.getAttribute("data-confirm-field") || "confirm_year", typed);
     form.querySelectorAll("[type=submit]").forEach(function (b) { b.disabled = true; });
     form.submit();
   };
@@ -47,7 +48,7 @@
         var typed = "";
         if (need) {
           typed = (window.prompt("Type " + need + " to confirm.") || "").trim();
-          if (typed !== need) return;
+          if (typed.toLowerCase() !== need.toLowerCase()) return;
         }
         confirmAndSubmit(form, typed);
       });
@@ -67,7 +68,7 @@
 
     var typedOk = function () {
       var need = pending && pending.getAttribute("data-confirm-type");
-      return !need || dTypeInput.value.trim() === need;
+      return !need || dTypeInput.value.trim().toLowerCase() === need.toLowerCase();
     };
     // The step 2 button sits where the step 1 button was, so a double click would confirm
     // twice in one gesture. Keep it inactive for a moment so the second click is deliberate.
@@ -92,6 +93,8 @@
         dTypeField.hidden = !need;
         dTypeValue.textContent = need || "";
         dTypeInput.value = "";
+        // A year gets the number pad; an email address the normal keyboard.
+        dTypeInput.setAttribute("inputmode", /^\d+$/.test(need || "") ? "numeric" : "email");
         armed = false;
         clearTimeout(armTimer);
         armTimer = setTimeout(function () { armed = true; refreshNext(); }, 700);

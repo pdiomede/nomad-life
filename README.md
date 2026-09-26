@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.0.0**, the first stable release.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.1.0**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -17,6 +17,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Edit or delete every entry: years, movements and documents. Deleting always asks twice.
 - Accountant package: one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.
 - Upload receipts per movement (hotel or home rent, flight tickets) and documents for the base (rental contract).
+- Admin page for the operator: accounts, storage, per account quotas, disable or delete accounts.
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
 - Days per country for the year, with a 183 day indicator. Days without a stay count toward the base country once they have passed; logged stays count in full, also future ones.
 - Light and dark mode, inspired by the Aave color palette.
@@ -46,9 +47,22 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | `DATABASE_PATH` | SQLite file. Default `data/nomad.db`. |
 | `UPLOAD_DIR` | Folder for uploaded files. Default `uploads`. |
 | `MAX_RECEIPT_MB` | Max size of a single receipt in MB. Default `10`. Older configs using `MAX_UPLOAD_MB` still work. |
-| `USER_QUOTA_MB` | Total receipt storage per user in MB, across all years. Default `500`. |
+| `USER_QUOTA_MB` | Total receipt storage per user in MB, across all years. Default `500`. An admin can set a different quota per account. |
+| `ADMIN_EMAILS` | Comma separated emails of the accounts that can open the admin page. Empty by default. |
 
 To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, confirmation and reset links are printed in the terminal.
+
+## Admin page
+
+Accounts listed in `ADMIN_EMAILS` get an **Admin** link (header and footer) to `/admin`, which shows:
+
+- Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements.
+- Every account with its sign up date, last sign in, number of years and storage used.
+- A storage quota per account (in MB; leave it empty for the `USER_QUOTA_MB` default).
+- Disable or enable an account. Disabling signs it out everywhere and blocks sign in.
+- Delete an account with all its years, movements and receipts. It asks twice and needs the email typed.
+
+Admins cannot disable or delete their own account, and nobody can become an admin from inside the app. Everyone else gets "Page not found" at `/admin`.
 
 ## Accountant package
 

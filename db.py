@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     verified_at TEXT,
-    email_sent_at TEXT
+    email_sent_at TEXT,
+    quota_bytes INTEGER,
+    disabled INTEGER NOT NULL DEFAULT 0,
+    last_login_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS years (
@@ -93,6 +96,11 @@ MIGRATIONS = [
                               "UPDATE users SET verified_at = created_at"]),
     # When the last email went to the account, to limit how often one can be sent.
     ("users", "email_sent_at", ["ALTER TABLE users ADD COLUMN email_sent_at TEXT"]),
+    # Admin page: a storage quota per account (NULL means USER_QUOTA_MB), disabled accounts
+    # (sign in refused) and the last sign in.
+    ("users", "quota_bytes", ["ALTER TABLE users ADD COLUMN quota_bytes INTEGER"]),
+    ("users", "disabled", ["ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0"]),
+    ("users", "last_login_at", ["ALTER TABLE users ADD COLUMN last_login_at TEXT"]),
 ]
 
 

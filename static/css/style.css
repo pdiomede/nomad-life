@@ -453,3 +453,16 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 @media (max-width: 319px) {
   .brand { font-size: 15px; }
 }
+
+/* Admin page */
+.admin-stats { margin-bottom: 20px; }
+.admin-list { list-style: none; margin: 0; padding: 0; }
+.admin-user { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 20px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.admin-user:last-child { border-bottom: 0; }
+.admin-user-main { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.admin-email { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.admin-email .pill { margin: 0; }
+.admin-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.admin-actions form { margin: 0; }
+.admin-quota { display: flex; align-items: center; gap: 6px; }
+.admin-quota input { width: 110px; }

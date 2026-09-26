@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.0] - 2026-09-26
+
+### Added
+
+- Admin page at `/admin` for the accounts listed in the new `ADMIN_EMAILS` setting, linked from the header and footer:
+  - totals for accounts, disabled accounts, custom quotas, receipt storage, years and movements;
+  - every account with sign up date, last sign in, number of years and storage used, 25 per page;
+  - a storage quota per account, or the `USER_QUOTA_MB` default;
+  - disable and enable accounts (a disabled account is signed out everywhere and cannot sign in);
+  - delete an account with all its data, after two confirmations and typing the email.
+- Admins cannot disable or delete themselves. Everyone else gets "Page not found" at `/admin`.
+- The last sign in date is recorded for each account.
+- Existing databases get the new account columns automatically on the next start.
+
+### Changed
+
+- The typed confirmation in the delete dialog ignores upper and lower case and shows the right keyboard on phones (numbers for a year, email for an account).
+
 ## [1.0.0] - 2026-09-26
 
 First stable release. Nomad Life now covers the full workflow it was built for: track every day of a solar year by country, keep the receipts that prove it, and hand your accountant one package with the summary, spreadsheets and files. From here on, versions follow semantic versioning.
