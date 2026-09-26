@@ -16,9 +16,10 @@ from flask import (Flask, Response, abort, flash, redirect, render_template, req
                    send_from_directory, session, url_for)
 from markupsafe import escape
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
-                         login_user, logout_user)
+                         login_url, login_user, logout_user)
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from werkzeug.routing import IntegerConverter
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
@@ -26,7 +27,7 @@ import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import send_email
 
-APP_VERSION = "0.0.9"
+APP_VERSION = "0.0.10"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -139,14 +140,43 @@ def mb_setting(name, default, legacy=None):
         raise SystemExit(f"config.env: {name} must be a number of megabytes (got '{raw}').")
     if not value > 0 or value != value or value == float("inf"):
         raise SystemExit(f"config.env: {name} must be greater than 0 (got '{raw}').")
-    return int(value * MB)
+    # Round up: int(1.2 * MB) is one byte short of 1.2 MB and would be shown as "1.1 MB".
+    return math.ceil(value * MB)
+
+
+def port_setting():
+    """APP_PORT from config.env; empty means the default, anything else must be a real port."""
+    raw = (os.getenv("APP_PORT") or "").strip() or "5050"
+    try:
+        port = int(raw)
+    except ValueError:
+        port = 0
+    if not 1 <= port <= 65535:
+        raise SystemExit(f"config.env: APP_PORT must be a number between 1 and 65535 (got '{raw}').")
+    return port
+
+
+class DbIntConverter(IntegerConverter):
+    """<int:...> URL parts larger than SQLite can store are a plain 404, not a 500."""
+    def __init__(self, url_map, *args, **kwargs):
+        kwargs.setdefault("max", 2 ** 63 - 1)
+        super().__init__(url_map, *args, **kwargs)
+
+
+def safe_next(value):
+    """Only same site paths are allowed after sign in. Browsers and URL parsers drop tabs and
+    newlines, so "/<tab>/evil.com" would become "//evil.com": refuse any control character."""
+    if (value.startswith("/") and not value.startswith("//") and "\\" not in value
+            and value.isprintable()):
+        return value
+    return None
 
 
 def create_app(overrides=None):
     app = Flask(__name__)
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY", "").strip(),
-        APP_PORT=int(os.getenv("APP_PORT", "5050")),
+        APP_PORT=port_setting(),
         APP_BASE_URL=os.getenv("APP_BASE_URL", ""),
         GMAIL_USER=os.getenv("GMAIL_USER", ""),
         GMAIL_APP_PASSWORD=os.getenv("GMAIL_APP_PASSWORD", "").replace(" ", ""),
@@ -161,6 +191,11 @@ def create_app(overrides=None):
         SEND_FILE_MAX_AGE_DEFAULT=timedelta(days=7),
         SESSION_COOKIE_NAME="nomadlife_session",
         REMEMBER_COOKIE_NAME="nomadlife_remember",
+        SESSION_COOKIE_SAMESITE="Lax",
+        REMEMBER_COOKIE_SAMESITE="Lax",
+        # Form tokens stay valid as long as the session, instead of expiring after an hour
+        # (which made "Sign out" on a page left open fail while the user stayed signed in).
+        WTF_CSRF_TIME_LIMIT=None,
     )
     if overrides:
         app.config.update(overrides)
@@ -178,11 +213,24 @@ def create_app(overrides=None):
     if not app.config["APP_BASE_URL"]:
         # Never build reset links from the request Host header.
         app.config["APP_BASE_URL"] = f"http://localhost:{app.config['APP_PORT']}"
+    if app.config["APP_BASE_URL"].lower().startswith("https://"):
+        # Served over HTTPS: never send the sign in cookies over plain HTTP.
+        app.config["SESSION_COOKIE_SECURE"] = app.config["REMEMBER_COOKIE_SECURE"] = True
+    app.url_map.converters["int"] = DbIntConverter
 
     CSRFProtect(app)
     login_manager = LoginManager(app)
     login_manager.login_view = "login"
     login_manager.login_message_category = "info"
+
+    @login_manager.unauthorized_handler
+    def unauthorized():
+        flash(login_manager.login_message, login_manager.login_message_category)
+        # The redirect after sign in is a GET, so a form post (Delete, Save, Sign out) must not
+        # become `next`: it would end on a "405 Method Not Allowed" page.
+        if request.method in ("GET", "HEAD"):
+            return redirect(login_url("login", next_url=request.url))
+        return redirect(url_for("login"))
 
     @login_manager.user_loader
     def load_user(session_id):
@@ -215,6 +263,11 @@ def create_app(overrides=None):
 
     @app.errorhandler(CSRFError)
     def csrf_error(_e):
+        if request.endpoint == "logout":
+            # Never leave someone signed in because the page they signed out from was stale.
+            logout_user()
+            flash("You have been signed out.", "info")
+            return redirect(url_for("login"))
         flash("Your session expired. Please try again.", "error")
         return redirect(request.referrer or url_for("index"))
 
@@ -299,8 +352,10 @@ def display_name(filename, limit=150):
     name = "".join(ch for ch in name if unicodedata.category(ch)[0] != "C")
     name = " ".join(name.split())
     if len(name) > limit:
+        # Keep a real extension; text after a dot in "Booking No. ..." is not one.
         ext = file_ext(name)
-        name = name[:limit - len(ext) - 1].rstrip() + "." + ext if ext else name[:limit]
+        name = (name[:limit - len(ext) - 1].rstrip() + "." + ext if ext in ALLOWED_EXTENSIONS
+                else name[:limit])
     return name or "file"
 
 
@@ -676,8 +731,9 @@ def compute_stats(year_row, movements):
     first, last = date(y, 1, 1), date(y, 12, 31)
     total = (last - first).days + 1
     base_name = normalize_country(year_row["base_country"])
-    base = base_name.casefold()
-    # Countries are compared case insensitively so "portugal" and "Portugal" are one country.
+    base = fold(base_name)
+    # Countries are compared like the country search: case, accents, apostrophes and Unicode
+    # forms are ignored, so "portugal", "Transnístria" and "Hawai’i" match their plain spelling.
     names = {base: base_name}
     assigned = {}
     assigned_mv = {}
@@ -685,7 +741,7 @@ def compute_stats(year_row, movements):
     # day the shorter stay wins, so a side trip is never hidden by the longer stay around it.
     for m in stay_order(movements):
         name = normalize_country(m["country"])
-        key = name.casefold()
+        key = fold(name)
         names.setdefault(key, name)
         d, end = parse_date(m["start_date"]), parse_date(m["end_date"])
         while d <= end:
@@ -766,14 +822,11 @@ def register_routes(app):
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
             if row and check_password_hash(row["password_hash"], request.form.get("password", "")):
                 login_user(User(row), remember=bool(request.form.get("remember")))
-                nxt = request.args.get("next", "")
-                return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//")
-                                else url_for("index"))
+                return redirect(safe_next(request.args.get("next", "")) or url_for("index"))
             flash("Invalid email or password.", "error")
         return render_template("auth/login.html")
 
     @app.route("/logout", methods=["POST"])
-    @login_required
     def logout():
         logout_user()
         flash("You have been signed out.", "info")
@@ -1064,7 +1117,9 @@ def register_routes(app):
     @login_required
     def document_edit(doc_id):
         doc = get_document_or_404(doc_id)
-        name = display_name(request.form.get("name", "").strip()) if request.form.get("name", "").strip() else ""
+        # A typed name is not a path: keep "Rent 03/2026" instead of dropping "Rent 03/".
+        typed = request.form.get("name", "").replace("/", "-").replace("\\", "-").strip()
+        name = display_name(typed) if typed else ""
         kind = request.form.get("kind", "")
         ext = file_ext(doc["stored_name"])
         if not name:

@@ -329,12 +329,14 @@
 
   // Share buttons: copy the landing page link, and use the device share sheet when available.
   document.querySelectorAll("[data-copy-link]").forEach(function (btn) {
+    // Read the label once: a second click within 2 s would otherwise keep "Link copied".
+    var label = btn.textContent, timer = null;
     btn.addEventListener("click", function () {
       var url = btn.getAttribute("data-copy-link");
       var done = function (ok) {
-        var label = btn.textContent;
         btn.textContent = ok ? "Link copied" : "Copy failed";
-        setTimeout(function () { btn.textContent = label; }, 2000);
+        clearTimeout(timer);
+        timer = setTimeout(function () { btn.textContent = label; }, 2000);
       };
       if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(url).then(function () { done(true); }, function () { done(false); });

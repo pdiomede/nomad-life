@@ -392,6 +392,18 @@ def pdf_safe(text, cjk=True):
                    for ch in str(text))
 
 
+# Total page count placeholder. The default "{nb}" would also replace that text in city or file
+# names; NUL is in no bundled font, so pdf_safe() turns it into "?" in user text.
+PAGE_COUNT = "\x00nb\x00"
+# A table row must fit on one page, so very long free text is shortened in the PDF (the CSV
+# files and the manifest keep the full text).
+MAX_CELL = 120
+
+
+def clip_cell(text):
+    return text if len(text) <= MAX_CELL else text[:MAX_CELL - 1].rstrip() + "\u2026"
+
+
 def render_pdf(data):
     from fpdf import FPDF
     from fpdf.fonts import FontFace
@@ -406,9 +418,10 @@ def render_pdf(data):
             self.set_font("DejaVu", size=7.5)
             self.set_text_color(*muted)
             self.cell(self.epw - 30, 5, DISCLAIMER)
-            self.cell(30, 5, f"Page {self.page_no()} of {{nb}}", align="R")
+            self.cell(30, 5, f"Page {self.page_no()} of {PAGE_COUNT}", align="R")
 
     pdf = SummaryPDF(format="A4")
+    pdf.alias_nb_pages(PAGE_COUNT)
     pdf.set_title(f"Nomad Life accountant package {data.period.label}")
     pdf.set_author("Nomad Life")
     pdf.set_creator(f"Nomad Life v{data.app_version}")
@@ -490,7 +503,7 @@ def render_pdf(data):
                 for values in content["rows"]:
                     row = table.row()
                     for value in values:
-                        row.cell(safe(value))
+                        row.cell(safe(clip_cell(value)))
             pdf.ln(1)
     return bytes(pdf.output())
 

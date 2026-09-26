@@ -44,16 +44,16 @@
           <label for="kind-new">Receipt type (optional)</label>
           <select id="kind-new" name="kind">
             {% for key, label in document_kinds.items() %}
-              <option value="{{ key }}" {% if key == 'accommodation' %}selected{% endif %}>{{ label }}</option>
+              <option value="{{ key }}" {% if key == (form.kind or 'accommodation') %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="field">
-          <label>Receipt file (optional, max {{ max_receipt_label }}, {{ storage.left | filesize('down') }} left)</label>
+          <label for="file-new">Receipt file (optional, max {{ max_receipt_label }}, {{ storage.left | filesize('down') }} left)</label>
           <label class="file-input">
-            <input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.heic,.webp" data-label="fname-new" {{ ui.size_attrs() }}{% if storage.left == 0 %} disabled{% endif %}>
+            <input type="file" id="file-new" name="file" accept=".pdf,.png,.jpg,.jpeg,.heic,.webp" data-label="fname-new" {{ ui.size_attrs() }}{% if storage.left == 0 %} disabled{% endif %}>
             <span class="btn btn-ghost btn-sm">Choose file</span>
-            <span class="muted small" id="fname-new">No file selected</span>
+            <span class="muted small" id="fname-new" role="status">No file selected</span>
           </label>
         </div>
       </div>

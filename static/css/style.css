@@ -201,7 +201,7 @@ input, select, textarea {
   font: inherit; color: var(--text); background: var(--input-bg); border: 1px solid var(--input-border);
   border-radius: 6px; padding: 9px 12px; width: 100%;
 }
-input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); outline-offset: -1px; border-color: transparent; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outline-offset: -1px; border-color: transparent; }
 .input-sm { width: 120px; }
 .hint { font-size: 12px; color: var(--muted); }
 .check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
@@ -209,7 +209,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .file-input { display: flex; align-items: center; gap: 10px; cursor: pointer; min-height: 40px; }
 .file-input input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.file-input:focus-within .btn { outline: 2px solid var(--accent-2); }
+.file-input:focus-within .btn { outline: 2px solid var(--link); }
 .file-error { color: var(--error-text); }
 
 /* Flash messages */
@@ -270,13 +270,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
 /* Table */
 .table-wrap { overflow-x: auto; margin: 0 -20px; }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 20px; border-bottom: 1px solid var(--border); }
-.table td { padding: 12px 20px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.table td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.table th:first-child, .table td:first-child { padding-left: 20px; }
+.table th:last-child, .table td:last-child { padding-right: 20px; }
 .table tr:last-child td { border-bottom: 0; }
 .table tr.current td { background: var(--info-bg); }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
-.table .dates { min-width: 12em; }
-.loc-link { color: var(--text); }
+.loc-link { color: var(--text); overflow-wrap: anywhere; }
 
 /* Pagination: square page numbers under the movements table */
 #movements { scroll-margin-top: 16px; }
@@ -332,7 +333,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18); }
 .combo-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: var(--text); }
 .combo-list li:hover { background: var(--surface-2); }
-.combo-list li[aria-selected="true"] { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+.combo-list li[aria-selected="true"] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--link), inset 0 0 0 1px var(--input-border); }
 .combo-list .flag { width: 22px; text-align: center; font-size: 18px; }
 .combo-empty:empty { display: none; }
 .combo-empty { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); padding: 10px 12px; font-size: 13px; color: var(--muted);
@@ -342,6 +343,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
 .confirm-dialog { width: min(440px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3); }
 .confirm-dialog::backdrop { background: rgba(15, 18, 30, 0.55); }
 .confirm-dialog h2 { font-size: 20px; margin: 0 0 8px; }
+.confirm-dialog h2, .confirm-dialog p { overflow-wrap: anywhere; }
 .confirm-dialog .field { margin-top: 14px; }
 .confirm-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 
@@ -414,8 +416,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
   .cta { padding: 22px; }
   .card { padding: 16px; }
   .table-wrap { margin: 0 -16px; }
-  .table th, .table td { padding: 10px 16px; }
-  .table .dates { min-width: 0; }
+  .table th, .table td { padding: 10px; }
+  .table th:first-child, .table td:first-child { padding-left: 16px; }
+  .table th:last-child, .table td:last-child { padding-right: 16px; }
+  .table th:nth-child(3), .table td:nth-child(3) { padding-right: 16px; }  /* Days is the last visible column */
   .pager { gap: 4px; }
   .pager a, .pager span { width: 32px; height: 32px; }
   .doc { flex-wrap: wrap; }

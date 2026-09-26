@@ -15,7 +15,8 @@ PY_CHECK='import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'
 PYTHON="${PYTHON:-python3}"
 command -v "$PYTHON" >/dev/null 2>&1 || fail "python3 not found. Please install Python 3.10 or newer."
 "$PYTHON" -c "$PY_CHECK" || fail "Python 3.10 or newer is required (found $("$PYTHON" -V 2>&1))."
-"$PYTHON" -c 'import venv' 2>/dev/null || fail "The Python venv module is missing (on Debian/Ubuntu: apt install python3-venv)."
+# Debian and Ubuntu ship venv without ensurepip, which venv needs to install pip.
+"$PYTHON" -c 'import venv, ensurepip' 2>/dev/null || fail "The Python venv module is missing (on Debian/Ubuntu: apt install python3-venv)."
 info "Using $("$PYTHON" -V 2>&1)"
 
 # 2. Configuration
@@ -29,14 +30,14 @@ fi
 
 # 3. Virtual environment and dependencies
 VENV_PY=".venv/bin/python"
-if [[ -d .venv ]] && ! "$VENV_PY" -c "$PY_CHECK" >/dev/null 2>&1; then
-  # e.g. the Python it was created with was upgraded or removed
+if [[ -d .venv ]] && { [[ ! -f .venv/bin/activate ]] || ! "$VENV_PY" -c "$PY_CHECK" >/dev/null 2>&1; }; then
+  # e.g. the Python it was created with was upgraded or removed, or creating it was interrupted
   warn "The virtual environment in .venv is broken or too old. Recreating it."
   rm -rf .venv
 fi
 if [[ ! -d .venv ]]; then
   info "Creating virtual environment in .venv"
-  "$PYTHON" -m venv .venv
+  "$PYTHON" -m venv .venv || { rm -rf .venv; fail "Could not create the virtual environment in .venv (on Debian/Ubuntu: apt install python3-venv)."; }
 fi
 # Always call the venv interpreter by path so we never fall back to the system Python.
 # shellcheck disable=SC1091
@@ -57,7 +58,8 @@ fi
 # 4. Port: read config.env with the same parser the app uses (handles export, quotes, comments)
 PORT="$("$VENV_PY" -c 'from dotenv import dotenv_values; print((dotenv_values("config.env").get("APP_PORT") or "").strip())')"
 PORT="${PORT:-5050}"
-[[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1 && PORT <= 65535 )) \
+# Read as base 10: bash treats a leading 0 as octal (0022 would pass as 18 and then free port 22).
+[[ "$PORT" =~ ^[0-9]{1,5}$ ]] && PORT=$((10#$PORT)) && (( PORT >= 1 && PORT <= 65535 )) \
   || fail "APP_PORT in config.env must be a number between 1 and 65535 (got '$PORT')."
 # config.env is the source of truth: override any APP_PORT already exported in the shell.
 export APP_PORT="$PORT"

@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.0.10] - 2026-09-26
+
+### Fixed
+
+- Security: a crafted sign in link with a tab in it (`/login?next=%2F%09%2Fevil.com`) sent you to another website after signing in. A newline in the same place showed an error page. Only pages of this app are accepted now.
+- Signing out from a page left open for more than an hour failed with "Your session expired" and left you signed in. Form tokens now last as long as your session, and signing out always signs you out.
+- After your session ended, pressing Delete, Save or Sign out and then signing in again ended on a bare "Method Not Allowed" page. You now land on your dashboard.
+- Very large numbers in a year, movement or document address showed a server error instead of "Page not found".
+- When `APP_BASE_URL` starts with `https://`, the sign in cookies are now marked Secure (never sent over plain HTTP) and SameSite=Lax.
+- An empty or invalid `APP_PORT` crashed the app with a Python traceback when it was started without `runWebApp.sh`. Empty now means 5050, and anything else gets a clear message.
+- `runWebApp.sh`: a virtual environment left half created (for example on Ubuntu without `python3-venv`, or after pressing Ctrl+C) made every later run fail. It is now detected and rebuilt, and a failed creation cleans up after itself.
+- `runWebApp.sh`: an `APP_PORT` with leading zeros was read as an octal number, so `0022` passed the checks and could stop whatever listens on port 22. Ports are now always read as decimal.
+- Day counts: country names that differ only by accents, a curly apostrophe or Unicode form (for example "Transnístria" and "Transnistria") were counted as two countries, even for the base country. They now count as one.
+- Accountant package: a very long city or country name made the download fail. Long names are shortened in the PDF tables; the spreadsheets keep them in full.
+- Accountant package PDF: the text "{nb}" in a city or file name was replaced by the page count, so the receipt index could name a file that was not in the ZIP.
+- Renaming a document to something with a slash, such as "Rent 03/2026", silently dropped everything before the slash.
+- Decimal sizes in `config.env` (for example `MAX_RECEIPT_MB=1.2`) were shown 0.1 MB too small.
+- The storage card could say "30 MB used of 30 MB" next to "40 KB left". Used space is no longer rounded up.
+- New movement: the receipt type went back to "Hotel / home rent" after a date error.
+- File pickers now tell screen readers the allowed types, the size limit and the space left, and announce the chosen file or why it was rejected.
+- Delete dialog: long file names ran off the edge of the dialog and could not be read.
+- Movements table: at some widths (around 1000 px, around 620 px, and on phones when a stay showed "counted" days) the Delete buttons or the Days column were cut off. Very long place names now wrap too.
+- "Copy link" on the landing page could stay stuck on "Link copied" after two quick clicks.
+- Keyboard focus on text fields and the highlighted country in the country picker were too faint to see in the light theme.
+
 ## [0.0.9] - 2026-09-26
 
 ### Added

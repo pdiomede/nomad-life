@@ -68,7 +68,7 @@
             <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"><strong>{{ m.city }}</strong></a><div class="muted small">{{ ui.flag(m.country) }}{{ m.country }}</div></td>
             {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
             {% set counted = stats.counted.get(m.id, 0) %}
-            <td class="num">{{ length }}{% if counted != length %}<div class="muted small nowrap" title="Days shared with another stay count toward the stay that started later">{{ counted }} counted</div>{% endif %}</td>
+            <td class="num">{{ length }}{% if counted != length %}<div class="muted small" title="Days shared with another stay count toward the stay that started later">{{ counted }} counted</div>{% endif %}</td>
             <td class="num hide-sm">{{ m.doc_count }}</td>
             <td class="right hide-sm">
               <div class="row-actions">
@@ -124,10 +124,10 @@
     </div>
     <p class="stat-value">{{ storage.left | filesize('down') }} <span class="muted stat-of">left</span></p>
     <div class="meter {% if storage.over or storage.low %}meter-hot{% endif %}" role="img"
-         aria-label="{{ storage.used | filesize }} used of {{ storage.quota | filesize }}">
+         aria-label="{{ storage.used | filesize('down') }} used of {{ storage.quota | filesize('down') }}">
       <span style="width: {{ storage.pct }}%"></span>
     </div>
-    <p class="muted small">{{ storage.used | filesize }} used of {{ storage.quota | filesize('down') }} across all years. Max {{ max_receipt_label }} per receipt.</p>
+    <p class="muted small">{{ storage.used | filesize('down') }} used of {{ storage.quota | filesize('down') }} across all years. Max {{ max_receipt_label }} per receipt.</p>
   </section>
 
   <section class="card">
