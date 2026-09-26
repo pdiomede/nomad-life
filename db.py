@@ -53,6 +53,16 @@ CREATE TABLE IF NOT EXISTS documents (
     uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Failed sign ins and password reset requests, to slow down password guessing and email
+-- flooding. key is "email:<address>" or "ip:<address>". Old rows are pruned as they expire.
+CREATE TABLE IF NOT EXISTS auth_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_auth_events ON auth_events(kind, key, created_at);
+
 CREATE INDEX IF NOT EXISTS idx_movements_year ON movements(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_year ON documents(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_movement ON documents(movement_id);

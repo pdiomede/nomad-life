@@ -20,6 +20,7 @@ from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_url, login_user, logout_user)
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.routing import IntegerConverter
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -28,7 +29,7 @@ import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -73,7 +74,8 @@ SEO_TITLE = "Digital nomad day tracker and receipt vault | Nomad Life"
 SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and keep rental contracts, "
                    "hotel bills and flight tickets in one place. Free for digital nomads.")
 # Paths that need an account. Kept out of search engines via robots.txt.
-PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin"]
+PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin",
+                 "/account"]
 ADMIN_USERS_PER_PAGE = 25
 MAX_QUOTA_MB = 1024 * 1024  # 1 TB, a sanity cap for quotas typed on the admin page
 RESET_TOKEN_MAX_AGE = 3600
@@ -83,6 +85,12 @@ PURGE_EVERY_SECONDS = 60
 # At most one email per account in this time, so sign up, sign in or "forgot password" cannot
 # be used to flood someone's inbox (and get the Gmail account blocked for spam).
 EMAIL_COOLDOWN_SECONDS = 60
+# Password guessing limits: failed sign ins (or wrong current passwords on the account page)
+# within LIMIT_WINDOW_MINUTES, per account and per IP address, and password reset requests
+# per IP address.
+LIMIT_WINDOW_MINUTES = 15
+LIMITS = {("fail", "email"): 5, ("fail", "ip"): 20, ("forgot", "ip"): 5}
+EMAIL_CHANGE_MAX_AGE = 3600
 
 # config.env is the source of truth, as the README says: it overrides variables that happen to
 # be exported in the shell (SECRET_KEY or DATABASE_PATH from another project, for example).
@@ -163,6 +171,13 @@ def mb_setting(name, default, legacy=None):
     return math.ceil(value * MB)
 
 
+def proxy_count():
+    raw = (os.getenv("PROXY_COUNT") or "").strip() or "0"
+    if not raw.isdigit() or int(raw) > 10:
+        raise SystemExit(f"config.env: PROXY_COUNT must be a number from 0 to 10 (got '{raw}').")
+    return int(raw)
+
+
 def admin_emails(raw):
     return frozenset(e.strip().lower() for e in raw.replace(";", ",").split(",") if e.strip())
 
@@ -204,6 +219,9 @@ def create_app(overrides=None):
         GMAIL_USER=os.getenv("GMAIL_USER", ""),
         # Accounts that may open /admin. Only config.env can grant it, never the app itself.
         ADMIN_EMAILS=admin_emails(os.getenv("ADMIN_EMAILS", "")),
+        # Reverse proxies in front of the app (0 when it is reached directly). The sign in
+        # limits per IP address need the visitor's address, not the proxy's.
+        PROXY_COUNT=proxy_count(),
         GMAIL_APP_PASSWORD=os.getenv("GMAIL_APP_PASSWORD", "").replace(" ", ""),
         DATABASE_PATH=_abs(os.getenv("DATABASE_PATH", "data/nomad.db")),
         UPLOAD_DIR=_abs(os.getenv("UPLOAD_DIR", "uploads")),
@@ -244,6 +262,9 @@ def create_app(overrides=None):
         # Served over HTTPS: never send the sign in cookies over plain HTTP.
         app.config["SESSION_COOKIE_SECURE"] = app.config["REMEMBER_COOKIE_SECURE"] = True
     app.url_map.converters["int"] = DbIntConverter
+    if app.config["PROXY_COUNT"]:
+        n = app.config["PROXY_COUNT"]
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n, x_host=n)
 
     CSRFProtect(app)
     login_manager = LoginManager(app)
@@ -357,6 +378,43 @@ def email_allowed(user_id):
                            "(email_sent_at IS NULL OR email_sent_at <= datetime('now', ?))",
                            (user_id, f"-{EMAIL_COOLDOWN_SECONDS} seconds"))
         return cur.rowcount == 1
+
+
+def client_ip():
+    return request.remote_addr or "unknown"
+
+
+def limit_keys(kind, email=None):
+    keys = [("ip", f"ip:{client_ip()}")]
+    if email:
+        keys.append(("email", f"email:{email}"))
+    return [(scope, key) for scope, key in keys if (kind, scope) in LIMITS]
+
+
+def limited_for(kind, email=None):
+    """Minutes to wait before another try, or 0 when the limits allow it."""
+    window = f"-{LIMIT_WINDOW_MINUTES} minutes"
+    db.execute("DELETE FROM auth_events WHERE created_at <= datetime('now', ?)", (window,))
+    wait = 0
+    for scope, key in limit_keys(kind, email):
+        rows = db.query("SELECT created_at FROM auth_events WHERE kind = ? AND key = ? "
+                        "ORDER BY created_at DESC LIMIT ?", (kind, key, LIMITS[(kind, scope)]))
+        if len(rows) >= LIMITS[(kind, scope)]:
+            # Free again when the oldest of the last N events leaves the window.
+            oldest = datetime.strptime(rows[-1]["created_at"], "%Y-%m-%d %H:%M:%S")
+            free_at = oldest.replace(tzinfo=timezone.utc) + timedelta(minutes=LIMIT_WINDOW_MINUTES)
+            left = (free_at - datetime.now(timezone.utc)).total_seconds()
+            wait = max(wait, max(math.ceil(left / 60), 1))
+    return wait
+
+
+def record_event(kind, email=None):
+    for _scope, key in limit_keys(kind, email):
+        db.execute("INSERT INTO auth_events (kind, key) VALUES (?, ?)", (kind, key))
+
+
+def clear_failures(email):
+    db.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key = ?", (f"email:{email}",))
 
 
 def plural(n, word):
@@ -610,6 +668,19 @@ class QuotaExceeded(Exception):
     def __init__(self, left):
         super().__init__(left)
         self.left = left
+
+
+def delete_account(user_id):
+    """Delete an account with all its years, movements and documents, then its files."""
+    from flask import current_app
+    with db.transaction() as conn:  # list and delete together, see the year delete
+        docs = conn.execute("SELECT * FROM documents WHERE user_id = ?", (user_id,)).fetchall()
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    remove_files(docs)
+    try:
+        os.rmdir(os.path.join(current_app.config["UPLOAD_DIR"], str(user_id)))
+    except OSError:
+        pass  # missing, or holds files no row points to: leave them for the operator
 
 
 def remove_files(rows):
@@ -991,8 +1062,14 @@ def register_routes(app):
         if request.method == "POST":
             purge_unverified()
             email = request.form.get("email", "").strip().lower()
+            wait = limited_for("fail", email)
+            if wait:
+                flash(f"Too many failed sign in attempts. Please wait {plural(wait, 'minute')} "
+                      "and try again, or reset your password.", "error")
+                return render_template("auth/login.html"), 429
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
             if row and check_password_hash(row["password_hash"], request.form.get("password", "")):
+                clear_failures(email)
                 if row["verified_at"] is None:
                     if not email_allowed(row["id"]):
                         flash(f"Please confirm your email first, with the link we sent to {email} "
@@ -1011,6 +1088,7 @@ def register_routes(app):
                            (row["id"],))
                 login_user(User(row), remember=bool(request.form.get("remember")))
                 return redirect(safe_next(request.args.get("next", "")) or url_for("index"))
+            record_event("fail", email)
             flash("Invalid email or password.", "error")
         return render_template("auth/login.html")
 
@@ -1025,6 +1103,12 @@ def register_routes(app):
         if request.method == "POST":
             purge_unverified()
             email = request.form.get("email", "").strip().lower()
+            wait = limited_for("forgot")
+            if wait:
+                flash(f"Too many reset requests from this network. Please wait "
+                      f"{plural(wait, 'minute')} and try again.", "error")
+                return render_template("auth/forgot.html"), 429
+            record_event("forgot")
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
             if row and email_allowed(row["id"]):
                 token = serializer().dumps(
@@ -1263,6 +1347,119 @@ def register_routes(app):
                                docs=documents_for(year_row["id"], movement_id),
                                back_url=back_to_movement(year_row, movement_id))
 
+    # --- account ---
+
+    def check_current_password(row):
+        """Wrong current passwords count as failed sign ins, so the account page cannot be
+        used to guess a password either. Returns an error message or None."""
+        wait = limited_for("fail", row["email"])
+        if wait:
+            return (f"Too many wrong passwords. Please wait {plural(wait, 'minute')} and try "
+                    "again.")
+        if not check_password_hash(row["password_hash"], request.form.get("current_password", "")):
+            record_event("fail", row["email"])
+            return "Your current password is not correct."
+        clear_failures(row["email"])
+        return None
+
+    @app.route("/account", methods=["GET", "POST"])
+    @login_required
+    def account():
+        row = db.query("SELECT * FROM users WHERE id = ?", (current_user.id,), one=True)
+        if request.method == "POST":
+            action = request.form.get("action")
+            err = check_current_password(row)
+            if action == "password":
+                password = request.form.get("password", "")
+                if err:
+                    flash(err, "error")
+                elif len(password) < 8:
+                    flash("Password must be at least 8 characters.", "error")
+                elif password != request.form.get("confirm", ""):
+                    flash("Passwords do not match.", "error")
+                elif check_password_hash(row["password_hash"], password):
+                    flash("The new password is the same as the current one.", "error")
+                else:
+                    db.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                               (generate_password_hash(password), row["id"]))
+                    # The new password changes the session fingerprint: stay signed in here,
+                    # every other browser and remember cookie is signed out.
+                    remember = app.config["REMEMBER_COOKIE_NAME"] in request.cookies
+                    login_user(User(db.query("SELECT * FROM users WHERE id = ?", (row["id"],),
+                                             one=True)), remember=remember)
+                    flash("Your password has been changed. Other devices have been signed out.",
+                          "success")
+            elif action == "email":
+                new = request.form.get("email", "").strip().lower()
+                if err:
+                    flash(err, "error")
+                elif not valid_email(new):
+                    flash("Please enter a valid email address.", "error")
+                elif new == row["email"]:
+                    flash("That is already your email address.", "error")
+                elif db.query("SELECT 1 FROM users WHERE email = ?", (new,), one=True):
+                    flash("Another account already uses this email address.", "error")
+                elif not email_allowed(row["id"]):
+                    flash("We just sent you an email. Please wait a minute and try again.", "info")
+                else:
+                    token = serializer("email-change").dumps(
+                        {"uid": row["id"], "email": new,
+                         "h": password_fingerprint(row["password_hash"])})
+                    if send_template_email(new, "Confirm your new Nomad Life email", "change_email",
+                                           link=email_link("confirm_email", token=token),
+                                           old_email=row["email"],
+                                           hours=EMAIL_CHANGE_MAX_AGE // 3600):
+                        flash(f"We sent a confirmation link to {new}. Your email changes when you "
+                              "open it.", "info")
+                    else:
+                        flash("We could not send the confirmation email. Please try again later.",
+                              "error")
+            elif action == "delete":
+                if not delete_confirmed():
+                    pass
+                elif request.form.get("confirm_email", "").strip().lower() != row["email"]:
+                    flash("Type your email address to confirm the deletion.", "error")
+                elif err:
+                    flash(err, "error")
+                else:
+                    delete_account(row["id"])
+                    logout_user()
+                    flash("Your account and all its data have been deleted.", "info")
+                    return redirect(url_for("landing"))
+            return redirect(url_for("account"))
+        storage = storage_summary(row["id"])
+        counts = db.query("SELECT (SELECT COUNT(*) FROM years WHERE user_id = ?) AS years, "
+                          "(SELECT COUNT(*) FROM documents WHERE user_id = ?) AS documents",
+                          (row["id"], row["id"]), one=True)
+        return render_template("account.html", row=row, counts=counts, account_storage=storage)
+
+    @app.route("/account/email/<token>")
+    def confirm_email(token):
+        try:
+            data = serializer("email-change").loads(token, max_age=EMAIL_CHANGE_MAX_AGE)
+        except SignatureExpired:
+            flash("This link has expired. Please ask for the email change again.", "error")
+            return redirect(url_for("account"))
+        except BadSignature:
+            flash("This link is not valid.", "error")
+            return redirect(url_for("account"))
+        row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
+        # A password change after the request makes the link stale, like a reset link.
+        if not row or password_fingerprint(row["password_hash"]) != data.get("h"):
+            flash("This link is no longer valid. Please ask for the email change again.", "error")
+            return redirect(url_for("account"))
+        new = data.get("email", "")
+        if row["email"] == new:
+            flash("Your email address is already updated.", "info")
+        else:
+            try:
+                db.execute("UPDATE users SET email = ? WHERE id = ?", (new, row["id"]))
+            except db.IntegrityError:
+                flash("Another account started using this email address in the meantime.", "error")
+                return redirect(url_for("account"))
+            flash(f"Your email address is now {new}.", "success")
+        return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+
     # --- admin ---
 
     def require_admin():
@@ -1348,15 +1545,7 @@ def register_routes(app):
             elif request.form.get("confirm_email", "").strip().lower() != email:
                 flash("Type the email address to confirm the deletion.", "error")
             else:
-                with db.transaction() as conn:  # list and delete together, see the year delete
-                    docs = conn.execute("SELECT * FROM documents WHERE user_id = ?",
-                                        (user_id,)).fetchall()
-                    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-                remove_files(docs)
-                try:
-                    os.rmdir(os.path.join(app.config["UPLOAD_DIR"], str(user_id)))
-                except OSError:
-                    pass  # missing, or holds files no row points to: leave them for the operator
+                delete_account(user_id)
                 flash(f"The account {email} and all its data were deleted.", "info")
         return redirect(back)
 

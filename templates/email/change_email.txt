@@ -1,0 +1,10 @@
+Hi,
+
+You asked to use {{ email }} for your Nomad Life account instead of {{ old_email }}. Open the link below to confirm the new address. It expires in {{ hours }} hour{{ "s" if hours != 1 }}.
+
+{{ link }}
+
+Until you confirm, you keep signing in with {{ old_email }}. If you did not ask for this, you can ignore this email.
+
+Nomad Life
+{{ site_url }}

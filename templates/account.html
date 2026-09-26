@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Account | Nomad Life{% endblock %}
+{% block content %}
+<div class="narrow">
+  <a class="back" href="{{ url_for('index') }}">&larr; Back to my years</a>
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Account</p>
+      <h1>{{ row.email }}</h1>
+      <p class="muted">Member since {{ row.created_at | localdate }} &middot; {{ counts.years }} year{{ '' if counts.years == 1 else 's' }} &middot; {{ counts.documents }} document{{ '' if counts.documents == 1 else 's' }} &middot; {{ account_storage.used | filesize('down') }} used of {{ account_storage.quota | filesize('down') }}</p>
+    </div>
+  </div>
+
+  <section class="card" aria-labelledby="pw-title">
+    <div class="card-head"><h2 id="pw-title">Change password</h2></div>
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="password">
+      <div class="field">
+        <label for="pw-current">Current password</label>
+        <input id="pw-current" name="current_password" type="password" autocomplete="current-password" required>
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <label for="pw-new">New password</label>
+          <input id="pw-new" name="password" type="password" autocomplete="new-password" minlength="8" required aria-describedby="pw-hint">
+          <span class="hint" id="pw-hint">At least 8 characters.</span>
+        </div>
+        <div class="field">
+          <label for="pw-confirm">Confirm new password</label>
+          <input id="pw-confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" required>
+        </div>
+      </div>
+      <p class="muted small">You stay signed in here. Every other device is signed out.</p>
+      <div><button class="btn btn-primary" type="submit">Change password</button></div>
+    </form>
+  </section>
+
+  <section class="card" aria-labelledby="email-title">
+    <div class="card-head"><h2 id="email-title">Change email</h2></div>
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="email">
+      <div class="grid-2">
+        <div class="field">
+          <label for="new-email">New email</label>
+          <input id="new-email" name="email" type="email" autocomplete="email" required>
+        </div>
+        <div class="field">
+          <label for="email-current">Current password</label>
+          <input id="email-current" name="current_password" type="password" autocomplete="current-password" required>
+        </div>
+      </div>
+      <p class="muted small">We send a confirmation link to the new address. Your email changes when you open it.</p>
+      <div><button class="btn btn-primary" type="submit">Send confirmation link</button></div>
+    </form>
+  </section>
+
+  <section class="card danger-zone" aria-labelledby="delete-title">
+    <h2 id="delete-title">Delete my account</h2>
+    <p class="muted small">Permanently removes your account, every year, movement and receipt. You will confirm twice and type your email.</p>
+    <form method="post" class="stack" data-confirm-delete="your account with all its years, movements and receipts" data-confirm-type="{{ row.email }}" data-confirm-field="confirm_email">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="delete">
+      <input type="hidden" name="confirm_email" value="">
+      <input type="hidden" name="confirm_delete" value="">
+      <div class="field">
+        <label for="delete-current">Current password</label>
+        <input id="delete-current" name="current_password" type="password" autocomplete="current-password" required>
+      </div>
+      <div><button class="btn btn-danger" type="submit">Delete my account</button></div>
+    </form>
+  </section>
+</div>
+{% endblock %}

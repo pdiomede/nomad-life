@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.1.0**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.0**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -17,6 +17,8 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Edit or delete every entry: years, movements and documents. Deleting always asks twice.
 - Accountant package: one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.
 - Upload receipts per movement (hotel or home rent, flight tickets) and documents for the base (rental contract).
+- Account page: change your password or email, or delete your account with all its data.
+- Protection against password guessing: failed sign ins and reset requests are limited.
 - Admin page for the operator: accounts, storage, per account quotas, disable or delete accounts.
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
 - Days per country for the year, with a 183 day indicator. Days without a stay count toward the base country once they have passed; logged stays count in full, also future ones.
@@ -49,8 +51,19 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | `MAX_RECEIPT_MB` | Max size of a single receipt in MB. Default `10`. Older configs using `MAX_UPLOAD_MB` still work. |
 | `USER_QUOTA_MB` | Total receipt storage per user in MB, across all years. Default `500`. An admin can set a different quota per account. |
 | `ADMIN_EMAILS` | Comma separated emails of the accounts that can open the admin page. Empty by default. |
+| `PROXY_COUNT` | Reverse proxies in front of the app, so sign in limits see each visitor's address. Default `0`; use `1` behind nginx or Caddy. |
 
 To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, confirmation and reset links are printed in the terminal.
+
+## Account and sign in protection
+
+Click your email in the header (or **Account** in the footer) to:
+
+- Change your password. You stay signed in on this device; every other device is signed out.
+- Change your email. A confirmation link goes to the new address, and the change happens when it is opened.
+- Delete your account with all years, movements and receipts. It asks for your password, asks twice and needs your email typed.
+
+Password guessing is slowed down. After 5 failed sign ins for one account, or 20 from one network, within 15 minutes, sign in waits until the oldest attempt is 15 minutes old. Wrong current passwords on the account page count the same way. Password reset requests are limited to 5 per network per 15 minutes, on top of one email per account per minute. Behind a reverse proxy, set `PROXY_COUNT=1`.
 
 ## Admin page
 

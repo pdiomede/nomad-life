@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.0] - 2026-09-26
+
+### Added
+
+- Account page, opened from your email in the header or **Account** in the footer:
+  - change your password with your current one; you stay signed in here and every other device is signed out;
+  - change your email: a confirmation link goes to the new address and the change happens when you open it (the link stops working if you change your password first);
+  - delete your account with all years, movements and receipts, with your password, two confirmations and your email typed.
+- Protection against password guessing:
+  - after 5 failed sign ins for an account, or 20 from one network, within 15 minutes, signing in waits (even with the right password) and says for how long;
+  - wrong current passwords on the account page count the same way;
+  - password reset requests are limited to 5 per network per 15 minutes.
+- `PROXY_COUNT` setting so the limits see each visitor's address behind a reverse proxy.
+
 ## [1.1.0] - 2026-09-26
 
 ### Added

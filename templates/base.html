@@ -53,7 +53,7 @@
       <nav class="topnav">
         {% block topnav %}
         {% if current_user.is_authenticated %}
-          <span class="muted small hide-sm topnav-email" title="{{ current_user.email }}">{{ current_user.email }}</span>
+          <a class="muted small hide-sm topnav-email" href="{{ url_for('account') }}" title="Account settings for {{ current_user.email }}">{{ current_user.email }}</a>
           {% if current_user.is_admin %}<a class="btn btn-ghost btn-sm hide-sm" href="{{ url_for('admin') }}">Admin</a>{% endif %}
           <form method="post" action="{{ url_for('logout') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -86,7 +86,7 @@
 
   <footer class="footer">
     <div class="container footer-inner">
-      <span>Nomad Life v{{ app_version }} <span class="muted hide-sm">&middot; Track your year. Keep your receipts.</span>{% if current_user.is_authenticated and current_user.is_admin %} &middot; <a href="{{ url_for('admin') }}">Admin</a>{% endif %}</span>
+      <span>Nomad Life v{{ app_version }} <span class="muted hide-sm">&middot; Track your year. Keep your receipts.</span>{% if current_user.is_authenticated %} &middot; <a href="{{ url_for('account') }}">Account</a>{% if current_user.is_admin %} &middot; <a href="{{ url_for('admin') }}">Admin</a>{% endif %}{% endif %}</span>
       <span class="muted">&copy; 2026 Built by <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a></span>
     </div>
   </footer>

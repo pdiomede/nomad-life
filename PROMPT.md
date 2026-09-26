@@ -20,7 +20,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 
 | File | Role |
 | --- | --- |
-| `app.py` | Flask app factory, config (`config.env`), auth (sign up, email confirmation `verify` and `purge_unverified`, email cooldown `email_allowed`, sign in, password reset tokens, session fingerprint, `send_template_email`), years, movements, movements pagination (`paginate`, `page_window`, `page_size`, `dashboard_url`, `back_to_movement`), day math (`compute_stats`, `stay_order`, `overlap_notes`), uploads (`save_upload`, per receipt limit, per user quota), downloads, accountant package route (`year_package`, `build_package_data`, `can_download_package`), landing, robots.txt, sitemap.xml, SEO and share metadata (`site_meta`), 404 handler, admin page (`admin`, `admin_user`, `ADMIN_EMAILS`, `user_quota`) |
+| `app.py` | Flask app factory, config (`config.env`), auth (sign up, email confirmation `verify` and `purge_unverified`, email cooldown `email_allowed`, sign in, password reset tokens, session fingerprint, `send_template_email`), years, movements, movements pagination (`paginate`, `page_window`, `page_size`, `dashboard_url`, `back_to_movement`), day math (`compute_stats`, `stay_order`, `overlap_notes`), uploads (`save_upload`, per receipt limit, per user quota), downloads, accountant package route (`year_package`, `build_package_data`, `can_download_package`), landing, robots.txt, sitemap.xml, SEO and share metadata (`site_meta`), 404 handler, admin page (`admin`, `admin_user`, `ADMIN_EMAILS`, `user_quota`), account page (`account`, `confirm_email`, `delete_account`), sign in limits (`limited_for`, `record_event`, `auth_events` table, `PROXY_COUNT`) |
 | `package.py` | Annual accountant package: summary model, PDF (fpdf2), CSV with formula protection, safe ZIP paths, streaming ZIP with manifest and checksums |
 | `tests/` | `unittest` suite (`python -m unittest`), helpers with an isolated app per test |
 | `db.py` | SQLite schema, `MIGRATIONS` applied by `migrate()` on start, per request connection, `query`, `execute`, `transaction` (BEGIN IMMEDIATE) |
@@ -32,6 +32,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 | `templates/landing.html` | Public landing page, JSON-LD, share buttons |
 | `templates/dashboard.html` | Year dashboard: stats, movements table, storage card, days per country |
 | `templates/admin.html` | Admin page: totals, accounts, quota, disable and delete forms |
+| `templates/account.html`, `templates/email/change_email.*` | Account page (password, email, delete) and the email change confirmation |
 | `templates/movement.html`, `base_location.html`, `year_new.html` | Forms for movements, base location and documents, new year |
 | `templates/_macros.html`, `_theme_toggle.html`, `_countries.html` | Upload form, document list, delete form, square page links (`pagination`), theme toggle, country data |
 | `templates/auth/*.html` | Sign in, sign up, forgot and reset password |
