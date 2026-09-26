@@ -119,10 +119,10 @@ p { margin: 0; }
 /* Top bar */
 .topbar { background: var(--topbar); color: var(--topbar-text); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
 .topbar-inner { display: flex; align-items: center; justify-content: space-between; height: 60px; }
-.brand { display: flex; align-items: center; gap: 10px; color: var(--topbar-text); font-weight: 700; font-size: 17px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--topbar-text); font-family: "Outfit", "Inter", system-ui, sans-serif; font-weight: 700; font-size: 20px; letter-spacing: -0.01em; }
 .brand:hover { text-decoration: none; }
-.brand-mark { width: 26px; height: 26px; border-radius: 50%; background: var(--gradient); display: inline-block; flex: none; }
-.brand-mark.lg { width: 44px; height: 44px; }
+.brand-logo { display: block; flex: none; width: 25px; height: 30px; }
+.brand-logo.lg { width: 47px; height: 56px; margin: 0 auto; }
 .topnav { display: flex; align-items: center; gap: 10px; }
 .topnav form { margin: 0; }
 .topbar .btn-ghost { color: var(--topbar-text); border-color: rgba(255, 255, 255, 0.2); }
