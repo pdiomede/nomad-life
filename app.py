@@ -27,7 +27,7 @@ import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import send_email
 
-APP_VERSION = "0.0.10"
+APP_VERSION = "0.0.11"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -59,6 +59,7 @@ DOCUMENT_KINDS = OrderedDict([
     ("other", "Other"),
 ])
 RESIDENCE_THRESHOLD = 183
+NOTES_MAX = 5000
 MOVEMENTS_PER_PAGE = 10
 PER_PAGE_OPTIONS = (10, 25, 50)
 SITE_TITLE = "Nomad Life | Every day. Every place."
@@ -73,11 +74,14 @@ SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and 
 PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/"]
 RESET_TOKEN_MAX_AGE = 3600
 
-load_dotenv(os.path.join(BASE_DIR, "config.env"))
+# config.env is the source of truth, as the README says: it overrides variables that happen to
+# be exported in the shell (SECRET_KEY or DATABASE_PATH from another project, for example).
+load_dotenv(os.path.join(BASE_DIR, "config.env"), override=True)
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 def _abs(path):
+    path = os.path.expanduser(path)  # "~/NomadReceipts" is the home folder, not a folder named ~
     return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
 
 
@@ -257,8 +261,9 @@ def create_app(overrides=None):
 
     @app.errorhandler(413)
     def too_large(_e):
-        flash(f"The file is larger than the {format_size(app.config['MAX_RECEIPT_BYTES'], 'down')} "
-              "limit per receipt.", "error")
+        # Also raised for oversized text fields, so do not claim a file was sent.
+        flash(f"This form was too large to save. Receipts can be at most "
+              f"{format_size(app.config['MAX_RECEIPT_BYTES'], 'down')} each.", "error")
         return redirect(request.referrer or url_for("index"))
 
     @app.errorhandler(CSRFError)
@@ -484,6 +489,9 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
     except QuotaExceeded as exc:
         os.remove(path)
         return quota_message(name, size, exc.left, quota)
+    except db.IntegrityError:
+        os.remove(path)  # the stay or year was deleted while the file was uploading
+        return "This stay or year no longer exists, so the file was not saved."
     except BaseException:
         os.remove(path)  # no orphan file when the row could not be saved
         raise
@@ -541,6 +549,8 @@ def validate_movement(form, year):
         return None, "The end date must be on or after the start date."
     if start.year != year or end.year != year:
         return None, f"Dates must fall within {year}."
+    if len(form.get("notes", "").strip()) > NOTES_MAX:
+        return None, f"Notes can be at most {NOTES_MAX} characters."
     return {"city": city, "country": country, "start_date": start.isoformat(),
             "end_date": end.isoformat(), "notes": form.get("notes", "").strip()}, None
 
@@ -575,8 +585,9 @@ def overlap_notes(year_id, data, exclude_id=None):
 def flash_overlaps(year_id, data, movement_id):
     notes = overlap_notes(year_id, data, movement_id)
     if notes:
-        flash("This stay overlaps " + "; ".join(notes) + ". Shared days count toward the stay "
-              "that started later, so check the dates if that is not intended.", "info")
+        flash("This stay overlaps " + "; ".join(notes) + ". A shared day counts toward the stay "
+              "that started later (on the same start day, the shorter stay; with identical dates, "
+              "the newest), so check the dates if that is not intended.", "info")
 
 
 def to_int(value, default):
@@ -968,6 +979,8 @@ def register_routes(app):
                 country = normalize_country(request.form.get("base_country", ""))
                 if not city or not country:
                     flash("Base city and country are required.", "error")
+                    return render_template("base_location.html", y=year_row, form=request.form,
+                                           docs=documents_for(year_row["id"]))
                 else:
                     db.execute("UPDATE years SET base_city = ?, base_country = ? WHERE id = ?",
                                (city, country, year_row["id"]))
@@ -982,9 +995,12 @@ def register_routes(app):
                 elif request.form.get("confirm_year", "").strip() != str(year):
                     flash("Type the year to confirm deletion.", "error")
                 else:
-                    docs = db.query("SELECT * FROM documents WHERE year_id = ?",
-                                    (year_row["id"],))
-                    db.execute("DELETE FROM years WHERE id = ?", (year_row["id"],))
+                    # List and delete under one write lock, so an upload finishing in
+                    # between cannot leave a file that no row points to.
+                    with db.transaction() as conn:
+                        docs = conn.execute("SELECT * FROM documents WHERE year_id = ?",
+                                            (year_row["id"],)).fetchall()
+                        conn.execute("DELETE FROM years WHERE id = ?", (year_row["id"],))
                     remove_files(docs)
                     flash(f"Year {year} deleted.", "info")
                     return redirect(url_for("index"))
@@ -1049,8 +1065,10 @@ def register_routes(app):
                 per_page = page_size()
                 page = to_int(request.form.get("page"), 0) or movement_page(
                     year_row["id"], movement_id, per_page)
-                docs = documents_for(year_row["id"], movement_id)
-                db.execute("DELETE FROM movements WHERE id = ?", (movement_id,))
+                with db.transaction() as conn:  # see the year delete
+                    docs = conn.execute("SELECT * FROM documents WHERE movement_id = ?",
+                                        (movement_id,)).fetchall()
+                    conn.execute("DELETE FROM movements WHERE id = ?", (movement_id,))
                 remove_files(docs)
                 flash("Movement deleted.", "info")
                 return redirect(dashboard_url(m["year"], page, per_page, anchor=False))

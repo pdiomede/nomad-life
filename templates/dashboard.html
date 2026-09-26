@@ -35,7 +35,7 @@
     {% if stats.base_ok %}
       <p class="pill pill-ok">At least {{ stats.threshold }} days</p>
     {% else %}
-      <p class="pill pill-warn">{{ stats.threshold - stats.base_days }} days short of {{ stats.threshold }}</p>
+      <p class="pill pill-warn">{{ stats.threshold - stats.base_days }} day{{ '' if stats.threshold - stats.base_days == 1 else 's' }} short of {{ stats.threshold }}</p>
     {% endif %}
   </div>
   <div class="card stat">
@@ -68,7 +68,7 @@
             <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"><strong>{{ m.city }}</strong></a><div class="muted small">{{ ui.flag(m.country) }}{{ m.country }}</div></td>
             {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
             {% set counted = stats.counted.get(m.id, 0) %}
-            <td class="num">{{ length }}{% if counted != length %}<div class="muted small" title="Days shared with another stay count toward the stay that started later">{{ counted }} counted</div>{% endif %}</td>
+            <td class="num">{{ length }}{% if counted != length %}<div class="muted small" title="A day shared with another stay counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest)">{{ counted }} counted</div>{% endif %}</td>
             <td class="num hide-sm">{{ m.doc_count }}</td>
             <td class="right hide-sm">
               <div class="row-actions">
@@ -134,13 +134,13 @@
     <div class="card-head">
       <h2>Days per country</h2>
     </div>
-    <p class="muted small">Full year view. Days not covered by a movement count toward your base country. A day shared by two stays, such as a travel day, counts toward the stay that started later. The marker shows the {{ stats.threshold }} day line.</p>
+    <p class="muted small">Full year view. Days not covered by a movement count toward your base country. A day shared by two stays, such as a travel day, counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest). The marker shows the {{ stats.threshold }} day line.</p>
     <ul class="bars">
       {% for r in stats.rows %}
       <li>
         <div class="row between">
           <span>{{ ui.flag(r.country) }}{{ r.country }} {% if r.is_base %}<span class="tag">Base</span>{% endif %}</span>
-          <span class="muted small">{{ r.days }} days ({{ r.so_far }} so far)</span>
+          <span class="muted small">{{ r.days }} day{{ '' if r.days == 1 else 's' }} ({{ r.so_far }} so far)</span>
         </div>
         <div class="meter {% if r.over_threshold and not r.is_base %}meter-hot{% endif %}">
           <span style="width: {{ r.pct }}%"></span>

@@ -36,7 +36,7 @@
       </div>
       <div class="field">
         <label for="notes">Notes</label>
-        <textarea id="notes" name="notes" rows="3" placeholder="Coworking, visa details, anything useful">{{ form.notes or '' }}</textarea>
+        <textarea id="notes" name="notes" rows="3" maxlength="5000" placeholder="Coworking, visa details, anything useful">{{ form.notes or '' }}</textarea>
       </div>
       {% if not m %}
       <div class="grid-2">
@@ -60,7 +60,7 @@
       {% endif %}
       <div class="row gap-sm">
         <button class="btn btn-primary" type="submit">{{ 'Save changes' if m else 'Add movement' }}</button>
-        <a class="btn btn-ghost" href="{{ url_for('dashboard', year=y.year) }}">Cancel</a>
+        <a class="btn btn-ghost" href="{{ back_url or url_for('dashboard', year=y.year) }}">Cancel</a>
       </div>
     </form>
   </section>

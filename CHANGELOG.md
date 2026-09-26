@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.0.11] - 2026-09-26
+
+### Fixed
+
+- Dark theme: text in the row of the stay you are in today was slightly below the contrast needed to read it comfortably.
+- Keyboard focus disappeared after pressing "Download accountant package"; it now stays on the button.
+- The "Nomad Life" name in the header wrapped onto two lines on small phones and next to long email addresses. Long emails are now shortened with "..." (hover shows the full address).
+- The white "PDF" and "IMG" labels on document badges were hard to read on the lighter part of the colored background.
+- Screen readers did not read the second step of the delete dialog ("Are you sure? ... It cannot be undone.").
+- "1 days" now reads "1 day", both in days per country and in "1 day short of 183".
+- The rule for shared days did not explain what happens when two stays start on the same day. The dashboard and the overlap message now say it: the shorter stay counts, and with identical dates the newest one.
+- The base location form lost what you typed when it showed an error.
+- "Cancel" on a movement page went back to page 1 of the movements list instead of the page you came from.
+- Notes are now limited to 5000 characters. An oversized form no longer says a file was too large when no file was sent.
+- Deleting a stay or year while one of its receipts was uploading could leave a file behind that no quota counted, or show a server error. The upload now says the stay no longer exists.
+- `runWebApp.sh` said "no lsof, fuser or ss is available" even when they were installed. It now explains that ports below 1024 need administrator rights, or that another user's process holds the port.
+- Variables exported in the shell (such as `SECRET_KEY` or `DATABASE_PATH` from another project) silently replaced the values in `config.env`. `config.env` now wins.
+- A `~` in `DATABASE_PATH` or `UPLOAD_DIR` created a folder literally named `~` inside the app folder instead of using your home folder.
+- `config.env`, which holds your secret key and Gmail App Password, was created readable by every user on the computer. It is now private to you.
+- `PROMPT.md`: the project map now lists `CLAUDE.md`, the country picker and the download busy state.
+
 ## [0.0.10] - 2026-09-26
 
 ### Fixed

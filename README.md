@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.10**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.11**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -34,7 +34,7 @@ The script checks Python, creates `config.env` on first run, sets up a virtual e
 
 ## Configuration
 
-All settings live in `config.env` (see `config.env.example`). This file is git ignored.
+All settings live in `config.env` (see `config.env.example`). This file is git ignored and only readable by you when the launcher creates it. Values in `config.env` win over variables exported in your shell; leave a key out of the file to set it from the environment instead. Paths may start with `~` for your home folder.
 
 | Key | Description |
 | --- | --- |

@@ -21,7 +21,8 @@ info "Using $("$PYTHON" -V 2>&1)"
 
 # 2. Configuration
 if [[ ! -f config.env ]]; then
-  cp config.env.example config.env
+  # Only you can read it: it holds SECRET_KEY and, later, the Gmail App Password.
+  (umask 077; cp config.env.example config.env)
   secret="$("$PYTHON" -c 'import secrets; print(secrets.token_hex(32))')"
   sed -i.bak "s/^SECRET_KEY=.*/SECRET_KEY=${secret}/" config.env && rm -f config.env.bak
   warn "Created config.env from config.env.example with a random SECRET_KEY."
@@ -110,7 +111,13 @@ if [[ -n "$pids" ]]; then
   [[ -z "$(port_pids)" ]] && port_bindable || fail "Could not free port $PORT."
   info "Port $PORT is now free"
 elif ! port_bindable; then
-  fail "Port $PORT is in use, but no lsof, fuser or ss is available to find the process. Stop it manually or change APP_PORT in config.env."
+  if ! command -v lsof >/dev/null 2>&1 && ! command -v fuser >/dev/null 2>&1 && ! command -v ss >/dev/null 2>&1; then
+    fail "Port $PORT is in use, but no lsof, fuser or ss is available to find the process. Stop it manually or change APP_PORT in config.env."
+  elif (( PORT < 1024 )); then
+    fail "Port $PORT cannot be used: ports below 1024 need administrator rights. Change APP_PORT in config.env, for example to 5050."
+  else
+    fail "Port $PORT cannot be used: it is probably taken by another user's process, which this script cannot see or stop. Change APP_PORT in config.env."
+  fi
 else
   info "Port $PORT is free"
 fi

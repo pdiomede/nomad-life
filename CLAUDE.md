@@ -17,7 +17,7 @@ FLASK_DEBUG=1 .venv/bin/python app.py                     # debug mode (template
 
 - Without `FLASK_DEBUG=1`, Jinja templates are cached: restart the server after editing templates.
 - Static CSS/JS are cached for 7 days and linked with `?v=<APP_VERSION>`; a browser that already has them will not see edits until the version changes or the cache is bypassed.
-- `runWebApp.sh` reads `APP_PORT` from `config.env` with the same dotenv parser as the app and exports it, so `config.env` wins over a shell variable.
+- `config.env` wins over exported shell variables for every key it contains (`load_dotenv(..., override=True)`); `runWebApp.sh` also reads `APP_PORT` with the same parser and exports it. To point a manual server at a scratch database, pass overrides to `create_app({...})` instead of environment variables.
 
 ## Architecture
 

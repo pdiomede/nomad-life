@@ -62,6 +62,7 @@
     var dTypeInput = document.getElementById("confirm-type-input");
     var dCancel = document.getElementById("confirm-cancel");
     var dNext = document.getElementById("confirm-next");
+    var dLive = document.getElementById("confirm-live");
     var pending = null, opener = null, step = 1, armed = false, armTimer = null;
 
     var typedOk = function () {
@@ -82,6 +83,7 @@
         dNext.textContent = "Delete";
         dTypeField.hidden = true;
         dNext.disabled = false;
+        if (dLive) dLive.textContent = "";
         dCancel.focus();
       } else {
         dTitle.textContent = "Are you sure?";
@@ -95,6 +97,8 @@
         armTimer = setTimeout(function () { armed = true; refreshNext(); }, 700);
         refreshNext();
         (need ? dTypeInput : dCancel).focus();
+        // Screen readers only say "Cancel, button" when focus moves, so read the new question.
+        if (dLive) setTimeout(function () { dLive.textContent = dTitle.textContent + " " + dText.textContent; }, 50);
       }
     };
 
@@ -306,17 +310,18 @@
     var done = function () {
       clearInterval(timer);
       document.cookie = "nl_download=; Max-Age=0; path=/; SameSite=Lax";
-      if (btn) { btn.disabled = false; btn.textContent = label; btn.removeAttribute("aria-busy"); }
+      if (btn) { btn.removeAttribute("aria-disabled"); btn.textContent = label; btn.removeAttribute("aria-busy"); }
     };
     form.addEventListener("submit", function (e) {
-      if (btn && btn.disabled) { e.preventDefault(); return; }
+      if (btn && btn.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
       var token = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
       var field = form.querySelector('input[name="dl"]');
       if (field) field.value = token;
       if (btn) {
-        // Disable after the browser has taken the form data, so the request still goes out.
+        // Mark busy after the browser has taken the form data. aria-disabled (not disabled)
+        // keeps keyboard focus on the button.
         setTimeout(function () {
-          btn.disabled = true; btn.textContent = "Preparing package..."; btn.setAttribute("aria-busy", "true");
+          btn.setAttribute("aria-disabled", "true"); btn.textContent = "Preparing package..."; btn.setAttribute("aria-busy", "true");
         }, 0);
       }
       var started = Date.now();

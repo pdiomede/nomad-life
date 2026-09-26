@@ -35,11 +35,12 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 | `templates/_macros.html`, `_theme_toggle.html`, `_countries.html` | Upload form, document list, delete form, square page links (`pagination`), theme toggle, country data |
 | `templates/auth/*.html` | Sign in, sign up, forgot and reset password |
 | `static/css/style.css` | All styles, light and dark tokens, responsive rules |
-| `static/js/theme.js` | Theme toggle, delete confirmations, file checks (size, quota), copy link, native share |
+| `static/js/theme.js` | Theme toggle, delete confirmations, country combobox, file checks (size, quota), download busy state (`nl_download` cookie), copy link, native share |
 | `static/404.html` | Standalone 404 page (served by the app and usable by a web server) |
 | `static/fonts/*` | Flag font (Twemoji), DejaVu Sans and IPAGothic for the PDF, with license files |
 | `static/site.webmanifest`, `static/img/*` | Install metadata, logo, icons, social preview image |
 | `README.md`, `CHANGELOG.md`, `LICENSE`, `.gitignore` | Docs and repo config |
+| `CLAUDE.md` | Guidance for Claude Code: commands, architecture, conventions |
 
 ## Method
 

@@ -53,7 +53,7 @@
       <nav class="topnav">
         {% block topnav %}
         {% if current_user.is_authenticated %}
-          <span class="muted small hide-sm">{{ current_user.email }}</span>
+          <span class="muted small hide-sm topnav-email" title="{{ current_user.email }}">{{ current_user.email }}</span>
           <form method="post" action="{{ url_for('logout') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-ghost btn-sm" type="submit">Sign out</button>
@@ -91,6 +91,7 @@
     <p class="eyebrow" id="confirm-step">Step 1 of 2</p>
     <h2 id="confirm-title">Delete?</h2>
     <p class="muted" id="confirm-text"></p>
+    <p class="visually-hidden" id="confirm-live" aria-live="polite"></p>
     <div class="field" id="confirm-type-field" hidden>
       <label for="confirm-type-input">Type <strong id="confirm-type-value"></strong> to confirm</label>
       <input id="confirm-type-input" autocomplete="off" inputmode="numeric">
