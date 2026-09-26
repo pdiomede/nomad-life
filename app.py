@@ -1,6 +1,7 @@
 """Nomad Life: track your yearly movements and keep your receipts in one place."""
 import hashlib
 import math
+import mimetypes
 import os
 import secrets
 from urllib.parse import quote, urlencode
@@ -10,8 +11,9 @@ import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
 from dotenv import load_dotenv
-from flask import (Flask, abort, flash, redirect, render_template, request,
+from flask import (Flask, Response, abort, flash, redirect, render_template, request,
                    send_from_directory, url_for)
+from markupsafe import escape
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_user, logout_user)
 from flask_wtf.csrf import CSRFError, CSRFProtect
@@ -46,9 +48,16 @@ SITE_TITLE = "Nomad Life | Every day. Every place."
 SITE_DESCRIPTION = ("Track the days you spend in each country and keep your travel receipts safe, "
                     "all in one place. Made for digital nomads.")
 SHARE_TEXT = "Track the days you spend in each country and keep your travel receipts safe."
+# Search result snippet for the landing page (title under 60 and description under 160 characters).
+SEO_TITLE = "Digital nomad day tracker and receipt vault | Nomad Life"
+SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and keep rental contracts, "
+                   "hotel bills and flight tickets in one place. Free for digital nomads.")
+# Paths that need an account. Kept out of search engines via robots.txt.
+PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/"]
 RESET_TOKEN_MAX_AGE = 3600
 
 load_dotenv(os.path.join(BASE_DIR, "config.env"))
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 def _abs(path):
@@ -131,6 +140,9 @@ def create_app(overrides=None):
         MAX_RECEIPT_BYTES=mb_setting("MAX_RECEIPT_MB", 10, legacy="MAX_UPLOAD_MB"),
         USER_QUOTA_BYTES=mb_setting("USER_QUOTA_MB", 500),
         # Cookies are shared by every app on localhost regardless of port, so use unique names.
+        # Static files are cached for a week; CSS and JS URLs carry ?v=<version> so releases
+        # are picked up at once. Receipts override this with no-store.
+        SEND_FILE_MAX_AGE_DEFAULT=timedelta(days=7),
         SESSION_COOKIE_NAME="nomadlife_session",
         REMEMBER_COOKIE_NAME="nomadlife_remember",
     )
@@ -290,9 +302,29 @@ def site_meta():
         ("Telegram", "https://t.me/share/url?" + urlencode({"url": url, "text": SHARE_TEXT})),
         ("Reddit", "https://www.reddit.com/submit?" + urlencode({"url": url, "title": SITE_TITLE})),
     ]
+    image = base + url_for("static", filename="img/og-image.jpg")
+    structured_data = {
+        "@context": "https://schema.org",
+        "@graph": [
+            {"@type": "WebSite", "@id": url + "#website", "url": url, "name": "Nomad Life",
+             "description": SITE_DESCRIPTION, "inLanguage": "en"},
+            {"@type": "WebApplication", "@id": url + "#app", "name": "Nomad Life", "url": url,
+             "description": SITE_DESCRIPTION, "image": image,
+             "applicationCategory": "TravelApplication", "operatingSystem": "Any",
+             "browserRequirements": "Requires a modern web browser",
+             "isAccessibleForFree": True,
+             "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+             "featureList": ["Days per country for each solar year",
+                             "183 day indicator for your base country",
+                             "Receipt storage for rental contracts, hotel bills and flight tickets",
+                             "Private workspace for each user"],
+             "author": {"@type": "Person", "name": "Paolo Diomede", "url": "https://pdiomede.com"},
+             "isPartOf": {"@id": url + "#website"}},
+        ],
+    }
     return {"title": SITE_TITLE, "description": SITE_DESCRIPTION, "share_text": SHARE_TEXT,
-            "url": url, "image": base + url_for("static", filename="img/og-image.jpg"),
-            "share_links": links}
+            "seo_title": SEO_TITLE, "seo_description": SEO_DESCRIPTION, "base": base,
+            "url": url, "image": image, "share_links": links, "structured_data": structured_data}
 
 
 def storage_used(user_id):
@@ -620,6 +652,25 @@ def register_routes(app):
     def landing():
         return render_template("landing.html")
 
+    @app.route("/robots.txt")
+    def robots_txt():
+        base = app.config["APP_BASE_URL"].rstrip("/")
+        lines = ["User-agent: *", "Allow: /"] + [f"Disallow: {p}" for p in PRIVATE_PATHS]
+        lines += ["", f"Sitemap: {base}{url_for('sitemap_xml')}", ""]
+        return Response("\n".join(lines), mimetype="text/plain")
+
+    @app.route("/sitemap.xml")
+    def sitemap_xml():
+        base = app.config["APP_BASE_URL"].rstrip("/")
+        landing_file = os.path.join(app.root_path, app.template_folder, "landing.html")
+        lastmod = date.fromtimestamp(os.path.getmtime(landing_file)).isoformat()
+        xml = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+               '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+               f"  <url><loc>{escape(base + url_for('landing'))}</loc><lastmod>{lastmod}</lastmod>"
+               "<changefreq>monthly</changefreq><priority>1.0</priority></url>\n"
+               "</urlset>\n")
+        return Response(xml, mimetype="application/xml")
+
     @app.route("/app")
     @login_required
     def index():
@@ -781,6 +832,8 @@ def register_routes(app):
                                    as_attachment=request.args.get("download") == "1",
                                    download_name=doc["original_name"])
         resp.headers["X-Content-Type-Options"] = "nosniff"
+        # Personal documents must never sit in a shared or browser cache.
+        resp.headers["Cache-Control"] = "private, no-store"
         return resp
 
     @app.route("/documents/<int:doc_id>/delete", methods=["POST"])

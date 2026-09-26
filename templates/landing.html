@@ -1,5 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Nomad Life | Track your days abroad{% endblock %}
+{% block title %}{{ site.seo_title }}{% endblock %}
+{% block description %}{{ site.seo_description }}{% endblock %}
+{% block robots %}index, follow, max-image-preview:large{% endblock %}
+{% block head_extra %}
+  <link rel="canonical" href="{{ site.url }}">
+  <script type="application/ld+json">{{ site.structured_data | tojson }}</script>
+{% endblock %}
 
 {% block topnav %}
   {% include "_theme_toggle.html" %}
@@ -7,10 +13,9 @@
 {% endblock %}
 
 {% block content %}
-<section class="hero">
+<section class="hero" aria-labelledby="hero-title">
   <div class="hero-copy">
-    <p class="eyebrow">For digital nomads</p>
-    <h1>Know where you spent your year.</h1>
+    <h1 id="hero-title"><span class="eyebrow">Day tracker for digital nomads</span> Know where you spent your year.</h1>
     <p class="hero-lead">Track the days you spend in each country and keep your travel receipts safe, all in one place.</p>
     <div class="row wrap gap-sm">
       <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">Launch app</a>
@@ -50,42 +55,43 @@
   </div>
 </section>
 
-<section class="features">
+<section class="features" aria-labelledby="features-title">
+  <h2 id="features-title" class="visually-hidden">What Nomad Life does</h2>
   <div class="card feature">
     <span class="feature-icon">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 15h3"/></svg>
     </span>
-    <h2>Count your days</h2>
+    <h3>Count your days</h3>
     <p class="muted">See your days in each country, with a clear 183 day line.</p>
   </div>
   <div class="card feature">
     <span class="feature-icon">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h7M9 17h5"/></svg>
     </span>
-    <h2>Keep your receipts</h2>
+    <h3>Keep your receipts</h3>
     <p class="muted">Rental contracts, hotel bills and flight tickets, right next to each trip.</p>
   </div>
   <div class="card feature">
     <span class="feature-icon">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
     </span>
-    <h2>Private by design</h2>
+    <h3>Private by design</h3>
     <p class="muted">Runs on your own computer. Your data stays with you.</p>
   </div>
 </section>
 
-<section class="steps" id="how-it-works">
-  <h2 class="section-title">How it works</h2>
+<section class="steps" id="how-it-works" aria-labelledby="steps-title">
+  <h2 id="steps-title" class="section-title">How it works</h2>
   <ol class="step-list">
-    <li><span class="step-num">1</span><strong>Set your base</strong><span class="muted">Pick your home city for the year.</span></li>
-    <li><span class="step-num">2</span><strong>Log your trips</strong><span class="muted">Add dates, place and receipts.</span></li>
-    <li><span class="step-num">3</span><strong>Watch your days</strong><span class="muted">See every country's total add up.</span></li>
+    <li><span class="step-num">1</span><h3>Set your base</h3><span class="muted">Pick your home city for the year.</span></li>
+    <li><span class="step-num">2</span><h3>Log your trips</h3><span class="muted">Add dates, place and receipts.</span></li>
+    <li><span class="step-num">3</span><h3>Watch your days</h3><span class="muted">See every country's total add up.</span></li>
   </ol>
 </section>
 
-<section class="card cta">
+<section class="card cta" aria-labelledby="cta-title">
   <div>
-    <h2>Ready to track your year?</h2>
+    <h2 id="cta-title">Ready to track your year?</h2>
     <p class="muted small">A personal organizer, not tax advice.</p>
   </div>
   <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">Launch app</a>

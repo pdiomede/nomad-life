@@ -1,0 +1,4 @@
+{# Country suggestions for inputs with list="country-list". Include only on pages that need it. #}
+<datalist id="country-list">
+  {% for c in countries %}<option value="{{ c }}">{% endfor %}
+</datalist>
