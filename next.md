@@ -2,10 +2,6 @@
 
 Ideas for the releases after 1.2.0, most useful first. The account page and the sign in limits shipped in 1.2.0.
 
-## Still open from 1.0.0 and 1.1.0
-
-- Publish the GitHub Releases for `v1.0.0` (commit `9cc9481`) and `v1.1.0` (commit `99e5f76`). Create each tag from the "Choose a tag" box on https://github.com/pdiomede/nomad-life/releases/new, pointing at those commits.
-
 ## 1. Plans: Free, Pro and VIP
 
 Designed, not built.
@@ -27,7 +23,3 @@ The per account quota on the admin page is the groundwork: an admin could assign
 - A warning when receipt storage is almost full.
 
 The email system added with email confirmation makes this straightforward.
-
-## 4. Deployment guide
-
-The app runs on Flask's development server. A short guide for going public: a production server (for example gunicorn), HTTPS through a reverse proxy, backups, and the `APP_BASE_URL`, `SECRET_KEY` and Gmail settings.
