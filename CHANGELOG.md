@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.0] - 2026-09-26
+
+First stable release. Nomad Life now covers the full workflow it was built for: track every day of a solar year by country, keep the receipts that prove it, and hand your accountant one package with the summary, spreadsheets and files. From here on, versions follow semantic versioning.
+
+### Fixed
+
+- Notes with line breaks were refused as "more than 5000 characters" even though the text box allowed them, because each line break counted twice. Stays saved with longer notes before 0.0.11 can be edited again without shortening them.
+- If a stay or year was deleted while one of its receipts was uploading, you landed on "Page not found" and the explanation appeared later on another page. You now go to your dashboard with the message.
+- Files just under 1 MB were shown as "1024 KB". They now show as "1 MB".
+- Accountant package: the counting rules and the note under the timeline now explain that with identical dates the stay added last counts, so a stay showing 0 counted days is explained.
+- The chosen file name in a file picker ran under the Upload button or off the page when it was long.
+- A very long place name (for example Llanfairpwllgwyngyllgogerychwyrndrobwllllantysiliogogogoch) made the movement and base pages and their messages scroll sideways; long country names also broke the dashboard cards.
+- The red delete buttons faded on hover, dropping their text below readable contrast, and the Delete link on the row of today's stay did the same in the dark theme.
+- The 404 page never told screen readers that the page was not found ("404").
+- On very small phones (300 to 310 px) the landing page scrolled sideways since 0.0.11.
+
 ## [0.0.11] - 2026-09-26
 
 ### Fixed

@@ -29,7 +29,7 @@ RULES = [
     "Days not covered by any stay count toward your base country.",
     "A day shared by two stays, such as a travel day, counts toward the stay that started later.",
     "A side trip inside a longer stay counts toward the side trip. When two stays start on "
-    "the same day, the shorter one wins.",
+    "the same day, the shorter one wins; with identical dates, the one added last wins.",
     "The 183 day line means at least 183 days in the base country.",
 ]
 CHUNK = 64 * 1024
@@ -252,7 +252,7 @@ def assign_arcnames(data):
 def _fmt_size(size):
     if size < 1024:
         return f"{size} B"
-    if size < 1024 * 1024:
+    if round(size / 1024) < 1024:  # never "1024 KB"
         return f"{round(size / 1024)} KB"
     return f"{size / (1024 * 1024):.1f} MB"
 
@@ -326,7 +326,7 @@ def summary_blocks(data):
                                  "align": ["CENTER", "LEFT", "LEFT", "LEFT", "RIGHT", "RIGHT", "RIGHT"]}))
         if any(s.counted_days != s.calendar_days for s in data.stays):
             blocks.append(("note", "* Counted days are lower when a stay shares days with a stay "
-                                   "that started later (see the rules below)."))
+                                   "that takes those days (see the rules below)."))
     else:
         blocks.append(("note", "No stays recorded for this year. Every day counts toward the "
                                "base country."))

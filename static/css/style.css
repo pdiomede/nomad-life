@@ -110,7 +110,7 @@ a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 h1, h2 { margin: 0; letter-spacing: -0.01em; }
-h1 { font-size: 30px; font-weight: 700; }
+h1 { font-size: 30px; font-weight: 700; overflow-wrap: anywhere; }
 h2 { font-size: 17px; font-weight: 600; }
 p { margin: 0; }
 
@@ -188,9 +188,11 @@ p { margin: 0; }
 .btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }
 .btn-ghost:hover { background: var(--surface-2); }
 .btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { opacity: 0.88; }
+.btn-danger:hover { filter: brightness(0.88); }  /* darken, never fade: white text keeps its contrast */
 .btn-danger-ghost { background: transparent; color: var(--error-text); border-color: transparent; }
 .btn-danger-ghost:hover { background: var(--error-bg); }
+/* On the tinted row of the current stay the two tints would add up and dim the red text. */
+.table tr.current .btn-danger-ghost:hover { background: var(--surface); }
 .btn-sm { padding: 5px 10px; font-size: 13px; }
 .btn-block { width: 100%; padding: 11px 16px; }
 
@@ -209,13 +211,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .check input { width: auto; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .file-input { display: flex; align-items: center; gap: 10px; cursor: pointer; min-height: 40px; }
+.file-input > span[id] { min-width: 0; overflow-wrap: anywhere; }  /* long file names wrap */
 .file-input input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .file-input:focus-within .btn { outline: 2px solid var(--link); }
 .file-error { color: var(--error-text); }
 
 /* Flash messages */
 .flashes { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
-.flash { padding: 11px 14px; border-radius: 6px; font-size: 14px; border: 1px solid transparent; }
+.flash { overflow-wrap: anywhere; padding: 11px 14px; border-radius: 6px; font-size: 14px; border: 1px solid transparent; }
 .flash-success { background: var(--success-bg); color: var(--success-text); border-color: rgba(70, 188, 75, 0.3); }
 .flash-error { background: var(--error-bg); color: var(--error-text); border-color: rgba(242, 90, 90, 0.3); }
 .flash-info, .flash-message { background: var(--info-bg); color: var(--info); border-color: rgba(0, 98, 210, 0.2); }
@@ -267,6 +270,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .file-input:has(input:disabled) .btn { opacity: 0.5; pointer-events: none; }
 .bars { list-style: none; padding: 0; margin: 14px 0 0; display: flex; flex-direction: column; gap: 14px; }
 .bars .meter { margin-top: 6px; }
+.bars .row > span:first-child, .stat p, .table td .small { min-width: 0; overflow-wrap: anywhere; }
 
 /* Table */
 .table-wrap { overflow-x: auto; margin: 0 -20px; }
@@ -436,4 +440,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
   .brand { gap: 7px; font-size: 17px; }
   .icon-btn { width: 32px; height: 32px; }
   .btn-launch { padding: 6px 10px; font-size: 13px; }
+}
+@media (max-width: 319px) {
+  .brand { font-size: 15px; }
 }

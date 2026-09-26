@@ -27,7 +27,7 @@ import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import send_email
 
-APP_VERSION = "0.0.11"
+APP_VERSION = "1.0.0"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -60,6 +60,7 @@ DOCUMENT_KINDS = OrderedDict([
 ])
 RESIDENCE_THRESHOLD = 183
 NOTES_MAX = 5000
+UPLOAD_GONE = "This stay or year no longer exists, so the file was not saved."
 MOVEMENTS_PER_PAGE = 10
 PER_PAGE_OPTIONS = (10, 25, 50)
 SITE_TITLE = "Nomad Life | Every day. Every place."
@@ -316,8 +317,9 @@ def format_size(size, rounding="nearest"):
     step = {"nearest": round, "down": math.floor, "up": math.ceil}[rounding]
     if size < 1024:
         return f"{size} B"
-    if size < 1024 * 1024:
-        return f"{step(size / 1024)} KB"
+    kb = step(size / 1024)
+    if kb < 1024:  # 1,048,300 bytes rounds to 1024 KB: show it as 1 MB instead
+        return f"{kb} KB"
     return f"{step(size / MB * 10) / 10:.1f}".rstrip("0").rstrip(".") + " MB"
 
 
@@ -491,7 +493,7 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
         return quota_message(name, size, exc.left, quota)
     except db.IntegrityError:
         os.remove(path)  # the stay or year was deleted while the file was uploading
-        return "This stay or year no longer exists, so the file was not saved."
+        return UPLOAD_GONE
     except BaseException:
         os.remove(path)  # no orphan file when the row could not be saved
         raise
@@ -536,7 +538,7 @@ def delete_confirmed():
     return False
 
 
-def validate_movement(form, year):
+def validate_movement(form, year, current_notes=None):
     city = " ".join(form.get("city", "").split())
     country = normalize_country(form.get("country", ""))
     start = parse_date(form.get("start_date"))
@@ -549,10 +551,13 @@ def validate_movement(form, year):
         return None, "The end date must be on or after the start date."
     if start.year != year or end.year != year:
         return None, f"Dates must fall within {year}."
-    if len(form.get("notes", "").strip()) > NOTES_MAX:
+    # Browsers send each line break as CRLF but count it as one character for maxlength.
+    notes = form.get("notes", "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    # Notes saved before the limit existed can stay as they are while other fields change.
+    if len(notes) > NOTES_MAX and notes != (current_notes or "").replace("\r\n", "\n").strip():
         return None, f"Notes can be at most {NOTES_MAX} characters."
     return {"city": city, "country": country, "start_date": start.isoformat(),
-            "end_date": end.isoformat(), "notes": form.get("notes", "").strip()}, None
+            "end_date": end.isoformat(), "notes": notes}, None
 
 
 def stay_length(m):
@@ -989,6 +994,8 @@ def register_routes(app):
                 err = save_upload(request.files.get("file"), request.form.get("kind"),
                                   year_row["id"])
                 flash(err or "Document uploaded.", "error" if err else "success")
+                if err == UPLOAD_GONE:  # this page is gone too, so do not send the user back to it
+                    return redirect(url_for("index"))
             elif action == "delete_year":
                 if not delete_confirmed():
                     pass
@@ -1039,7 +1046,7 @@ def register_routes(app):
         if request.method == "POST":
             action = request.form.get("action")
             if action == "update":
-                data, err = validate_movement(request.form, m["year"])
+                data, err = validate_movement(request.form, m["year"], m["notes"])
                 if err:
                     # Re-render so the user keeps what they typed.
                     flash(err, "error")
@@ -1057,6 +1064,8 @@ def register_routes(app):
                 err = save_upload(request.files.get("file"), request.form.get("kind"),
                                   year_row["id"], movement_id)
                 flash(err or "Document uploaded.", "error" if err else "success")
+                if err == UPLOAD_GONE:  # see the base page
+                    return redirect(url_for("index"))
             elif action == "delete":
                 if not delete_confirmed():
                     return redirect(request.referrer or url_for("movement_edit", movement_id=movement_id))
