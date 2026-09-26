@@ -49,9 +49,9 @@
           </select>
         </div>
         <div class="field">
-          <label>Receipt file (optional, max {{ max_upload_label }})</label>
+          <label>Receipt file (optional, max {{ max_receipt_label }}, {{ storage.left | filesize('down') }} left)</label>
           <label class="file-input">
-            <input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.heic,.webp" data-label="fname-new" data-max-bytes="{{ max_upload_bytes }}">
+            <input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.heic,.webp" data-label="fname-new" {{ ui.size_attrs() }}{% if storage.left == 0 %} disabled{% endif %}>
             <span class="btn btn-ghost btn-sm">Choose file</span>
             <span class="muted small" id="fname-new">No file selected</span>
           </label>

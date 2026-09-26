@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.3**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.4**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -10,6 +10,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - One workspace per solar year, each with a base city and country.
 - Log movements with date range, city and country.
 - Upload receipts per movement (hotel or home rent, flight tickets) and documents for the base (rental contract).
+- Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
 - Days per country for the year, with a 183 day indicator.
 - Light and dark mode, inspired by the Aave color palette.
 - Everything stored locally: SQLite database in `data/`, files in `uploads/`.
@@ -37,7 +38,8 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | `GMAIL_APP_PASSWORD` | Gmail App Password (not your normal password). |
 | `DATABASE_PATH` | SQLite file. Default `data/nomad.db`. |
 | `UPLOAD_DIR` | Folder for uploaded files. Default `uploads`. |
-| `MAX_UPLOAD_MB` | Max upload size. Default `20`. |
+| `MAX_RECEIPT_MB` | Max size of a single receipt in MB. Default `10`. Older configs using `MAX_UPLOAD_MB` still work. |
+| `USER_QUOTA_MB` | Total receipt storage per user in MB, across all years. Default `500`. |
 
 To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, reset links are printed in the terminal.
 

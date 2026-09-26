@@ -1,5 +1,6 @@
 """Nomad Life: track your yearly movements and keep your receipts in one place."""
 import hashlib
+import math
 import os
 import secrets
 import uuid
@@ -20,7 +21,7 @@ import db
 from countries import COUNTRIES
 from mailer import send_email
 
-APP_VERSION = "0.0.3"
+APP_VERSION = "0.0.4"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -92,6 +93,25 @@ def load_or_create_secret(path):
     return key
 
 
+MB = 1024 * 1024
+
+
+def mb_setting(name, default, legacy=None):
+    """Read a size in megabytes from the environment and return bytes.
+    Fails fast with a clear message instead of running with a wrong limit."""
+    raw = os.getenv(name)
+    if (raw is None or not raw.strip()) and legacy and os.getenv(legacy, "").strip():
+        name, raw = legacy, os.getenv(legacy)  # report errors against the key the user wrote
+    raw = (raw or "").strip() or str(default)
+    try:
+        value = float(raw)
+    except ValueError:
+        raise SystemExit(f"config.env: {name} must be a number of megabytes (got '{raw}').")
+    if not value > 0 or value != value or value == float("inf"):
+        raise SystemExit(f"config.env: {name} must be greater than 0 (got '{raw}').")
+    return int(value * MB)
+
+
 def create_app(overrides=None):
     app = Flask(__name__)
     app.config.update(
@@ -102,13 +122,18 @@ def create_app(overrides=None):
         GMAIL_APP_PASSWORD=os.getenv("GMAIL_APP_PASSWORD", "").replace(" ", ""),
         DATABASE_PATH=_abs(os.getenv("DATABASE_PATH", "data/nomad.db")),
         UPLOAD_DIR=_abs(os.getenv("UPLOAD_DIR", "uploads")),
-        MAX_CONTENT_LENGTH=int(os.getenv("MAX_UPLOAD_MB", "20")) * 1024 * 1024,
+        # MAX_UPLOAD_MB is the pre 0.0.4 name of MAX_RECEIPT_MB.
+        MAX_RECEIPT_BYTES=mb_setting("MAX_RECEIPT_MB", 10, legacy="MAX_UPLOAD_MB"),
+        USER_QUOTA_BYTES=mb_setting("USER_QUOTA_MB", 500),
         # Cookies are shared by every app on localhost regardless of port, so use unique names.
         SESSION_COOKIE_NAME="nomadlife_session",
         REMEMBER_COOKIE_NAME="nomadlife_remember",
     )
     if overrides:
         app.config.update(overrides)
+    # Reject oversized request bodies before reading them. The extra megabyte leaves room for
+    # the other form fields; the exact per receipt limit is checked in save_upload.
+    app.config["MAX_CONTENT_LENGTH"] = app.config["MAX_RECEIPT_BYTES"] + MB
 
     db.init_db(app.config["DATABASE_PATH"])
     os.makedirs(app.config["UPLOAD_DIR"], exist_ok=True)
@@ -138,9 +163,10 @@ def create_app(overrides=None):
     def inject_globals():
         return {"app_version": APP_VERSION, "countries": COUNTRIES,
                 "document_kinds": DOCUMENT_KINDS,
-                # The limit covers the whole request, so leave room for the other form fields.
-                "max_upload_bytes": app.config["MAX_CONTENT_LENGTH"] - 64 * 1024,
-                "max_upload_label": format_size(app.config["MAX_CONTENT_LENGTH"])}
+                "max_receipt_bytes": app.config["MAX_RECEIPT_BYTES"],
+                "max_receipt_label": format_size(app.config["MAX_RECEIPT_BYTES"], "down"),
+                "storage": storage_summary(current_user.id)
+                if current_user.is_authenticated else None}
 
     app.add_template_filter(parse_date, "todate")
     app.add_template_filter(format_size, "filesize")
@@ -148,8 +174,8 @@ def create_app(overrides=None):
 
     @app.errorhandler(413)
     def too_large(_e):
-        flash(f"The file is too large. The limit is {format_size(app.config['MAX_CONTENT_LENGTH'])}.",
-              "error")
+        flash(f"The file is larger than the {format_size(app.config['MAX_RECEIPT_BYTES'], 'down')} "
+              "limit per receipt.", "error")
         return redirect(request.referrer or url_for("index"))
 
     @app.errorhandler(CSRFError)
@@ -188,12 +214,15 @@ def local_date(utc_timestamp):
     return dt.astimezone().strftime("%Y-%m-%d")
 
 
-def format_size(size):
+def format_size(size, rounding="nearest"):
+    """Human readable size. Round capacities ("left", limits) down and offending file sizes up,
+    so a message never reads like "10 MB is larger than the 10 MB limit"."""
+    step = {"nearest": round, "down": math.floor, "up": math.ceil}[rounding]
     if size < 1024:
         return f"{size} B"
     if size < 1024 * 1024:
-        return f"{size / 1024:.0f} KB"
-    return f"{size / (1024 * 1024):.1f}".rstrip("0").rstrip(".") + " MB"
+        return f"{step(size / 1024)} KB"
+    return f"{step(size / MB * 10) / 10:.1f}".rstrip("0").rstrip(".") + " MB"
 
 
 def get_year_or_404(year):
@@ -237,6 +266,38 @@ def display_name(filename, limit=150):
     return name or "file"
 
 
+def storage_used(user_id):
+    row = db.query("SELECT COALESCE(SUM(size), 0) AS used FROM documents WHERE user_id = ?",
+                   (user_id,), one=True)
+    return row["used"]
+
+
+def storage_summary(user_id):
+    from flask import current_app
+    quota = current_app.config["USER_QUOTA_BYTES"]
+    used = storage_used(user_id)
+    left = max(quota - used, 0)
+    return {"used": used, "quota": quota, "left": left, "over": used > quota,
+            "full": left == 0,
+            "pct": min(round(used * 100 / quota, 1), 100) if quota else 100,
+            "low": left < quota * 0.1}
+
+
+def quota_message(name, size, left, quota):
+    return (f"Not enough storage left for {name} ({format_size(size, 'up')}): "
+            f"{format_size(left, 'down')} free of {format_size(quota, 'down')}.")
+
+
+def upload_size(file):
+    """Size of an uploaded file, measured on the spooled upload before it is saved anywhere."""
+    stream = file.stream
+    pos = stream.tell()
+    stream.seek(0, os.SEEK_END)
+    size = stream.tell()
+    stream.seek(pos)
+    return size
+
+
 def save_upload(file, kind, year_id, movement_id=None, required=True):
     """Store an uploaded file. Returns an error message or None."""
     from flask import current_app
@@ -248,24 +309,58 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
         return "Unsupported file type. Allowed: " + ", ".join(sorted(ALLOWED_EXTENSIONS))
     if kind not in DOCUMENT_KINDS:
         kind = "other"
+
+    # Check both limits before anything is written to the uploads folder.
+    size = upload_size(file)
+    limit = current_app.config["MAX_RECEIPT_BYTES"]
+    quota = current_app.config["USER_QUOTA_BYTES"]
+    if size == 0:
+        return "The file is empty. Please choose another file."
+    if size > limit:
+        return (f"{name} is {format_size(size, 'up')}, larger than the "
+                f"{format_size(limit, 'down')} limit per receipt.")
+    left = max(quota - storage_used(current_user.id), 0)
+    if size > left:
+        return quota_message(name, size, left, quota)
+
     user_dir = os.path.join(current_app.config["UPLOAD_DIR"], str(current_user.id))
     os.makedirs(user_dir, exist_ok=True)
     stored = f"{uuid.uuid4().hex}.{ext}"
     path = os.path.join(user_dir, stored)
-    file.save(path)
-    if os.path.getsize(path) == 0:
-        os.remove(path)
-        return "The file is empty. Please choose another file."
     try:
-        db.execute(
-            "INSERT INTO documents (user_id, year_id, movement_id, kind, original_name, "
-            "stored_name, mime, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (current_user.id, year_id, movement_id, kind, name, stored,
-             MIME_TYPES[ext], os.path.getsize(path)))
-    except Exception:
+        file.save(path)
+    except OSError as exc:
+        current_app.logger.error("Could not store upload %s: %s", path, exc)
+        if os.path.exists(path):
+            os.remove(path)  # do not keep a partial file that no quota accounts for
+        return "The server could not store the file (its disk may be full). Please try again later."
+    size = os.path.getsize(path)
+    try:
+        # Re-check the quota and insert under one write lock, so parallel uploads cannot
+        # both pass the check above and exceed the quota together.
+        with db.transaction() as conn:
+            used = conn.execute("SELECT COALESCE(SUM(size), 0) FROM documents WHERE user_id = ?",
+                                (current_user.id,)).fetchone()[0]
+            if used + size > quota:
+                raise QuotaExceeded(max(quota - used, 0))
+            conn.execute(
+                "INSERT INTO documents (user_id, year_id, movement_id, kind, original_name, "
+                "stored_name, mime, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (current_user.id, year_id, movement_id, kind, name, stored,
+                 MIME_TYPES[ext], size))
+    except QuotaExceeded as exc:
+        os.remove(path)
+        return quota_message(name, size, exc.left, quota)
+    except BaseException:
         os.remove(path)  # no orphan file when the row could not be saved
         raise
     return None
+
+
+class QuotaExceeded(Exception):
+    def __init__(self, left):
+        super().__init__(left)
+        self.left = left
 
 
 def remove_files(rows):

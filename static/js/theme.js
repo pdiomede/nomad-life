@@ -30,12 +30,15 @@
     input.addEventListener("change", function () {
       var label = document.getElementById(input.getAttribute("data-label"));
       var max = parseInt(input.getAttribute("data-max-bytes") || "0", 10);
+      var left = parseInt(input.getAttribute("data-left-bytes") || "-1", 10);
       var file = input.files.length ? input.files[0] : null;
       var error = "";
-      if (file && max && file.size > max) {
-        error = file.name + " is too large (max " + Math.round(max / 1048576) + " MB).";
-      } else if (file && file.size === 0) {
+      if (file && file.size === 0) {
         error = file.name + " is empty.";
+      } else if (file && max && file.size > max) {
+        error = file.name + " is too large (max " + input.getAttribute("data-max-label") + " per receipt).";
+      } else if (file && left >= 0 && file.size > left) {
+        error = "Not enough storage left for " + file.name + " (" + input.getAttribute("data-left-label") + " free).";
       }
       if (error) input.value = "";
       if (label) {

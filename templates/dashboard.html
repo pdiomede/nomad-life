@@ -84,6 +84,26 @@
     {% endif %}
   </section>
 
+  <div class="side">
+  <section class="card storage-card">
+    <div class="card-head">
+      <h2>Receipt storage</h2>
+      {% if storage.over %}
+        <span class="pill pill-error">Over quota</span>
+      {% elif storage.full %}
+        <span class="pill pill-error">Full</span>
+      {% elif storage.low %}
+        <span class="pill pill-warn">Almost full</span>
+      {% endif %}
+    </div>
+    <p class="stat-value">{{ storage.left | filesize('down') }} <span class="muted stat-of">left</span></p>
+    <div class="meter {% if storage.over or storage.low %}meter-hot{% endif %}" role="img"
+         aria-label="{{ storage.used | filesize }} used of {{ storage.quota | filesize }}">
+      <span style="width: {{ storage.pct }}%"></span>
+    </div>
+    <p class="muted small">{{ storage.used | filesize }} used of {{ storage.quota | filesize('down') }} across all years. Max {{ max_receipt_label }} per receipt.</p>
+  </section>
+
   <section class="card">
     <div class="card-head">
       <h2>Days per country</h2>
@@ -104,5 +124,6 @@
       {% endfor %}
     </ul>
   </section>
+  </div>
 </div>
 {% endblock %}

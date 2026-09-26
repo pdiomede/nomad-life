@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.0.4] - 2026-09-26
+
+### Added
+
+- `MAX_RECEIPT_MB` in `config.env`: size limit for a single receipt (default 10 MB). Oversized requests are refused before the server reads them. The older `MAX_UPLOAD_MB` key still works.
+- `USER_QUOTA_MB` in `config.env`: total receipt storage per user across all years (default 500 MB). Checked and recorded under one database write lock, so parallel uploads cannot exceed it.
+- Dashboard "Receipt storage" card with space left, used and total, plus "Almost full", "Full" and "Over quota" states.
+- Upload forms show the per receipt limit and the space left, check both in the browser before uploading, and are disabled when storage is full.
+- Invalid limit values stop the app at startup with a message naming the setting.
+
+### Fixed
+
+- Size messages no longer contradict themselves because of rounding (for example "10 MB is larger than the 10 MB limit"). Space left and limits round down, rejected file sizes round up.
+- A failed disk write (for example a full disk) no longer causes a server error or leaves a partial file that no quota accounts for.
+- Storage that is exactly full is labelled "Full" instead of "Almost full".
+- The "Choose file" button looks disabled when storage is full.
+- An invalid legacy `MAX_UPLOAD_MB` value is reported under its own name instead of `MAX_RECEIPT_MB`.
+
 ## [0.0.3] - 2026-09-26
 
 ### Fixed

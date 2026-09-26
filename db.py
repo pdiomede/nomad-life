@@ -1,6 +1,7 @@
 """SQLite storage for Nomad Life."""
 import os
 import sqlite3
+from contextlib import contextmanager
 
 from flask import current_app, g
 
@@ -82,6 +83,23 @@ def query(sql, args=(), one=False):
     rows = cur.fetchall()
     cur.close()
     return (rows[0] if rows else None) if one else rows
+
+
+@contextmanager
+def transaction():
+    """Run several statements atomically. BEGIN IMMEDIATE takes the write lock up front, so a
+    check followed by an insert cannot interleave with another request doing the same."""
+    db = get_db()
+    if db.in_transaction:
+        db.commit()
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        yield db
+    except BaseException:
+        db.rollback()
+        raise
+    else:
+        db.commit()
 
 
 def execute(sql, args=()):

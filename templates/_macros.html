@@ -1,5 +1,7 @@
 {% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endmacro %}
 
+{% macro size_attrs() %}data-max-bytes="{{ max_receipt_bytes }}" data-max-label="{{ max_receipt_label }}" data-left-bytes="{{ storage.left }}" data-left-label="{{ storage.left | filesize('down') }}"{% endmacro %}
+
 {% macro upload_form(default_kind, uid) %}
 <form class="upload" method="post" enctype="multipart/form-data">
   {{ csrf() }}
@@ -13,14 +15,17 @@
     </select>
   </div>
   <div class="field grow">
-    <label>File (PDF or image, max {{ max_upload_label }})</label>
+    <label>File (PDF or image, max {{ max_receipt_label }} each, {{ storage.left | filesize('down') }} left)</label>
     <label class="file-input">
-      <input type="file" name="file" required accept=".pdf,.png,.jpg,.jpeg,.heic,.webp" data-label="fname-{{ uid }}" data-max-bytes="{{ max_upload_bytes }}">
+      <input type="file" name="file" required accept=".pdf,.png,.jpg,.jpeg,.heic,.webp" data-label="fname-{{ uid }}" {{ size_attrs() }}{% if storage.left == 0 %} disabled{% endif %}>
       <span class="btn btn-ghost btn-sm">Choose file</span>
       <span class="muted small" id="fname-{{ uid }}">No file selected</span>
     </label>
   </div>
-  <button class="btn btn-primary" type="submit">Upload</button>
+  <button class="btn btn-primary" type="submit"{% if storage.left == 0 %} disabled{% endif %}>Upload</button>
+  {% if storage.left == 0 %}
+    <p class="file-error small full">Your receipt storage is full. Delete receipts you no longer need to upload new ones.</p>
+  {% endif %}
 </form>
 {% endmacro %}
 
