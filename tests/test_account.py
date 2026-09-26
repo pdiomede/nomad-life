@@ -111,7 +111,7 @@ class LimitTests(AppTestCase):
             self.assertIn(b"Invalid email or password.", self.sign_in("wrong").data)
         resp = self.sign_in("password1")  # even the right password waits
         self.assertEqual(resp.status_code, 429)
-        self.assertIn(b"Too many failed sign in attempts. Please wait 15 minutes", resp.data)
+        self.assertIn(b"Too many failed sign in attempts for this account. Please wait 15 minutes", resp.data)
         with self.db() as conn:  # the window passes
             conn.execute("UPDATE auth_events SET created_at = datetime('now', '-16 minutes')")
         self.assertEqual(self.sign_in("password1").status_code, 302)
@@ -137,7 +137,7 @@ class LimitTests(AppTestCase):
         html = self.client.post("/account", data={
             "action": "password", "current_password": "password1", "password": "newpass123",
             "confirm": "newpass123"}, follow_redirects=True).data.decode()
-        self.assertIn("Too many wrong passwords.", html)
+        self.assertIn("Too many wrong passwords for this account.", html)
 
     def test_reset_requests_are_limited_per_address(self):
         for i in range(5):

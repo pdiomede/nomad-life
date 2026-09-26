@@ -29,7 +29,7 @@ import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -391,30 +391,45 @@ def limit_keys(kind, email=None):
     return [(scope, key) for scope, key in keys if (kind, scope) in LIMITS]
 
 
-def limited_for(kind, email=None):
-    """Minutes to wait before another try, or 0 when the limits allow it."""
+def take_attempt(kind, email=None):
+    """Count this attempt against the limits, or refuse it. Returns (minutes to wait, scope
+    that hit its limit, ids of the rows recorded). Checking and recording happen under one
+    write lock, so requests sent in parallel cannot all pass the check before any is counted."""
     window = f"-{LIMIT_WINDOW_MINUTES} minutes"
-    db.execute("DELETE FROM auth_events WHERE created_at <= datetime('now', ?)", (window,))
-    wait = 0
-    for scope, key in limit_keys(kind, email):
-        rows = db.query("SELECT created_at FROM auth_events WHERE kind = ? AND key = ? "
-                        "ORDER BY created_at DESC LIMIT ?", (kind, key, LIMITS[(kind, scope)]))
-        if len(rows) >= LIMITS[(kind, scope)]:
-            # Free again when the oldest of the last N events leaves the window.
-            oldest = datetime.strptime(rows[-1]["created_at"], "%Y-%m-%d %H:%M:%S")
-            free_at = oldest.replace(tzinfo=timezone.utc) + timedelta(minutes=LIMIT_WINDOW_MINUTES)
-            left = (free_at - datetime.now(timezone.utc)).total_seconds()
-            wait = max(wait, max(math.ceil(left / 60), 1))
-    return wait
+    keys = limit_keys(kind, email)
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM auth_events WHERE created_at <= datetime('now', ?)", (window,))
+        wait, hit = 0, None
+        for scope, key in keys:
+            limit = LIMITS[(kind, scope)]
+            rows = conn.execute("SELECT created_at FROM auth_events WHERE kind = ? AND key = ? "
+                                "ORDER BY created_at DESC LIMIT ?", (kind, key, limit)).fetchall()
+            if len(rows) >= limit:
+                # Free again when the oldest of the last N attempts leaves the window.
+                oldest = datetime.strptime(rows[-1]["created_at"], "%Y-%m-%d %H:%M:%S")
+                free_at = (oldest.replace(tzinfo=timezone.utc)
+                           + timedelta(minutes=LIMIT_WINDOW_MINUTES))
+                left = (free_at - datetime.now(timezone.utc)).total_seconds()
+                minutes = max(math.ceil(left / 60), 1)
+                if minutes > wait:
+                    wait, hit = minutes, scope
+        if wait:
+            return wait, hit, []
+        ids = [conn.execute("INSERT INTO auth_events (kind, key) VALUES (?, ?)",
+                            (kind, key)).lastrowid for _scope, key in keys]
+    return 0, None, ids
 
 
-def record_event(kind, email=None):
-    for _scope, key in limit_keys(kind, email):
-        db.execute("INSERT INTO auth_events (kind, key) VALUES (?, ?)", (kind, key))
-
-
-def clear_failures(email):
+def forgive(ids, email):
+    """A right password: drop this attempt and the account's earlier failures."""
+    if ids:
+        db.execute(f"DELETE FROM auth_events WHERE id IN ({','.join('?' * len(ids))})", ids)
     db.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key = ?", (f"email:{email}",))
+
+
+def too_many_message(wait, scope, what):
+    who = "from this network" if scope == "ip" else "for this account"
+    return f"Too many {what} {who}. Please wait {plural(wait, 'minute')} and try again."
 
 
 def plural(n, word):
@@ -1062,14 +1077,14 @@ def register_routes(app):
         if request.method == "POST":
             purge_unverified()
             email = request.form.get("email", "").strip().lower()
-            wait = limited_for("fail", email)
+            wait, scope, attempt = take_attempt("fail", email)
             if wait:
-                flash(f"Too many failed sign in attempts. Please wait {plural(wait, 'minute')} "
-                      "and try again, or reset your password.", "error")
+                flash(too_many_message(wait, scope, "failed sign in attempts")
+                      + ("" if scope == "ip" else " You can also reset your password."), "error")
                 return render_template("auth/login.html"), 429
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
             if row and check_password_hash(row["password_hash"], request.form.get("password", "")):
-                clear_failures(email)
+                forgive(attempt, email)
                 if row["verified_at"] is None:
                     if not email_allowed(row["id"]):
                         flash(f"Please confirm your email first, with the link we sent to {email} "
@@ -1088,7 +1103,6 @@ def register_routes(app):
                            (row["id"],))
                 login_user(User(row), remember=bool(request.form.get("remember")))
                 return redirect(safe_next(request.args.get("next", "")) or url_for("index"))
-            record_event("fail", email)
             flash("Invalid email or password.", "error")
         return render_template("auth/login.html")
 
@@ -1103,16 +1117,15 @@ def register_routes(app):
         if request.method == "POST":
             purge_unverified()
             email = request.form.get("email", "").strip().lower()
-            wait = limited_for("forgot")
+            wait, scope, _attempt = take_attempt("forgot")
             if wait:
-                flash(f"Too many reset requests from this network. Please wait "
-                      f"{plural(wait, 'minute')} and try again.", "error")
+                flash(too_many_message(wait, scope, "reset requests"), "error")
                 return render_template("auth/forgot.html"), 429
-            record_event("forgot")
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
             if row and email_allowed(row["id"]):
                 token = serializer().dumps(
-                    {"uid": row["id"], "h": password_fingerprint(row["password_hash"])})
+                    {"uid": row["id"], "h": password_fingerprint(row["password_hash"]),
+                     "e": row["email"]})
                 send_template_email(email, "Reset your Nomad Life password", "reset",
                                     link=email_link("reset", token=token),
                                     hours=RESET_TOKEN_MAX_AGE // 3600)
@@ -1137,6 +1150,9 @@ def register_routes(app):
             return redirect(url_for("forgot"))
         if password_fingerprint(row["password_hash"]) != data.get("h"):
             flash("This reset link has already been used.", "error")
+            return redirect(url_for("forgot"))
+        if data.get("e") != row["email"]:  # the email changed since: the old mailbox has no say
+            flash("This reset link is no longer valid. Please request a new one.", "error")
             return redirect(url_for("forgot"))
         if request.method == "POST":
             password = request.form.get("password", "")
@@ -1352,14 +1368,12 @@ def register_routes(app):
     def check_current_password(row):
         """Wrong current passwords count as failed sign ins, so the account page cannot be
         used to guess a password either. Returns an error message or None."""
-        wait = limited_for("fail", row["email"])
+        wait, scope, attempt = take_attempt("fail", row["email"])
         if wait:
-            return (f"Too many wrong passwords. Please wait {plural(wait, 'minute')} and try "
-                    "again.")
+            return too_many_message(wait, scope, "wrong passwords")
         if not check_password_hash(row["password_hash"], request.form.get("current_password", "")):
-            record_event("fail", row["email"])
             return "Your current password is not correct."
-        clear_failures(row["email"])
+        forgive(attempt, row["email"])
         return None
 
     @app.route("/account", methods=["GET", "POST"])
@@ -1397,13 +1411,18 @@ def register_routes(app):
                     flash("Please enter a valid email address.", "error")
                 elif new == row["email"]:
                     flash("That is already your email address.", "error")
-                elif db.query("SELECT 1 FROM users WHERE email = ?", (new,), one=True):
+                elif db.query("SELECT 1 FROM users WHERE email = ? AND verified_at IS NOT NULL",
+                              (new,), one=True):
                     flash("Another account already uses this email address.", "error")
                 elif not email_allowed(row["id"]):
                     flash("We just sent you an email. Please wait a minute and try again.", "info")
                 else:
+                    # Only the newest request can be confirmed, and only while the email is
+                    # still the one it started from, so an older link (to a mistyped address,
+                    # say) can never take the account.
+                    db.execute("UPDATE users SET pending_email = ? WHERE id = ?", (new, row["id"]))
                     token = serializer("email-change").dumps(
-                        {"uid": row["id"], "email": new,
+                        {"uid": row["id"], "email": new, "old": row["email"],
                          "h": password_fingerprint(row["password_hash"])})
                     if send_template_email(new, "Confirm your new Nomad Life email", "change_email",
                                            link=email_link("confirm_email", token=token),
@@ -1412,6 +1431,9 @@ def register_routes(app):
                         flash(f"We sent a confirmation link to {new}. Your email changes when you "
                               "open it.", "info")
                     else:
+                        # Nothing went out, so do not make the user wait for a minute.
+                        db.execute("UPDATE users SET email_sent_at = NULL, pending_email = NULL "
+                                   "WHERE id = ?", (row["id"],))
                         flash("We could not send the confirmation email. Please try again later.",
                               "error")
             elif action == "delete":
@@ -1444,20 +1466,30 @@ def register_routes(app):
             flash("This link is not valid.", "error")
             return redirect(url_for("account"))
         row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
-        # A password change after the request makes the link stale, like a reset link.
-        if not row or password_fingerprint(row["password_hash"]) != data.get("h"):
-            flash("This link is no longer valid. Please ask for the email change again.", "error")
-            return redirect(url_for("account"))
         new = data.get("email", "")
-        if row["email"] == new:
-            flash("Your email address is already updated.", "info")
-        else:
-            try:
-                db.execute("UPDATE users SET email = ? WHERE id = ?", (new, row["id"]))
-            except db.IntegrityError:
-                flash("Another account started using this email address in the meantime.", "error")
-                return redirect(url_for("account"))
-            flash(f"Your email address is now {new}.", "success")
+        if row and row["email"] == new:
+            flash("This email address is already confirmed.", "info")
+            return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+        # Stale when the password changed, the email changed since, or a newer change was asked.
+        if (not row or password_fingerprint(row["password_hash"]) != data.get("h")
+                or row["email"] != data.get("old") or row["pending_email"] != new):
+            flash("This link is no longer valid. Please ask for the email change again.", "error")
+            return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+        try:
+            with db.transaction() as conn:
+                # Opening the link proves this mailbox is theirs: an unconfirmed sign up with
+                # the same address (anyone can start one) gives way, as it does on sign up.
+                conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL AND NOT "
+                             "EXISTS (SELECT 1 FROM years WHERE years.user_id = users.id)", (new,))
+                conn.execute("UPDATE users SET email = ?, pending_email = NULL WHERE id = ?",
+                             (new, row["id"]))
+        except db.IntegrityError:
+            flash("Another account started using this email address in the meantime.", "error")
+            return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+        if current_user.is_authenticated and current_user.id != row["id"]:
+            flash(f"That link was for another account; its email address is now {new}.", "info")
+            return redirect(url_for("account"))
+        flash(f"Your email address is now {new}.", "success")
         return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
 
     # --- admin ---

@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.1] - 2026-09-26
+
+### Fixed
+
+- Security: an older email change link still worked after a newer change, so whoever owned a mistyped address could take the email back and then the whole account through "Forgot password". Only the newest request can be confirmed now, and only while the email is still the one it started from.
+- Security: a password reset link sent to your old address kept working after you changed your email. Reset links are now tied to the address they were sent to.
+- Security: sign in attempts sent all at once were not limited (40 parallel guesses all went through). Each attempt is now counted before the password is checked.
+- An address that someone started to sign up with, but never confirmed, blocked other people from switching their email to it. Only confirmed accounts own an address now.
+- Opening an email change link while signed in to another account said "Your email address is now ..." on the wrong account.
+- If the confirmation email could not be sent, trying again right away said "We just sent you an email".
+- When the limit for a whole network was reached, the message blamed "too many wrong passwords" on someone who typed theirs correctly. It now says the limit is for the network.
+- A long email in the delete dialog was cut off on small phones, so you could not read what to type.
+
 ## [1.2.0] - 2026-09-26
 
 ### Added

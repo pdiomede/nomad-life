@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
     email_sent_at TEXT,
     quota_bytes INTEGER,
     disabled INTEGER NOT NULL DEFAULT 0,
-    last_login_at TEXT
+    last_login_at TEXT,
+    pending_email TEXT
 );
 
 CREATE TABLE IF NOT EXISTS years (
@@ -111,6 +112,8 @@ MIGRATIONS = [
     ("users", "quota_bytes", ["ALTER TABLE users ADD COLUMN quota_bytes INTEGER"]),
     ("users", "disabled", ["ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0"]),
     ("users", "last_login_at", ["ALTER TABLE users ADD COLUMN last_login_at TEXT"]),
+    # The address an email change was last requested for: only its link can confirm it.
+    ("users", "pending_email", ["ALTER TABLE users ADD COLUMN pending_email TEXT"]),
 ]
 
 
