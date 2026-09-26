@@ -26,7 +26,7 @@ import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import send_email
 
-APP_VERSION = "0.0.7"
+APP_VERSION = "0.0.8"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {

@@ -33,8 +33,13 @@ RULES = [
     "The 183 day line means at least 183 days in the base country.",
 ]
 CHUNK = 64 * 1024
-# Formats that are already compressed are stored as is; zipping them again only costs time.
-STORED_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "heic", "webp"}
+# Every entry is deflated: while streaming, zipfile writes sizes after the data (a data
+# descriptor), and strict streaming readers (for example Java's ZipInputStream) only accept
+# that for deflated entries. Formats that are already compressed use the fastest level.
+FAST_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "heic", "webp"}
+# Budgets keep the longest path well under the 260 character Windows limit, even after
+# "Extract All" into a Downloads folder.
+MAX_CITY, MAX_COUNTRY, MAX_STEM, MAX_KIND = 24, 24, 40, 20
 WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
                     *(f"LPT{i}" for i in range(1, 10))}
 
@@ -196,7 +201,7 @@ def clean_segment(text, max_len=60, fallback="file", whole=True):
 
 
 def _slug(label):
-    return clean_segment(re.sub(r"[^\w]+", "-", label.lower()), 30, "document", False)
+    return clean_segment(re.sub(r"[^\w]+", "-", label.lower()), MAX_KIND, "document", False)
 
 
 def _unique(name, taken):
@@ -227,15 +232,16 @@ def assign_arcnames(data):
     folders = {0: "base"}
     taken_folders = {"base"}
     for s in data.stays:
-        folder = "_".join([f"{s.number:02d}", s.start, clean_segment(s.city, 40, "city", False),
-                           clean_segment(s.country, 40, "country", False)])
+        folder = "_".join([f"{s.number:02d}", s.start,
+                           clean_segment(s.city, MAX_CITY, "city", False),
+                           clean_segment(s.country, MAX_COUNTRY, "country", False)])
         folders[s.number] = _unique(folder, taken_folders)
     taken = {}
     for r in data.receipts:
         stem = r.name
         if stem.lower().endswith("." + r.ext):
             stem = stem[: -len(r.ext) - 1]
-        file_name = f"{_slug(r.kind)}_{clean_segment(stem, 60, 'receipt', False)}.{r.ext}"
+        file_name = f"{_slug(r.kind)}_{clean_segment(stem, MAX_STEM, 'receipt', False)}.{r.ext}"
         folder = folders.get(r.stay_number, "base")
         file_name = _unique(file_name, taken.setdefault(folder, set()))
         r.arcname = _check_arcname(data.root, f"{data.root}/receipts/{folder}/{file_name}")
@@ -434,7 +440,7 @@ def render_pdf(data):
             pdf.set_font("DejaVu", size=9)
             pdf.set_text_color(*muted)
             for item in content:
-                pdf.cell(0, 5, safe(item), new_x="LMARGIN", new_y="NEXT")
+                pdf.multi_cell(0, 5, safe(item), align="L", new_x="LMARGIN", new_y="NEXT")
             pdf.ln(2)
         elif kind == "heading":
             if pdf.get_y() > pdf.h - pdf.b_margin - 35:
@@ -448,12 +454,18 @@ def render_pdf(data):
             pdf.ln(2)
         elif kind == "kv":
             for key, value in content:
+                x0, y0 = pdf.get_x(), pdf.get_y()
                 pdf.set_font("DejaVu", size=10)
                 pdf.set_text_color(*muted)
-                pdf.cell(95, 6, safe(key))
+                pdf.multi_cell(95, 6, safe(key), align="L", new_x="LMARGIN", new_y="NEXT")
+                key_bottom = pdf.get_y()
+                if key_bottom < y0:  # the label moved to a new page
+                    y0 = key_bottom - 6
+                pdf.set_xy(x0 + 97, y0)
                 pdf.set_font("DejaVu", "B", 10)
                 pdf.set_text_color(*ink)
                 pdf.cell(0, 6, safe(value), new_x="LMARGIN", new_y="NEXT")
+                pdf.set_y(max(key_bottom, y0 + 6))
         elif kind == "note":
             pdf.set_font("DejaVu", size=8.5)
             pdf.set_text_color(*muted)
@@ -499,9 +511,10 @@ def readme_text(data):
         "  country-totals.csv  One row per country with days and share of the year.",
         "  receipts/           Original receipts, byte for byte. receipts/base holds base documents,",
         "                      the other folders are numbered stays: 01_<start date>_<city>_<country>.",
-        "  manifest.csv        Every file in this package with its size and SHA-256 checksum.",
+        "  manifest.csv        Every other file in this package with its size and SHA-256 checksum.",
         "",
-        "CSV files are UTF-8 with a byte order mark and open directly in Excel or LibreOffice.",
+        "CSV files are comma separated UTF-8 with a byte order mark. If Excel shows everything in one",
+        "column (regions that use a semicolon as list separator), use Data > From Text/CSV and choose comma.",
         "",
         "Rules used for counting",
     ] + [f"  - {rule}" for rule in RULES]
@@ -544,9 +557,10 @@ def _zip_time(dt):
     return max(dt, datetime(1980, 1, 1)).timetuple()[:6]
 
 
-def _info(arcname, when, size, compress):
+def _info(arcname, when, size, fast):
     info = zipfile.ZipInfo(arcname, date_time=_zip_time(when))
-    info.compress_type = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info._compresslevel = 1 if fast else 6
     info.external_attr = 0o644 << 16
     info.file_size = size
     return info
@@ -554,18 +568,20 @@ def _info(arcname, when, size, compress):
 
 def prepare(data):
     """Build every generated file up front (errors surface before any byte is sent) and
-    return the list of ZIP entries: (arcname, bytes or Receipt, compress)."""
+    return the list of ZIP entries: (arcname, bytes or Receipt, fast compression)."""
+    # Group receipts by stay (base first), then by upload date, for the index and manifest.
+    data.receipts.sort(key=lambda r: (r.stay_number, r.uploaded, r.name.casefold()))
     assign_arcnames(data)
     root = data.root
     entries = [
-        (f"{root}/README.txt", readme_text(data), True),
-        (f"{root}/summary.pdf", render_pdf(data), True),
-        (f"{root}/timeline.csv", timeline_csv(data), True),
-        (f"{root}/country-totals.csv", country_totals_csv(data), True),
+        (f"{root}/README.txt", readme_text(data), False),
+        (f"{root}/summary.pdf", render_pdf(data), False),
+        (f"{root}/timeline.csv", timeline_csv(data), False),
+        (f"{root}/country-totals.csv", country_totals_csv(data), False),
     ]
     for r in data.receipts:
         if r.exists:
-            entries.append((r.arcname, r, r.ext not in STORED_EXTENSIONS))
+            entries.append((r.arcname, r, r.ext in FAST_EXTENSIONS))
     for arcname, _, _ in entries:
         _check_arcname(root, arcname)
     return entries
@@ -580,13 +596,15 @@ def stream(data, entries):
     when = data.generated_at
     zf = zipfile.ZipFile(sink, "w")
     try:
-        for arcname, source, compress in entries:
+        for arcname, source, fast in entries:
             if isinstance(source, bytes):
-                with zf.open(_info(arcname, when, len(source), compress), "w") as dest:
+                with zf.open(_info(arcname, when, len(source), fast), "w") as dest:
                     dest.write(source)
                 manifest.append([arcname, "", "generated", when.date().isoformat(), len(source),
                                  hashlib.sha256(source).hexdigest(), "ok"])
-                yield sink.take()
+                out = sink.take()
+                if out:
+                    yield out
                 continue
             digest, written = hashlib.sha256(), 0
             try:
@@ -594,7 +612,7 @@ def stream(data, entries):
             except OSError:
                 source.exists = False
                 continue
-            with fh, zf.open(_info(arcname, when, os.fstat(fh.fileno()).st_size, compress), "w") as dest:
+            with fh, zf.open(_info(arcname, when, os.fstat(fh.fileno()).st_size, fast), "w") as dest:
                 while True:
                     chunk = fh.read(CHUNK)
                     if not chunk:
@@ -613,7 +631,7 @@ def stream(data, entries):
                 manifest.append([r.arcname, stay_label(data, r.stay_number), r.kind, r.uploaded,
                                  r.size, "", "missing"])
         body = _csv(["path", "stay", "type", "uploaded", "size_bytes", "sha256", "status"], manifest)
-        with zf.open(_info(f"{data.root}/manifest.csv", when, len(body), True), "w") as dest:
+        with zf.open(_info(f"{data.root}/manifest.csv", when, len(body), False), "w") as dest:
             dest.write(body)
     finally:
         zf.close()

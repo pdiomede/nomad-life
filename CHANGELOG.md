@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.0.8] - 2026-09-26
+
+### Fixed
+
+- Accountant package: some unzip tools that read archives as a stream (for example Java based ones) rejected the ZIP because receipts were stored uncompressed with their sizes written after the data. Every entry is now deflated (fastest level for PDFs and images), and receipts stay byte for byte identical.
+- Accountant package: receipts in the PDF index and `manifest.csv` were listed in upload order, mixing stays. They are now grouped by stay, base documents first.
+- Accountant package: long city, country or file names could create paths too long to extract with Windows "Extract All" (over 260 characters). Folder and file names now use shorter limits.
+- Accountant package PDF: a long base city pushed the header line past the page edge. Header lines now wrap.
+- Accountant package PDF: a long base country name overlapped the day count in the headline. Labels now wrap inside their column.
+- Accountant package `README.txt`: it now says the manifest lists every other file, and explains how to open the comma separated CSV files in Excel regions that use a semicolon.
+
 ## [0.0.7] - 2026-09-26
 
 ### Added
