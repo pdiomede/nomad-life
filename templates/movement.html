@@ -7,7 +7,7 @@
   <div class="page-head">
     <div>
       <p class="eyebrow">Movement</p>
-      <h1>{{ (m.city ~ ', ' ~ m.country) if m else 'New movement' }}</h1>
+      <h1>{% if m %}{{ ui.flag(m.country) }}{{ m.city }}, {{ m.country }}{% else %}New movement{% endif %}</h1>
     </div>
   </div>
 
@@ -23,7 +23,7 @@
         </div>
         <div class="field">
           <label for="country">Country</label>
-          <input id="country" name="country" list="country-list" value="{{ form.country or '' }}" placeholder="Indonesia" required>
+          <input id="country" name="country" list="country-list" data-country-combo autocomplete="off" value="{{ form.country or '' }}" placeholder="Indonesia" required>
         </div>
         <div class="field">
           <label for="start_date">From</label>
@@ -81,11 +81,7 @@
         <h2>Delete movement</h2>
         <p class="muted small">This removes the movement and all its receipts.</p>
       </div>
-      <form method="post" data-confirm="Delete this movement and all its receipts?">
-        {{ ui.csrf() }}
-        <input type="hidden" name="action" value="delete">
-        <button class="btn btn-danger" type="submit">Delete</button>
-      </form>
+      {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ m.city ~ ' and its ' ~ docs|length ~ ' receipt(s)', extra={'action': 'delete'}, button_class='btn btn-danger') }}
     </div>
   </section>
   {% endif %}

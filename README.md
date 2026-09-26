@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.5**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.6**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -12,6 +12,8 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - One private workspace per user with sign up, sign in and password reset by email (Gmail).
 - One workspace per solar year, each with a base city and country.
 - Log movements with date range, city and country.
+- Searchable country picker with flags. Type a name, a common alternative (UK, USA, Holland) or a country code.
+- Edit or delete every entry: years, movements and documents. Deleting always asks twice.
 - Upload receipts per movement (hotel or home rent, flight tickets) and documents for the base (rental contract).
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
 - Days per country for the year, with a 183 day indicator.
@@ -67,3 +69,5 @@ Day counts are an organizational aid, not tax advice. Residence rules differ by 
 ## License
 
 [MIT](LICENSE)
+
+Country flags are drawn with the Twemoji Country Flags font (`static/fonts/TwemojiCountryFlags.woff2`) from [country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill). The flag artwork is from [Twemoji](https://github.com/twitter/twemoji), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

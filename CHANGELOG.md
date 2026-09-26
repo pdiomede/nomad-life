@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.0.6] - 2026-09-26
+
+### Added
+
+- Searchable country picker with flags on every country field. It finds countries by name, common alternatives (UK, USA, Holland, Turkey) and two letter codes, ignores accents, and works with the keyboard, mouse and touch. Free text is still accepted for places outside the list.
+- Flags next to country names on the dashboard and on movement and base pages, drawn with a bundled flag font so they also show on Windows.
+- Documents can be renamed and their type changed.
+- Edit and Delete buttons for each movement on the dashboard.
+- Every delete (document, movement, year) asks twice in a confirmation dialog, and the server refuses deletes that were not confirmed twice. Deleting a year also asks you to type the year.
+- SEO for the landing page: keyword title and description, canonical URL, structured data, `robots.txt`, `sitemap.xml`, and `noindex` on sign in and app pages.
+- Web app manifest and icons, cache friendly static files, and receipts sent with `Cache-Control: private, no-store`.
+- `PROMPT.md`, a ready to run prompt for a deep bug hunt.
+
+### Fixed
+
+- Country picker: pressing on the list scrollbar closed the list.
+- Country picker: the "No matching country" message was not announced to screen readers.
+- Delete: a double click on "Delete" passed both confirmations at once. The final button now waits a moment before it can be pressed.
+- Delete: the "Type to confirm" field showed on every delete instead of only on the second step of a year delete.
+- Delete: in browsers without dialog support nothing could be deleted. They now ask twice with the browser's own prompts.
+- Edit and Delete buttons in lists now say which entry they belong to, for screen readers.
+- The document rename form was squeezed on phones.
+- Landing page: the "More options" share button showed even on devices that cannot share.
+- The footer link no longer relies on color alone.
+
 ## [0.0.5] - 2026-09-26
 
 ### Added

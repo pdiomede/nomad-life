@@ -1,5 +1,17 @@
 {% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endmacro %}
 
+{% macro flag(country) %}{% set f = country | flag %}{% if f %}<span class="flag" aria-hidden="true">{{ f }}</span> {% endif %}{% endmacro %}
+
+{# Delete forms are intercepted by the two step confirmation dialog (static/js/theme.js). #}
+{% macro delete_form(action, what, label="Delete", extra={}, type_to_confirm=None, button_class="btn btn-danger-ghost btn-sm", aria_label=None) %}
+<form method="post" action="{{ action }}" data-confirm-delete="{{ what }}"{% if type_to_confirm %} data-confirm-type="{{ type_to_confirm }}"{% endif %}>
+  {{ csrf() }}
+  {% for k, v in extra.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <input type="hidden" name="confirm_delete" value="">
+  <button class="{{ button_class }}" type="submit"{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}>{{ label }}</button>
+</form>
+{% endmacro %}
+
 {% macro size_attrs() %}data-max-bytes="{{ max_receipt_bytes }}" data-max-label="{{ max_receipt_label }}" data-left-bytes="{{ storage.left }}" data-left-label="{{ storage.left | filesize('down') }}"{% endmacro %}
 
 {% macro upload_form(default_kind, uid) %}
@@ -41,12 +53,28 @@
         <span class="tag">{{ document_kinds.get(d.kind, 'Other') }}</span>
         {{ d.size | filesize }}, uploaded {{ d.uploaded_at | localdate }}
       </div>
+      <details class="doc-edit">
+        <summary aria-label="Rename or change type of {{ d.original_name }}">Rename or change type</summary>
+        <form method="post" action="{{ url_for('document_edit', doc_id=d.id) }}" class="doc-edit-form">
+          {{ csrf() }}
+          <div class="field grow">
+            <label for="doc-name-{{ d.id }}">Name</label>
+            <input id="doc-name-{{ d.id }}" name="name" value="{{ d.original_name }}" maxlength="150" required>
+          </div>
+          <div class="field">
+            <label for="doc-kind-{{ d.id }}">Type</label>
+            <select id="doc-kind-{{ d.id }}" name="kind">
+              {% for key, label in document_kinds.items() %}
+                <option value="{{ key }}" {% if key == d.kind %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm" type="submit">Save</button>
+        </form>
+      </details>
     </div>
-    <a class="btn btn-ghost btn-sm" href="{{ url_for('document', doc_id=d.id, download=1) }}">Download</a>
-    <form method="post" action="{{ url_for('document_delete', doc_id=d.id) }}" data-confirm="Delete this document?">
-      {{ csrf() }}
-      <button class="btn btn-danger-ghost btn-sm" type="submit">Delete</button>
-    </form>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('document', doc_id=d.id, download=1) }}" aria-label="Download {{ d.original_name }}">Download</a>
+    {{ delete_form(url_for('document_delete', doc_id=d.id), 'the document "' ~ d.original_name ~ '"', aria_label='Delete ' ~ d.original_name) }}
   </li>
   {% endfor %}
 </ul>

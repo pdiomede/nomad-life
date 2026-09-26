@@ -22,7 +22,7 @@
   <div class="card stat stat-base">
     <p class="stat-label">Base</p>
     <p class="stat-value">{{ y.base_city }}</p>
-    <p class="muted">{{ y.base_country }}</p>
+    <p class="muted">{{ ui.flag(y.base_country) }}{{ y.base_country }}</p>
     <a class="small" href="{{ url_for('base', year=y.year) }}">Manage base and contract ({{ base_docs|length }})</a>
   </div>
   <div class="card stat">
@@ -65,12 +65,17 @@
           {% for m in movements %}
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
             <td class="dates"><span class="nowrap">{{ m.start_date }}</span> <span class="muted">to</span> <span class="nowrap">{{ m.end_date }}</span></td>
-            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"><strong>{{ m.city }}</strong></a><div class="muted small">{{ m.country }}</div></td>
+            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"><strong>{{ m.city }}</strong></a><div class="muted small">{{ ui.flag(m.country) }}{{ m.country }}</div></td>
             {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
             {% set counted = stats.counted.get(m.id, 0) %}
             <td class="num">{{ length }}{% if counted != length %}<div class="muted small nowrap" title="Days shared with another stay count toward the stay that started later">{{ counted }} counted</div>{% endif %}</td>
             <td class="num hide-sm">{{ m.doc_count }}</td>
-            <td class="right hide-sm"><a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}">Open</a></td>
+            <td class="right hide-sm">
+              <div class="row-actions">
+                <a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}" aria-label="Edit movement to {{ m.city }}">Edit</a>
+                {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ m.city ~ ' and its ' ~ m.doc_count ~ ' receipt(s)', extra={'action': 'delete'}, aria_label='Delete movement to ' ~ m.city) }}
+              </div>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -113,7 +118,7 @@
       {% for r in stats.rows %}
       <li>
         <div class="row between">
-          <span>{{ r.country }} {% if r.is_base %}<span class="tag">Base</span>{% endif %}</span>
+          <span>{{ ui.flag(r.country) }}{{ r.country }} {% if r.is_base %}<span class="tag">Base</span>{% endif %}</span>
           <span class="muted small">{{ r.days }} days ({{ r.so_far }} so far)</span>
         </div>
         <div class="meter {% if r.over_threshold and not r.is_base %}meter-hot{% endif %}">

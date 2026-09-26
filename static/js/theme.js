@@ -17,11 +17,280 @@
     });
   }
 
-  // Ask before destructive actions.
-  document.querySelectorAll("form[data-confirm]").forEach(function (form) {
-    form.addEventListener("submit", function (e) {
-      if (!window.confirm(form.getAttribute("data-confirm"))) e.preventDefault();
+  // Deleting always asks twice. Step 1 names what will be deleted, step 2 asks "Are you sure?"
+  // (and, for a year, to type it). Only then the form gets confirm_delete=2, which the server
+  // requires before deleting anything.
+  var dialog = document.getElementById("confirm-dialog");
+  var confirmAndSubmit = function (form, typed) {
+    var setHidden = function (name, value) {
+      var field = form.querySelector('input[name="' + name + '"]');
+      if (!field) {
+        field = document.createElement("input");
+        field.type = "hidden"; field.name = name; form.appendChild(field);
+      }
+      field.value = value;
+    };
+    setHidden("confirm_delete", "2");
+    if (form.getAttribute("data-confirm-type")) setHidden("confirm_year", typed);
+    form.querySelectorAll("[type=submit]").forEach(function (b) { b.disabled = true; });
+    form.submit();
+  };
+  if (dialog && typeof dialog.showModal !== "function") {
+    // Older browsers without <dialog>: still ask twice, with the browser's own prompts.
+    document.querySelectorAll("form[data-confirm-delete]").forEach(function (form) {
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var what = form.getAttribute("data-confirm-delete");
+        var need = form.getAttribute("data-confirm-type");
+        if (!window.confirm("Delete " + what + "?")) return;
+        if (!window.confirm("Are you sure? This permanently deletes " + what + ". It cannot be undone.")) return;
+        var typed = "";
+        if (need) {
+          typed = (window.prompt("Type " + need + " to confirm.") || "").trim();
+          if (typed !== need) return;
+        }
+        confirmAndSubmit(form, typed);
+      });
     });
+  }
+  if (dialog && typeof dialog.showModal === "function") {
+    var dStep = document.getElementById("confirm-step");
+    var dTitle = document.getElementById("confirm-title");
+    var dText = document.getElementById("confirm-text");
+    var dTypeField = document.getElementById("confirm-type-field");
+    var dTypeValue = document.getElementById("confirm-type-value");
+    var dTypeInput = document.getElementById("confirm-type-input");
+    var dCancel = document.getElementById("confirm-cancel");
+    var dNext = document.getElementById("confirm-next");
+    var pending = null, opener = null, step = 1, armed = false, armTimer = null;
+
+    var typedOk = function () {
+      var need = pending && pending.getAttribute("data-confirm-type");
+      return !need || dTypeInput.value.trim() === need;
+    };
+    // The step 2 button sits where the step 1 button was, so a double click would confirm
+    // twice in one gesture. Keep it inactive for a moment so the second click is deliberate.
+    var refreshNext = function () { dNext.disabled = step === 2 && !(armed && typedOk()); };
+    var showStep = function (n) {
+      step = n;
+      var what = pending.getAttribute("data-confirm-delete");
+      var need = pending.getAttribute("data-confirm-type");
+      dStep.textContent = "Step " + n + " of 2";
+      if (n === 1) {
+        dTitle.textContent = "Delete " + what + "?";
+        dText.textContent = "You will be asked once more before anything is deleted.";
+        dNext.textContent = "Delete";
+        dTypeField.hidden = true;
+        dNext.disabled = false;
+        dCancel.focus();
+      } else {
+        dTitle.textContent = "Are you sure?";
+        dText.textContent = "This permanently deletes " + what + ". It cannot be undone.";
+        dNext.textContent = "Yes, delete permanently";
+        dTypeField.hidden = !need;
+        dTypeValue.textContent = need || "";
+        dTypeInput.value = "";
+        armed = false;
+        clearTimeout(armTimer);
+        armTimer = setTimeout(function () { armed = true; refreshNext(); }, 700);
+        refreshNext();
+        (need ? dTypeInput : dCancel).focus();
+      }
+    };
+
+    document.querySelectorAll("form[data-confirm-delete]").forEach(function (form) {
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (dialog.open) return;
+        pending = form;
+        opener = e.submitter || form.querySelector("[type=submit]");
+        dialog.showModal();
+        showStep(1);
+      });
+    });
+    dTypeInput.addEventListener("input", refreshNext);
+    dTypeInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); if (!dNext.disabled) dNext.click(); }
+    });
+    dCancel.addEventListener("click", function () { dialog.close("cancel"); });
+    dNext.addEventListener("click", function () {
+      if (step === 1) { showStep(2); return; }
+      if (!armed || !typedOk()) return;
+      var form = pending;
+      var typed = dTypeInput.value.trim();
+      dialog.close("confirmed");
+      confirmAndSubmit(form, typed);
+    });
+    dialog.addEventListener("close", function () {
+      clearTimeout(armTimer);
+      armed = false;
+      if (dialog.returnValue !== "confirmed" && opener) opener.focus();
+      pending = null;
+      dialog.returnValue = "";
+    });
+  }
+
+  // Country picker: searchable list with flags. Enhances inputs marked data-country-combo;
+  // without JavaScript they keep the native datalist suggestions.
+  var countryData = document.getElementById("country-data");
+  var countries = [];
+  try { countries = countryData ? JSON.parse(countryData.textContent) : []; } catch (e) { countries = []; }
+  var fold = function (s) {
+    return (s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/’/g, "'")
+      .toLowerCase().replace(/\s+/g, " ").trim();
+  };
+  var flagOf = function (code) {
+    if (!code || !/^[A-Za-z]{2}$/.test(code)) return "";
+    return String.fromCodePoint(0x1F1E6 + code.toUpperCase().charCodeAt(0) - 65,
+                                0x1F1E6 + code.toUpperCase().charCodeAt(1) - 65);
+  };
+  var entries = countries.map(function (c) {
+    return { name: c[0], code: c[1], flag: flagOf(c[1]), keys: [fold(c[0])].concat((c[2] || []).map(fold)) };
+  });
+  var exact = {};
+  [0, 1, 2].forEach(function (pass) {  // names win over codes, codes over aliases
+    entries.forEach(function (e) {
+      var keys = pass === 0 ? [e.keys[0]] : pass === 1 ? [e.code.toLowerCase()] : e.keys.slice(1);
+      keys.forEach(function (k) { if (!(k in exact)) exact[k] = e; });
+    });
+  });
+  var search = function (query) {
+    var q = fold(query);
+    if (!q) return entries.slice();
+    var scored = [];
+    entries.forEach(function (e) {
+      var best = e.code.toLowerCase() === q ? 1 : 99;
+      e.keys.forEach(function (k, i) {
+        var s = 99, alias = i > 0 ? 1 : 0;
+        if (k === q) s = 0 + alias;
+        else if (k.indexOf(q) === 0) s = 2 + alias;
+        else if ((" " + k).indexOf(" " + q) >= 0 || k.indexOf("-" + q) >= 0) s = 4 + alias;
+        else if (k.indexOf(q) >= 0) s = 6 + alias;
+        if (s < best) best = s;
+      });
+      if (best < 99) scored.push([best, e]);
+    });
+    scored.sort(function (a, b) { return a[0] - b[0] || a[1].name.localeCompare(b[1].name); });
+    return scored.map(function (x) { return x[1]; });
+  };
+
+  document.querySelectorAll("input[data-country-combo]").forEach(function (input, n) {
+    if (!entries.length) return;
+    var listId = "country-list-" + n;
+    var wrap = document.createElement("div");
+    wrap.className = "combo";
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    var flagEl = document.createElement("span");
+    flagEl.className = "combo-flag flag";
+    flagEl.setAttribute("aria-hidden", "true");
+    wrap.insertBefore(flagEl, input);
+    var list = document.createElement("ul");
+    list.className = "combo-list";
+    list.id = listId;
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Countries");
+    list.hidden = true;
+    wrap.appendChild(list);
+    // Live region, always in the DOM so screen readers announce the text when it appears.
+    var empty = document.createElement("div");
+    empty.className = "combo-empty";
+    empty.setAttribute("role", "status");
+    var noMatch = "No matching country. You can keep what you typed.";
+    wrap.appendChild(empty);
+    // Pressing on the list (its scrollbar, padding or the empty message) must not move focus
+    // away from the input, or the blur handler would close the list mid scroll.
+    [list, empty].forEach(function (el) {
+      el.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
+    });
+
+    input.removeAttribute("list");
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute("aria-controls", listId);
+
+    var shown = [], active = -1;
+    var updateFlag = function () {
+      var e = exact[fold(input.value)];
+      flagEl.textContent = e ? e.flag : "";
+      wrap.classList.toggle("has-flag", !!e);
+    };
+    var setActive = function (i) {
+      var items = list.children;
+      if (active >= 0 && items[active]) items[active].setAttribute("aria-selected", "false");
+      active = i;
+      if (i >= 0 && items[i]) {
+        items[i].setAttribute("aria-selected", "true");
+        input.setAttribute("aria-activedescendant", items[i].id);
+        items[i].scrollIntoView({ block: "nearest" });
+      } else {
+        input.removeAttribute("aria-activedescendant");
+      }
+    };
+    var close = function () {
+      list.hidden = true; empty.textContent = ""; active = -1;
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+    };
+    var render = function (items, highlight) {
+      list.textContent = "";
+      shown = items;
+      items.forEach(function (e, i) {
+        var li = document.createElement("li");
+        li.id = listId + "-" + i;
+        li.setAttribute("role", "option");
+        li.setAttribute("aria-selected", "false");
+        var f = document.createElement("span");
+        f.className = "flag"; f.setAttribute("aria-hidden", "true"); f.textContent = e.flag;
+        var label = document.createElement("span");
+        label.textContent = e.name;
+        li.appendChild(f); li.appendChild(label);
+        li.addEventListener("mousedown", function (ev) { ev.preventDefault(); });  // keep focus in the input
+        li.addEventListener("click", function () { choose(e); });
+        list.appendChild(li);
+      });
+      list.hidden = items.length === 0;
+      empty.textContent = items.length ? "" : noMatch;
+      input.setAttribute("aria-expanded", items.length ? "true" : "false");
+      active = -1;
+      if (items.length) setActive(Math.max(highlight, 0));
+    };
+    var open = function (filter) {
+      var current = exact[fold(input.value)];
+      if (!filter || current) {
+        // Opening on a chosen country shows the whole list with that country highlighted.
+        render(entries, current ? entries.indexOf(current) : 0);
+      } else {
+        render(search(input.value), 0);
+      }
+    };
+    var choose = function (e) {
+      input.value = e.name;
+      updateFlag();
+      close();
+      input.focus();
+    };
+
+    input.addEventListener("input", function () { updateFlag(); render(search(input.value), 0); });
+    input.addEventListener("click", function () { if (list.hidden) open(false); });
+    input.addEventListener("keydown", function (e) {
+      var isOpen = !list.hidden;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!isOpen) { open(true); return; }
+        var step = e.key === "ArrowDown" ? 1 : -1;
+        setActive((active + step + shown.length) % shown.length);
+      } else if (e.key === "Enter") {
+        if (isOpen && active >= 0 && shown[active]) { e.preventDefault(); choose(shown[active]); }
+      } else if (e.key === "Escape") {
+        if (isOpen || empty.textContent) { e.preventDefault(); close(); }
+      } else if (e.key === "Tab") {
+        close();
+      }
+    });
+    input.addEventListener("blur", function () { close(); });
+    updateFlag();
   });
 
   // Share buttons: copy the landing page link, and use the device share sheet when available.

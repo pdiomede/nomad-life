@@ -21,10 +21,10 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
-from countries import COUNTRIES
+from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import send_email
 
-APP_VERSION = "0.0.5"
+APP_VERSION = "0.0.6"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -36,7 +36,19 @@ MIME_TYPES = {
     "webp": "image/webp",
 }
 ALLOWED_EXTENSIONS = set(MIME_TYPES)
-COUNTRY_LOOKUP = {c.casefold(): c for c in COUNTRIES}
+def fold(value):
+    """Search key: no accents, no case, single spaces ("Côte d’Ivoire" -> "cote d'ivoire")."""
+    value = unicodedata.normalize("NFKD", value.replace("\u2019", "'"))
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    return " ".join(value.casefold().split())
+
+
+# Canonical names win over codes, and codes over aliases, when keys collide.
+COUNTRY_LOOKUP = {}
+for _pass in (0, 1, 2):
+    for _name, _code, _aliases in COUNTRY_DATA:
+        for _key in ((_name,), (_code,), _aliases)[_pass]:
+            COUNTRY_LOOKUP.setdefault(fold(_key), _name)
 DOCUMENT_KINDS = OrderedDict([
     ("rental_contract", "Rental contract"),
     ("accommodation", "Hotel / home rent"),
@@ -178,7 +190,7 @@ def create_app(overrides=None):
 
     @app.context_processor
     def inject_globals():
-        return {"app_version": APP_VERSION, "countries": COUNTRIES,
+        return {"app_version": APP_VERSION, "countries": COUNTRIES, "country_data": COUNTRY_DATA,
                 "document_kinds": DOCUMENT_KINDS,
                 "max_receipt_bytes": app.config["MAX_RECEIPT_BYTES"],
                 "max_receipt_label": format_size(app.config["MAX_RECEIPT_BYTES"], "down"),
@@ -189,6 +201,7 @@ def create_app(overrides=None):
     app.add_template_filter(parse_date, "todate")
     app.add_template_filter(format_size, "filesize")
     app.add_template_filter(local_date, "localdate")
+    app.add_template_filter(country_flag, "flag")
 
     @app.errorhandler(413)
     def too_large(_e):
@@ -437,9 +450,23 @@ def remove_files(rows):
 
 
 def normalize_country(value):
-    """Collapse spacing and map to the canonical country name when known."""
+    """Collapse spacing and map names, aliases and ISO codes to the canonical country name.
+    Unknown places (free text) are kept as typed."""
     value = " ".join(value.split())
-    return COUNTRY_LOOKUP.get(value.casefold(), value)
+    return COUNTRY_LOOKUP.get(fold(value), value)
+
+
+def country_flag(name):
+    """Emoji flag for a stored country name, or an empty string for unknown places."""
+    return flag_emoji(COUNTRY_CODES.get(normalize_country(name or "")))
+
+
+def delete_confirmed():
+    """Deletes must come from the two step confirmation dialog, which sets confirm_delete=2."""
+    if request.form.get("confirm_delete") == "2":
+        return True
+    flash("Please confirm the deletion twice.", "error")
+    return False
 
 
 def validate_movement(form, year):
@@ -743,14 +770,17 @@ def register_routes(app):
                                   year_row["id"])
                 flash(err or "Document uploaded.", "error" if err else "success")
             elif action == "delete_year":
-                if request.form.get("confirm_year", "").strip() == str(year):
+                if not delete_confirmed():
+                    pass
+                elif request.form.get("confirm_year", "").strip() != str(year):
+                    flash("Type the year to confirm deletion.", "error")
+                else:
                     docs = db.query("SELECT * FROM documents WHERE year_id = ?",
                                     (year_row["id"],))
                     db.execute("DELETE FROM years WHERE id = ?", (year_row["id"],))
                     remove_files(docs)
                     flash(f"Year {year} deleted.", "info")
                     return redirect(url_for("index"))
-                flash("Type the year to confirm deletion.", "error")
             return redirect(url_for("base", year=year))
         return render_template("base_location.html", y=year_row, docs=documents_for(year_row["id"]))
 
@@ -804,6 +834,8 @@ def register_routes(app):
                                   year_row["id"], movement_id)
                 flash(err or "Document uploaded.", "error" if err else "success")
             elif action == "delete":
+                if not delete_confirmed():
+                    return redirect(request.referrer or url_for("movement_edit", movement_id=movement_id))
                 docs = documents_for(year_row["id"], movement_id)
                 db.execute("DELETE FROM movements WHERE id = ?", (movement_id,))
                 remove_files(docs)
@@ -840,9 +872,29 @@ def register_routes(app):
     @login_required
     def document_delete(doc_id):
         doc = get_document_or_404(doc_id)
-        db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-        remove_files([doc])
-        flash("Document deleted.", "info")
+        if delete_confirmed():
+            db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+            remove_files([doc])
+            flash("Document deleted.", "info")
+        return redirect(request.referrer or url_for("index"))
+
+    @app.route("/documents/<int:doc_id>/edit", methods=["POST"])
+    @login_required
+    def document_edit(doc_id):
+        doc = get_document_or_404(doc_id)
+        name = display_name(request.form.get("name", "").strip()) if request.form.get("name", "").strip() else ""
+        kind = request.form.get("kind", "")
+        ext = file_ext(doc["stored_name"])
+        if not name:
+            flash("Please enter a name for the document.", "error")
+        elif kind not in DOCUMENT_KINDS:
+            flash("Please choose a document type.", "error")
+        else:
+            if file_ext(name) != ext:
+                name = f"{name}.{ext}"  # keep the real extension so downloads still open
+            db.execute("UPDATE documents SET original_name = ?, kind = ? WHERE id = ?",
+                       (name, kind, doc_id))
+            flash("Document updated.", "success")
         return redirect(request.referrer or url_for("index"))
 
 

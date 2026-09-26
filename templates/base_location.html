@@ -7,7 +7,7 @@
   <div class="page-head">
     <div>
       <p class="eyebrow">Base location {{ y.year }}</p>
-      <h1>{{ y.base_city }}, {{ y.base_country }}</h1>
+      <h1>{{ ui.flag(y.base_country) }}{{ y.base_city }}, {{ y.base_country }}</h1>
     </div>
   </div>
 
@@ -23,7 +23,7 @@
         </div>
         <div class="field">
           <label for="base_country">Base country</label>
-          <input id="base_country" name="base_country" list="country-list" value="{{ y.base_country }}" required>
+          <input id="base_country" name="base_country" list="country-list" data-country-combo autocomplete="off" value="{{ y.base_country }}" required>
         </div>
       </div>
       <div><button class="btn btn-primary" type="submit">Save</button></div>
@@ -41,13 +41,8 @@
 
   <section class="card danger-zone">
     <h2>Delete year {{ y.year }}</h2>
-    <p class="muted small">Removes the year, all its movements and every stored document. Type the year to confirm.</p>
-    <form method="post" class="row gap-sm wrap">
-      {{ ui.csrf() }}
-      <input type="hidden" name="action" value="delete_year">
-      <input name="confirm_year" placeholder="{{ y.year }}" class="input-sm" required>
-      <button class="btn btn-danger" type="submit">Delete year</button>
-    </form>
+    <p class="muted small">Removes the year, all its movements and every stored document. You will confirm twice and type the year.</p>
+    {{ ui.delete_form(url_for('base', year=y.year), 'year ' ~ y.year ~ ' with all its movements and documents', label='Delete year', extra={'action': 'delete_year', 'confirm_year': ''}, type_to_confirm=y.year, button_class='btn btn-danger') }}
   </section>
 </div>
 {% include "_countries.html" %}

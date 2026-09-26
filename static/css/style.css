@@ -89,6 +89,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Author rules like .field { display: flex } would otherwise override the hidden attribute. */
+[hidden] { display: none !important; }
 
 html, body { margin: 0; }
 
@@ -294,6 +296,47 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
 .danger-zone form { margin-top: 10px; }
 .danger-zone .row form { margin-top: 0; }
 
+/* Flags: emoji flags drawn with the Twemoji country flag font (static/fonts, CC-BY 4.0), so they
+   look the same on every OS, including Windows which has no emoji flags. unicode-range keeps the
+   font to flag characters only and loads it only when a flag is on screen. */
+@font-face {
+  font-family: "Twemoji Country Flags";
+  src: url("../fonts/TwemojiCountryFlags.woff2") format("woff2");
+  unicode-range: U+1F1E6-1F1FF, U+1F3F4, U+E0062-E0063, U+E0065, U+E0067, U+E006C, U+E006E, U+E0073-E0074, U+E0077, U+E007F;
+  font-display: swap;
+}
+.flag { font-family: "Twemoji Country Flags", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; font-style: normal; line-height: 1; }
+
+/* Country combobox */
+.combo { position: relative; }
+.combo input { padding-left: 42px; }
+.combo-flag { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 22px; text-align: center; font-size: 19px; pointer-events: none; }
+.combo:not(.has-flag) .combo-flag::before { content: ""; display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 2px dashed var(--input-border); vertical-align: middle; }
+.combo-list { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); max-height: 280px; overflow-y: auto; margin: 0; padding: 4px; list-style: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18); }
+.combo-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: var(--text); }
+.combo-list li:hover { background: var(--surface-2); }
+.combo-list li[aria-selected="true"] { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+.combo-list .flag { width: 22px; text-align: center; font-size: 18px; }
+.combo-empty:empty { display: none; }
+.combo-empty { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); padding: 10px 12px; font-size: 13px; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+
+/* Two step delete confirmation */
+.confirm-dialog { width: min(440px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3); }
+.confirm-dialog::backdrop { background: rgba(15, 18, 30, 0.55); }
+.confirm-dialog h2 { font-size: 20px; margin: 0 0 8px; }
+.confirm-dialog .field { margin-top: 14px; }
+.confirm-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+
+/* Row actions and document editing */
+.row-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+.row-actions form { margin: 0; }
+.doc-edit { margin-top: 6px; }
+.doc-edit summary { cursor: pointer; font-size: 13px; color: var(--link); width: fit-content; }
+.doc-edit-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 10px; }
+.doc-edit-form .field:not(.grow) { width: 170px; }
+
 /* Landing page */
 .btn-launch { background: #FFFFFF; color: #1B2030; }
 .btn-launch:hover { opacity: 0.9; }
@@ -352,5 +395,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
   .table th, .table td { padding: 10px 16px; }
   .table .dates { min-width: 0; }
   .doc { flex-wrap: wrap; }
+  /* Icon and details on the first line, actions below, so the rename form gets the full width. */
+  .doc-main { flex-basis: calc(100% - 52px); }
+  .doc-edit-form .field:not(.grow) { width: 100%; }
   .upload .field:first-of-type { width: 100%; }
 }

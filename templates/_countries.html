@@ -1,4 +1,6 @@
-{# Country suggestions for inputs with list="country-list". Include only on pages that need it. #}
+{# Country picker data. Inputs with data-country-combo become a searchable list with flags
+   (static/js/theme.js); without JavaScript the native datalist below still offers suggestions. #}
 <datalist id="country-list">
   {% for c in countries %}<option value="{{ c }}">{% endfor %}
 </datalist>
+<script type="application/json" id="country-data">{{ country_data | tojson }}</script>

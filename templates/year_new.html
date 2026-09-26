@@ -23,7 +23,7 @@
         </div>
         <div class="field">
           <label for="base_country">Base country</label>
-          <input id="base_country" name="base_country" list="country-list" value="{{ request.form.base_country }}" placeholder="Portugal" required>
+          <input id="base_country" name="base_country" list="country-list" data-country-combo autocomplete="off" value="{{ request.form.base_country }}" placeholder="Portugal" required>
         </div>
       </div>
       <button class="btn btn-primary" type="submit">Create year</button>
