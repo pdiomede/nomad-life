@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.8**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.9**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -12,6 +12,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - One private workspace per user with sign up, sign in and password reset by email (Gmail).
 - One workspace per solar year, each with a base city and country.
 - Log movements with date range, city and country.
+- The movements list shows 10 per page, with numbered square page buttons and a choice of 10, 25 or 50 per page.
 - Searchable country picker with flags. Type a name, a common alternative (UK, USA, Holland) or a country code.
 - Edit or delete every entry: years, movements and documents. Deleting always asks twice.
 - Accountant package: one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.

@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.0.9] - 2026-09-26
+
+### Added
+
+- The movements list on each year's dashboard is split into pages of 10, with numbered square page buttons, previous and next arrows, and "Showing 11 to 20 of 34 movements" under the table.
+- Choose 10, 25 or 50 movements per page. The choice is remembered as you move around the app, and switching keeps the first movement you were looking at on screen.
+- You keep your place: "Back" on a movement, deleting a movement from the list and deleting it from its own page all return to the page of the list it was on.
+- Day totals, days per country and counted days always use every movement, whatever page you are on.
+
+### Fixed
+
+- Movements pages: going back to page 1 jumped to the top of the dashboard, while every other page kept the list in view.
+- Movements pages: after deleting a movement from page 2 or later, the "Movement deleted." message was scrolled out of view.
+- Movements pages: a choice of 25 or 50 per page was forgotten after opening a movement, so "Back" returned to 10 per page on the wrong page.
+
 ## [0.0.8] - 2026-09-26
 
 ### Fixed

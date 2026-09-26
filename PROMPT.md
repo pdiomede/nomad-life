@@ -20,7 +20,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 
 | File | Role |
 | --- | --- |
-| `app.py` | Flask app factory, config (`config.env`), auth (sign up, sign in, password reset tokens, session fingerprint), years, movements, day math (`compute_stats`, `stay_order`, `overlap_notes`), uploads (`save_upload`, per receipt limit, per user quota), downloads, accountant package route (`year_package`, `build_package_data`, `can_download_package`), landing, robots.txt, sitemap.xml, SEO and share metadata (`site_meta`), 404 handler |
+| `app.py` | Flask app factory, config (`config.env`), auth (sign up, sign in, password reset tokens, session fingerprint), years, movements, movements pagination (`paginate`, `page_window`, `page_size`, `dashboard_url`, `back_to_movement`), day math (`compute_stats`, `stay_order`, `overlap_notes`), uploads (`save_upload`, per receipt limit, per user quota), downloads, accountant package route (`year_package`, `build_package_data`, `can_download_package`), landing, robots.txt, sitemap.xml, SEO and share metadata (`site_meta`), 404 handler |
 | `package.py` | Annual accountant package: summary model, PDF (fpdf2), CSV with formula protection, safe ZIP paths, streaming ZIP with manifest and checksums |
 | `tests/` | `unittest` suite (`python -m unittest`), helpers with an isolated app per test |
 | `db.py` | SQLite schema, per request connection, `query`, `execute`, `transaction` (BEGIN IMMEDIATE) |
@@ -32,7 +32,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 | `templates/landing.html` | Public landing page, JSON-LD, share buttons |
 | `templates/dashboard.html` | Year dashboard: stats, movements table, storage card, days per country |
 | `templates/movement.html`, `base_location.html`, `year_new.html` | Forms for movements, base location and documents, new year |
-| `templates/_macros.html`, `_theme_toggle.html`, `_countries.html` | Upload form, document list, theme toggle, country datalist |
+| `templates/_macros.html`, `_theme_toggle.html`, `_countries.html` | Upload form, document list, delete form, square page links (`pagination`), theme toggle, country data |
 | `templates/auth/*.html` | Sign in, sign up, forgot and reset password |
 | `static/css/style.css` | All styles, light and dark tokens, responsive rules |
 | `static/js/theme.js` | Theme toggle, delete confirmations, file checks (size, quota), copy link, native share |
@@ -49,6 +49,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
    - Sign up, sign in (with and without "remember me"), sign out, forgot password, reset link (valid, expired, reused, tampered), sessions after a reset.
    - Create a year, edit the base, delete a year (confirm text, files removed, space freed).
    - Add, edit, delete movements, including invalid dates, dates outside the year, leap years, same day stays, overlapping and nested stays, travel days shared by two stays.
+   - Movements pages: 10, 11, 20 and 21 movements, bad `page` and `per_page` values, page size choice, deleting the last row of the last page, "Back" from a movement, stats identical on every page.
    - Day math: days per country, base days, days abroad, "so far" counts, year elapsed, the 183 day label, counted days per stay. Check against hand computed expectations.
    - Receipts: upload on base and movement pages and while creating a movement, allowed and rejected types, non Latin file names, empty files, exact limit, over limit, over quota, parallel uploads, download, inline view, delete, other users trying to access them.
    - Landing page, "Launch app", share buttons, copy link, robots.txt, sitemap.xml, 404 for unknown URLs and for other users' resources.

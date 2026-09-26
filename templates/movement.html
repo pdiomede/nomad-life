@@ -3,7 +3,7 @@
 {% block title %}{{ m.city if m else 'New movement' }} | Nomad Life{% endblock %}
 {% block content %}
 <div class="narrow">
-  <a class="back" href="{{ url_for('dashboard', year=y.year) }}">&larr; Back to {{ y.year }}</a>
+  <a class="back" href="{{ back_url or url_for('dashboard', year=y.year) }}">&larr; Back to {{ y.year }}</a>
   <div class="page-head">
     <div>
       <p class="eyebrow">Movement</p>

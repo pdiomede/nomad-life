@@ -82,3 +82,28 @@
 <p class="empty">No documents yet.</p>
 {% endif %}
 {% endmacro %}
+
+{# Square numbered page links. `p` comes from paginate() in app.py. #}
+{% macro pagination(p, label) %}
+<nav class="pager" aria-label="{{ label }}">
+  {% if p.prev %}
+    <a href="{{ p.url(p.prev) }}" rel="prev" aria-label="Previous page">&lsaquo;</a>
+  {% else %}
+    <span class="pager-off" aria-hidden="true">&lsaquo;</span>
+  {% endif %}
+  {% for n in p.window %}
+    {% if n is none %}
+      <span class="pager-gap" aria-hidden="true">&hellip;</span>
+    {% elif n == p.page %}
+      <a href="{{ p.url(n) }}" aria-current="page" aria-label="Page {{ n }}">{{ n }}</a>
+    {% else %}
+      <a href="{{ p.url(n) }}" aria-label="Page {{ n }}">{{ n }}</a>
+    {% endif %}
+  {% endfor %}
+  {% if p.next %}
+    <a href="{{ p.url(p.next) }}" rel="next" aria-label="Next page">&rsaquo;</a>
+  {% else %}
+    <span class="pager-off" aria-hidden="true">&rsaquo;</span>
+  {% endif %}
+</nav>
+{% endmacro %}

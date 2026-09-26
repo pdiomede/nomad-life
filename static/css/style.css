@@ -278,6 +278,22 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
 .table .dates { min-width: 12em; }
 .loc-link { color: var(--text); }
 
+/* Pagination: square page numbers under the movements table */
+#movements { scroll-margin-top: 16px; }
+.table-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--border); }
+.pager { display: flex; flex-wrap: wrap; gap: 6px; }
+.pager a, .pager span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 6px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pager a { border: 1px solid var(--input-border); background: var(--surface); color: var(--text); }
+.pager a:hover { text-decoration: none; background: var(--surface-2); }
+.pager a[aria-current="page"] { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.pager a:focus-visible, .per-page a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.pager-off { border: 1px solid var(--border); color: var(--muted); opacity: 0.6; }
+.pager-gap { color: var(--muted); }
+.per-page { display: flex; align-items: center; gap: 4px; }
+.per-page a { min-width: 32px; padding: 3px 8px; border-radius: 5px; text-align: center; color: var(--muted); font-weight: 600; }
+.per-page a:hover { text-decoration: none; background: var(--surface-2); color: var(--text); }
+.per-page a[aria-current="true"] { background: var(--primary); color: var(--primary-text); }
+
 .empty { color: var(--muted); padding: 18px 0; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
 
 /* Documents */
@@ -400,6 +416,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
   .table-wrap { margin: 0 -16px; }
   .table th, .table td { padding: 10px 16px; }
   .table .dates { min-width: 0; }
+  .pager { gap: 4px; }
+  .pager a, .pager span { width: 32px; height: 32px; }
   .doc { flex-wrap: wrap; }
   /* Icon and details on the first line, actions below, so the rename form gets the full width. */
   .doc-main { flex-basis: calc(100% - 52px); }

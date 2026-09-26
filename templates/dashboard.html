@@ -51,9 +51,9 @@
 </section>
 
 <div class="grid-main">
-  <section class="card">
+  <section class="card" id="movements" aria-labelledby="movements-title">
     <div class="card-head">
-      <h2>Movements</h2>
+      <h2 id="movements-title">Movements</h2>
     </div>
     {% if movements %}
     <div class="table-wrap">
@@ -62,7 +62,7 @@
           <tr><th>Dates</th><th>Location</th><th class="num">Days</th><th class="num hide-sm">Docs</th><th class="hide-sm"></th></tr>
         </thead>
         <tbody>
-          {% for m in movements %}
+          {% for m in pager.rows %}
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
             <td class="dates"><span class="nowrap">{{ m.start_date }}</span> <span class="muted">to</span> <span class="nowrap">{{ m.end_date }}</span></td>
             <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"><strong>{{ m.city }}</strong></a><div class="muted small">{{ ui.flag(m.country) }}{{ m.country }}</div></td>
@@ -73,7 +73,7 @@
             <td class="right hide-sm">
               <div class="row-actions">
                 <a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}" aria-label="Edit movement to {{ m.city }}">Edit</a>
-                {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ m.city ~ ' and its ' ~ m.doc_count ~ ' receipt(s)', extra={'action': 'delete'}, aria_label='Delete movement to ' ~ m.city) }}
+                {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ m.city ~ ' and its ' ~ m.doc_count ~ ' receipt(s)', extra={'action': 'delete', 'page': pager.page}, aria_label='Delete movement to ' ~ m.city) }}
               </div>
             </td>
           </tr>
@@ -81,6 +81,17 @@
         </tbody>
       </table>
     </div>
+    {% if pager.total > per_page_options[0] %}
+    <div class="table-foot">
+      <p class="muted small">Showing {{ pager.first }} to {{ pager.last }} of {{ pager.total }} movements</p>
+      {% if pager.pages > 1 %}{{ ui.pagination(pager, 'Movements pages') }}{% endif %}
+      <p class="per-page small"><span class="muted">Show</span>
+        {% for n in per_page_options %}
+          {% if n == pager.per_page %}<a href="{{ pager.size_url(n) }}" aria-current="true" aria-label="Show {{ n }} per page">{{ n }}</a>{% else %}<a href="{{ pager.size_url(n) }}" aria-label="Show {{ n }} per page">{{ n }}</a>{% endif %}
+        {% endfor %}
+      </p>
+    </div>
+    {% endif %}
     {% else %}
       <div class="empty">
         <p>No movements yet for {{ y.year }}.</p>

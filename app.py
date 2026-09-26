@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from flask import (Flask, Response, abort, flash, redirect, render_template, request,
-                   send_from_directory, url_for)
+                   send_from_directory, session, url_for)
 from markupsafe import escape
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_user, logout_user)
@@ -26,7 +26,7 @@ import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import send_email
 
-APP_VERSION = "0.0.8"
+APP_VERSION = "0.0.9"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -58,6 +58,8 @@ DOCUMENT_KINDS = OrderedDict([
     ("other", "Other"),
 ])
 RESIDENCE_THRESHOLD = 183
+MOVEMENTS_PER_PAGE = 10
+PER_PAGE_OPTIONS = (10, 25, 50)
 SITE_TITLE = "Nomad Life | Every day. Every place."
 SITE_DESCRIPTION = ("Track the days you spend in each country and keep your travel receipts safe, "
                     "all in one place. Made for digital nomads.")
@@ -522,6 +524,92 @@ def flash_overlaps(year_id, data, movement_id):
               "that started later, so check the dates if that is not intended.", "info")
 
 
+def to_int(value, default):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def per_page_arg(value):
+    """Allowed page sizes only; anything else falls back to the default."""
+    n = to_int(value, MOVEMENTS_PER_PAGE)
+    return n if n in PER_PAGE_OPTIONS else MOVEMENTS_PER_PAGE
+
+
+def page_size():
+    """Movements per page: a ?per_page choice is remembered for the session, so opening a
+    movement and coming back (or deleting it) keeps the page size."""
+    if "per_page" in request.args:
+        session["per_page"] = per_page_arg(request.args.get("per_page"))
+    return per_page_arg(session.get("per_page"))
+
+
+def page_window(page, pages):
+    """Page numbers to show, with None for a gap: 1 ... 4 5 6 ... 20. Short lists show every
+    page, and a gap of a single page shows that number instead of an ellipsis."""
+    if pages <= 7:
+        return list(range(1, pages + 1))
+    keep = {1, pages, page - 1, page, page + 1}
+    if page <= 4:
+        keep |= set(range(1, 6))
+    if page >= pages - 3:
+        keep |= set(range(pages - 4, pages + 1))
+    out, prev = [], 0
+    for n in sorted(k for k in keep if 1 <= k <= pages):
+        if n - prev == 2:
+            out.append(prev + 1)
+        elif n - prev > 2:
+            out.append(None)
+        out.append(n)
+        prev = n
+    return out
+
+
+def paginate(items, page, per_page, url):
+    """Slice a list for display. Invalid or out of range pages are clamped, never an error.
+    `url(page, per_page)` builds the link for a page."""
+    total = len(items)
+    pages = max(1, -(-total // per_page))
+    page = min(max(to_int(page, 1), 1), pages)
+    start = (page - 1) * per_page
+    return {
+        "rows": items[start:start + per_page], "page": page, "pages": pages, "total": total,
+        "per_page": per_page, "first": start + 1 if total else 0,
+        "last": min(start + per_page, total),
+        "prev": page - 1 if page > 1 else None, "next": page + 1 if page < pages else None,
+        "window": page_window(page, pages),
+        "url": lambda n: url(n, per_page),
+        # Changing the page size keeps the first visible item on screen.
+        "size_url": lambda size: url(start // size + 1, size),
+    }
+
+
+def movement_page(year_id, movement_id, per_page=MOVEMENTS_PER_PAGE):
+    """Dashboard page that shows a movement, using the dashboard's ordering."""
+    ids = [r["id"] for r in db.query("SELECT id FROM movements WHERE year_id = ? "
+                                     "ORDER BY start_date, end_date DESC, id", (year_id,))]
+    return ids.index(movement_id) // per_page + 1 if movement_id in ids else 1
+
+
+def dashboard_url(year, page=1, per_page=MOVEMENTS_PER_PAGE, anchor=True):
+    """Dashboard link to a page of the movements table. Links land on the table; redirects
+    after an action pass anchor=False so the flash message at the top stays in view. The page
+    size is left out only when the dashboard would pick it anyway."""
+    remembered = per_page_arg(session.get("per_page"))
+    explicit = per_page != MOVEMENTS_PER_PAGE or per_page != remembered
+    return url_for("dashboard", year=year, page=page if page > 1 else None,
+                   per_page=per_page if explicit else None,
+                   _anchor="movements" if anchor else None)
+
+
+def back_to_movement(year_row, movement_id):
+    """Dashboard link to the page of the movements table that shows a movement."""
+    per_page = page_size()
+    return dashboard_url(year_row["year"], movement_page(year_row["id"], movement_id, per_page),
+                         per_page)
+
+
 def can_download_package(user):
     """Who may download the annual accountant package. Everyone for now; a future Pro plan
     only needs to change this function."""
@@ -807,7 +895,11 @@ def register_routes(app):
         years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year DESC",
                          (current_user.id,))
         base_docs = documents_for(year_row["id"])
-        return render_template("dashboard.html", y=year_row, movements=movements,
+        # Stats always use every movement; only the table is paginated.
+        pager = paginate(movements, request.args.get("page"), page_size(),
+                         lambda n, size: dashboard_url(year, n, size))
+        return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
+                               per_page_options=PER_PAGE_OPTIONS,
                                years=years, stats=compute_stats(year_row, movements),
                                base_docs=base_docs,
                                today=date.today().isoformat())
@@ -883,7 +975,8 @@ def register_routes(app):
                     # Re-render so the user keeps what they typed.
                     flash(err, "error")
                     return render_template("movement.html", y=year_row, m=m, form=request.form,
-                                           docs=documents_for(year_row["id"], movement_id))
+                                           docs=documents_for(year_row["id"], movement_id),
+                                           back_url=back_to_movement(year_row, movement_id))
                 else:
                     db.execute("UPDATE movements SET city = ?, country = ?, start_date = ?, "
                                "end_date = ?, notes = ? WHERE id = ?",
@@ -898,14 +991,20 @@ def register_routes(app):
             elif action == "delete":
                 if not delete_confirmed():
                     return redirect(request.referrer or url_for("movement_edit", movement_id=movement_id))
+                # Return to the dashboard page the user was on (dashboard rows send it), or to
+                # the page that showed this movement; the dashboard clamps it if it is now empty.
+                per_page = page_size()
+                page = to_int(request.form.get("page"), 0) or movement_page(
+                    year_row["id"], movement_id, per_page)
                 docs = documents_for(year_row["id"], movement_id)
                 db.execute("DELETE FROM movements WHERE id = ?", (movement_id,))
                 remove_files(docs)
                 flash("Movement deleted.", "info")
-                return redirect(url_for("dashboard", year=m["year"]))
+                return redirect(dashboard_url(m["year"], page, per_page, anchor=False))
             return redirect(url_for("movement_edit", movement_id=movement_id))
         return render_template("movement.html", y=year_row, m=m, form=m,
-                               docs=documents_for(year_row["id"], movement_id))
+                               docs=documents_for(year_row["id"], movement_id),
+                               back_url=back_to_movement(year_row, movement_id))
 
     # --- documents ---
 
