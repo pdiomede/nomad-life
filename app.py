@@ -4,7 +4,8 @@ import os
 import secrets
 import uuid
 from collections import OrderedDict
-from datetime import date, datetime, timedelta
+import unicodedata
+from datetime import date, datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from flask import (Flask, abort, flash, redirect, render_template, request,
@@ -14,13 +15,12 @@ from flask_login import (LoginManager, UserMixin, current_user, login_required,
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
-from werkzeug.utils import secure_filename
 
 import db
 from countries import COUNTRIES
 from mailer import send_email
 
-APP_VERSION = "0.0.2"
+APP_VERSION = "0.0.3"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -47,6 +47,17 @@ load_dotenv(os.path.join(BASE_DIR, "config.env"))
 
 def _abs(path):
     return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
+
+
+def valid_email(email):
+    """Pragmatic address check: one @, no spaces or brackets, a dotted domain with a real TLD."""
+    if len(email) > 254 or email.count("@") != 1:
+        return False
+    local, domain = email.split("@")
+    if not local or any(ch.isspace() or ch in '<>()[],;:"' for ch in email):
+        return False
+    labels = domain.split(".")
+    return len(labels) >= 2 and all(labels) and len(labels[-1]) >= 2
 
 
 def password_fingerprint(password_hash):
@@ -92,6 +103,9 @@ def create_app(overrides=None):
         DATABASE_PATH=_abs(os.getenv("DATABASE_PATH", "data/nomad.db")),
         UPLOAD_DIR=_abs(os.getenv("UPLOAD_DIR", "uploads")),
         MAX_CONTENT_LENGTH=int(os.getenv("MAX_UPLOAD_MB", "20")) * 1024 * 1024,
+        # Cookies are shared by every app on localhost regardless of port, so use unique names.
+        SESSION_COOKIE_NAME="nomadlife_session",
+        REMEMBER_COOKIE_NAME="nomadlife_remember",
     )
     if overrides:
         app.config.update(overrides)
@@ -123,14 +137,19 @@ def create_app(overrides=None):
     @app.context_processor
     def inject_globals():
         return {"app_version": APP_VERSION, "countries": COUNTRIES,
-                "document_kinds": DOCUMENT_KINDS}
+                "document_kinds": DOCUMENT_KINDS,
+                # The limit covers the whole request, so leave room for the other form fields.
+                "max_upload_bytes": app.config["MAX_CONTENT_LENGTH"] - 64 * 1024,
+                "max_upload_label": format_size(app.config["MAX_CONTENT_LENGTH"])}
 
     app.add_template_filter(parse_date, "todate")
     app.add_template_filter(format_size, "filesize")
+    app.add_template_filter(local_date, "localdate")
 
     @app.errorhandler(413)
     def too_large(_e):
-        flash("The file is too large.", "error")
+        flash(f"The file is too large. The limit is {format_size(app.config['MAX_CONTENT_LENGTH'])}.",
+              "error")
         return redirect(request.referrer or url_for("index"))
 
     @app.errorhandler(CSRFError)
@@ -160,12 +179,21 @@ def parse_date(value):
         return None
 
 
+def local_date(utc_timestamp):
+    """SQLite CURRENT_TIMESTAMP is UTC. Show it as a date in the machine's local time zone."""
+    try:
+        dt = datetime.strptime(utc_timestamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return utc_timestamp
+    return dt.astimezone().strftime("%Y-%m-%d")
+
+
 def format_size(size):
     if size < 1024:
         return f"{size} B"
     if size < 1024 * 1024:
         return f"{size / 1024:.0f} KB"
-    return f"{size / (1024 * 1024):.1f} MB"
+    return f"{size / (1024 * 1024):.1f}".rstrip("0").rstrip(".") + " MB"
 
 
 def get_year_or_404(year):
@@ -197,12 +225,24 @@ def file_ext(name):
     return name.rsplit(".", 1)[-1].lower() if "." in name else ""
 
 
+def display_name(filename, limit=150):
+    """Human readable file name. Keeps non ASCII letters (the file is stored under a random
+    name), drops any client side folder path and invisible control characters."""
+    name = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    name = "".join(ch for ch in name if unicodedata.category(ch)[0] != "C")
+    name = " ".join(name.split())
+    if len(name) > limit:
+        ext = file_ext(name)
+        name = name[:limit - len(ext) - 1].rstrip() + "." + ext if ext else name[:limit]
+    return name or "file"
+
+
 def save_upload(file, kind, year_id, movement_id=None, required=True):
     """Store an uploaded file. Returns an error message or None."""
     from flask import current_app
     if not file or not file.filename:
         return "Please choose a file to upload." if required else None
-    name = secure_filename(file.filename) or "file"
+    name = display_name(file.filename)
     ext = file_ext(name)
     if ext not in ALLOWED_EXTENSIONS:
         return "Unsupported file type. Allowed: " + ", ".join(sorted(ALLOWED_EXTENSIONS))
@@ -213,6 +253,9 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
     stored = f"{uuid.uuid4().hex}.{ext}"
     path = os.path.join(user_dir, stored)
     file.save(path)
+    if os.path.getsize(path) == 0:
+        os.remove(path)
+        return "The file is empty. Please choose another file."
     try:
         db.execute(
             "INSERT INTO documents (user_id, year_id, movement_id, kind, original_name, "
@@ -260,6 +303,40 @@ def validate_movement(form, year):
             "end_date": end.isoformat(), "notes": form.get("notes", "").strip()}, None
 
 
+def stay_length(m):
+    """Calendar days of a stay, counting both the first and the last day."""
+    return (parse_date(m["end_date"]) - parse_date(m["start_date"])).days + 1
+
+
+def stay_order(movements):
+    """Start date ascending, then longer stays first, then oldest entry first."""
+    ordered = sorted(movements, key=lambda r: r["id"])
+    ordered.sort(key=lambda r: r["end_date"], reverse=True)
+    ordered.sort(key=lambda r: r["start_date"])
+    return ordered
+
+
+def overlap_notes(year_id, data, exclude_id=None):
+    """Describe stays that overlap the given one by more than a single travel day."""
+    rows = db.query("SELECT * FROM movements WHERE year_id = ? AND id IS NOT ? "
+                    "AND start_date <= ? AND end_date >= ?",
+                    (year_id, exclude_id, data["end_date"], data["start_date"]))
+    notes = []
+    for r in rows:
+        shared = (min(parse_date(r["end_date"]), parse_date(data["end_date"]))
+                  - max(parse_date(r["start_date"]), parse_date(data["start_date"]))).days + 1
+        if shared > 1:
+            notes.append(f"{r['city']} ({r['start_date']} to {r['end_date']}, {shared} shared days)")
+    return notes
+
+
+def flash_overlaps(year_id, data, movement_id):
+    notes = overlap_notes(year_id, data, movement_id)
+    if notes:
+        flash("This stay overlaps " + "; ".join(notes) + ". Shared days count toward the stay "
+              "that started later, so check the dates if that is not intended.", "info")
+
+
 def compute_stats(year_row, movements):
     """Count days per country. Days not covered by a movement count as base."""
     y = year_row["year"]
@@ -270,17 +347,25 @@ def compute_stats(year_row, movements):
     # Countries are compared case insensitively so "portugal" and "Portugal" are one country.
     names = {base: base_name}
     assigned = {}
-    for m in sorted(movements, key=lambda r: r["start_date"]):
+    assigned_mv = {}
+    # A shared day belongs to the stay that started later (the arrival). On the same start
+    # day the shorter stay wins, so a side trip is never hidden by the longer stay around it.
+    for m in stay_order(movements):
         name = normalize_country(m["country"])
         key = name.casefold()
         names.setdefault(key, name)
         d, end = parse_date(m["start_date"]), parse_date(m["end_date"])
         while d <= end:
             assigned[d] = key
+            assigned_mv[d] = m["id"]
             d += timedelta(days=1)
 
     today = date.today()
     elapsed_end = min(today, last) if today >= first else first - timedelta(days=1)
+
+    counted = {}  # days each movement actually contributes after overlaps
+    for mid in assigned_mv.values():
+        counted[mid] = counted.get(mid, 0) + 1
 
     per_country = {}
     per_country_so_far = {}
@@ -298,7 +383,7 @@ def compute_stats(year_row, movements):
             for c, n in per_country.items()]
     rows.sort(key=lambda r: (-r["days"], r["country"]))
     base_days = per_country.get(base, 0)
-    return {"total": total, "rows": rows, "base_days": base_days,
+    return {"total": total, "rows": rows, "base_days": base_days, "counted": counted,
             "abroad_days": total - base_days, "threshold": RESIDENCE_THRESHOLD,
             "base_ok": base_days >= RESIDENCE_THRESHOLD,
             "elapsed": max((elapsed_end - first).days + 1, 0)}
@@ -318,7 +403,7 @@ def register_routes(app):
             email = request.form.get("email", "").strip().lower()
             password = request.form.get("password", "")
             confirm = request.form.get("confirm", "")
-            if "@" not in email or "." not in email:
+            if not valid_email(email):
                 flash("Please enter a valid email address.", "error")
             elif len(password) < 8:
                 flash("Password must be at least 8 characters.", "error")
@@ -449,7 +534,8 @@ def register_routes(app):
         year_row = get_year_or_404(year)
         movements = db.query(
             "SELECT m.*, (SELECT COUNT(*) FROM documents d WHERE d.movement_id = m.id) AS doc_count "
-            "FROM movements m WHERE m.year_id = ? ORDER BY m.start_date", (year_row["id"],))
+            "FROM movements m WHERE m.year_id = ? ORDER BY m.start_date, m.end_date DESC, m.id",
+            (year_row["id"],))
         years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year DESC",
                          (current_user.id,))
         base_docs = documents_for(year_row["id"])
@@ -509,6 +595,7 @@ def register_routes(app):
                 if err:
                     flash(err, "error")
                 flash(f"Movement to {data['city']} added.", "success")
+                flash_overlaps(year_row["id"], data, mid)
                 return redirect(url_for("movement_edit", movement_id=mid))
         return render_template("movement.html", y=year_row, m=None, form=form, docs=[])
 
@@ -532,6 +619,7 @@ def register_routes(app):
                                (data["city"], data["country"], data["start_date"],
                                 data["end_date"], data["notes"], movement_id))
                     flash("Movement updated.", "success")
+                    flash_overlaps(year_row["id"], data, movement_id)
             elif action == "upload":
                 err = save_upload(request.files.get("file"), request.form.get("kind"),
                                   year_row["id"], movement_id)

@@ -2,6 +2,43 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.0.3] - 2026-09-26
+
+### Fixed
+
+#### User interface
+
+- Links, status messages, pills and danger buttons now meet WCAG AA contrast in light and dark mode.
+- The year selector no longer claims to be a tab list without tabs. It is now a labelled navigation with the current year marked.
+
+#### runWebApp.sh
+
+- No longer exits silently when `config.env` has no `APP_PORT` line or uses `export APP_PORT=`.
+- Reads `config.env` with the same parser as the app, so inline comments and quotes work.
+- An `APP_PORT` exported in the shell no longer makes the app start on a different port than the script freed.
+- Rejects ports outside 1 to 65535 instead of letting the app bind a different port.
+- Rejects ports that browsers refuse to open (for example 5060 and 5061).
+- Recreates a broken `.venv` instead of falling back to the system Python.
+- Detects a busy port even when lsof, fuser and ss are not installed.
+
+#### Receipts
+
+- File names with non Latin characters (for example Japanese) are accepted and shown as uploaded. Accents are kept and client side folder paths are removed.
+- Empty files are rejected.
+- Files over the size limit are caught in the browser before upload, so the rest of the form is not lost. The limit is shown next to the file picker and in the error message.
+- Upload dates are shown in local time instead of UTC.
+
+#### Sign up, sign in and password reset
+
+- Sign up rejects invalid email addresses such as `@.` or `a@b.`.
+- Session and remember me cookies have unique names, so signing in to another app on localhost no longer signs you out.
+
+#### Days and stays
+
+- A side trip that starts on the same day as a longer stay is no longer hidden by it.
+- When stays share days, the movements table shows how many days each stay actually counts, and saving an overlapping stay shows a warning.
+- The base country label says "At least 183 days" instead of "Above 183 days", which was wrong at exactly 183.
+
 ## [0.0.2] - 2026-09-26
 
 ### Added

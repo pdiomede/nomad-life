@@ -24,11 +24,24 @@
     });
   });
 
-  // Show the chosen file name next to custom file inputs.
+  // Show the chosen file name next to custom file inputs, and reject files over the
+  // upload limit before submitting (the server would drop the whole form).
   document.querySelectorAll("input[type=file][data-label]").forEach(function (input) {
     input.addEventListener("change", function () {
       var label = document.getElementById(input.getAttribute("data-label"));
-      if (label) label.textContent = input.files.length ? input.files[0].name : "No file selected";
+      var max = parseInt(input.getAttribute("data-max-bytes") || "0", 10);
+      var file = input.files.length ? input.files[0] : null;
+      var error = "";
+      if (file && max && file.size > max) {
+        error = file.name + " is too large (max " + Math.round(max / 1048576) + " MB).";
+      } else if (file && file.size === 0) {
+        error = file.name + " is empty.";
+      }
+      if (error) input.value = "";
+      if (label) {
+        label.textContent = error || (file ? file.name : "No file selected");
+        label.classList.toggle("file-error", !!error);
+      }
     });
   });
 })();

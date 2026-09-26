@@ -8,12 +8,12 @@
     <h1>{{ y.year }}</h1>
   </div>
   <div class="row wrap gap-sm">
-    <div class="year-tabs" role="tablist">
+    <nav class="year-tabs" aria-label="Years">
       {% for r in years %}
-        <a class="year-tab {% if r.year == y.year %}active{% endif %}" href="{{ url_for('dashboard', year=r.year) }}">{{ r.year }}</a>
+        <a class="year-tab {% if r.year == y.year %}active{% endif %}" href="{{ url_for('dashboard', year=r.year) }}"{% if r.year == y.year %} aria-current="page"{% endif %}>{{ r.year }}</a>
       {% endfor %}
       <a class="year-tab add" href="{{ url_for('new_year') }}" title="Add a year">+ Year</a>
-    </div>
+    </nav>
     <a class="btn btn-primary" href="{{ url_for('movement_new', year=y.year) }}">+ Add movement</a>
   </div>
 </div>
@@ -33,7 +33,7 @@
       <i style="left: {{ (stats.threshold * 100 / stats.total) | round(1) }}%"></i>
     </div>
     {% if stats.base_ok %}
-      <p class="pill pill-ok">Above {{ stats.threshold }} days</p>
+      <p class="pill pill-ok">At least {{ stats.threshold }} days</p>
     {% else %}
       <p class="pill pill-warn">{{ stats.threshold - stats.base_days }} days short of {{ stats.threshold }}</p>
     {% endif %}
@@ -66,7 +66,9 @@
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
             <td class="dates"><span class="nowrap">{{ m.start_date }}</span> <span class="muted">to</span> <span class="nowrap">{{ m.end_date }}</span></td>
             <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"><strong>{{ m.city }}</strong></a><div class="muted small">{{ m.country }}</div></td>
-            <td class="num">{{ ((m.end_date | todate) - (m.start_date | todate)).days + 1 }}</td>
+            {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
+            {% set counted = stats.counted.get(m.id, 0) %}
+            <td class="num">{{ length }}{% if counted != length %}<div class="muted small nowrap" title="Days shared with another stay count toward the stay that started later">{{ counted }} counted</div>{% endif %}</td>
             <td class="num hide-sm">{{ m.doc_count }}</td>
             <td class="right hide-sm"><a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}">Open</a></td>
           </tr>
@@ -86,7 +88,7 @@
     <div class="card-head">
       <h2>Days per country</h2>
     </div>
-    <p class="muted small">Full year view. Days not covered by a movement count toward your base country. The marker shows the {{ stats.threshold }} day line.</p>
+    <p class="muted small">Full year view. Days not covered by a movement count toward your base country. A day shared by two stays, such as a travel day, counts toward the stay that started later. The marker shows the {{ stats.threshold }} day line.</p>
     <ul class="bars">
       {% for r in stats.rows %}
       <li>

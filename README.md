@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.2**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.3**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
