@@ -3,6 +3,7 @@ import hashlib
 import math
 import os
 import secrets
+from urllib.parse import quote, urlencode
 import uuid
 from collections import OrderedDict
 import unicodedata
@@ -21,7 +22,7 @@ import db
 from countries import COUNTRIES
 from mailer import send_email
 
-APP_VERSION = "0.0.4"
+APP_VERSION = "0.0.5"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -41,6 +42,10 @@ DOCUMENT_KINDS = OrderedDict([
     ("other", "Other"),
 ])
 RESIDENCE_THRESHOLD = 183
+SITE_TITLE = "Nomad Life | Every day. Every place."
+SITE_DESCRIPTION = ("Track the days you spend in each country and keep your travel receipts safe, "
+                    "all in one place. Made for digital nomads.")
+SHARE_TEXT = "Track the days you spend in each country and keep your travel receipts safe."
 RESET_TOKEN_MAX_AGE = 3600
 
 load_dotenv(os.path.join(BASE_DIR, "config.env"))
@@ -166,7 +171,8 @@ def create_app(overrides=None):
                 "max_receipt_bytes": app.config["MAX_RECEIPT_BYTES"],
                 "max_receipt_label": format_size(app.config["MAX_RECEIPT_BYTES"], "down"),
                 "storage": storage_summary(current_user.id)
-                if current_user.is_authenticated else None}
+                if current_user.is_authenticated else None,
+                "site": site_meta()}
 
     app.add_template_filter(parse_date, "todate")
     app.add_template_filter(format_size, "filesize")
@@ -185,7 +191,10 @@ def create_app(overrides=None):
 
     @app.errorhandler(404)
     def not_found(_e):
-        return render_template("404.html"), 404
+        # Standalone page, so a web server in front of the app can serve the same file.
+        resp = send_from_directory(app.static_folder, "404.html", max_age=0)
+        resp.status_code = 404
+        return resp
 
     register_routes(app)
     return app
@@ -264,6 +273,26 @@ def display_name(filename, limit=150):
         ext = file_ext(name)
         name = name[:limit - len(ext) - 1].rstrip() + "." + ext if ext else name[:limit]
     return name or "file"
+
+
+def site_meta():
+    """Absolute URLs for link previews and share buttons. Social networks fetch these from
+    APP_BASE_URL, so it must be the public address for previews to work."""
+    from flask import current_app
+    base = current_app.config["APP_BASE_URL"].rstrip("/")
+    url = base + url_for("landing")
+    q = lambda v: quote(v, safe="")
+    links = [
+        ("X", "https://twitter.com/intent/tweet?" + urlencode({"text": SHARE_TEXT, "url": url})),
+        ("LinkedIn", "https://www.linkedin.com/sharing/share-offsite/?url=" + q(url)),
+        ("Facebook", "https://www.facebook.com/sharer/sharer.php?u=" + q(url)),
+        ("WhatsApp", "https://wa.me/?text=" + q(f"{SHARE_TEXT} {url}")),
+        ("Telegram", "https://t.me/share/url?" + urlencode({"url": url, "text": SHARE_TEXT})),
+        ("Reddit", "https://www.reddit.com/submit?" + urlencode({"url": url, "title": SITE_TITLE})),
+    ]
+    return {"title": SITE_TITLE, "description": SITE_DESCRIPTION, "share_text": SHARE_TEXT,
+            "url": url, "image": base + url_for("static", filename="img/og-image.jpg"),
+            "share_links": links}
 
 
 def storage_used(user_id):

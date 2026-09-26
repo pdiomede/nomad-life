@@ -24,6 +24,36 @@
     });
   });
 
+  // Share buttons: copy the landing page link, and use the device share sheet when available.
+  document.querySelectorAll("[data-copy-link]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var url = btn.getAttribute("data-copy-link");
+      var done = function (ok) {
+        var label = btn.textContent;
+        btn.textContent = ok ? "Link copied" : "Copy failed";
+        setTimeout(function () { btn.textContent = label; }, 2000);
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url).then(function () { done(true); }, function () { done(false); });
+      } else {
+        var field = document.createElement("textarea");
+        field.value = url; field.setAttribute("readonly", ""); field.style.position = "fixed"; field.style.opacity = "0";
+        document.body.appendChild(field); field.select();
+        var ok = false;
+        try { ok = document.execCommand("copy"); } catch (e) {}
+        document.body.removeChild(field); done(ok);
+      }
+    });
+  });
+  document.querySelectorAll("[data-native-share]").forEach(function (btn) {
+    if (!navigator.share) return;
+    btn.hidden = false;
+    btn.addEventListener("click", function () {
+      navigator.share({ title: btn.getAttribute("data-title"), text: btn.getAttribute("data-text"),
+                        url: btn.getAttribute("data-url") }).catch(function () {});
+    });
+  });
+
   // Show the chosen file name next to custom file inputs, and reject files over the
   // upload limit before submitting (the server would drop the whole form).
   document.querySelectorAll("input[type=file][data-label]").forEach(function (input) {

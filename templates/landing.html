@@ -90,4 +90,16 @@
   </div>
   <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">Launch app</a>
 </section>
+
+<section class="share" aria-labelledby="share-title">
+  <h2 id="share-title">Know a fellow nomad? Share Nomad Life</h2>
+  <div class="share-links">
+    {% for name, href in site.share_links %}
+      <a class="btn btn-ghost btn-sm" href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ name }}</a>
+    {% endfor %}
+    <button class="btn btn-ghost btn-sm" type="button" data-copy-link="{{ site.url }}">Copy link</button>
+    <button class="btn btn-ghost btn-sm" type="button" data-native-share
+            data-title="{{ site.title }}" data-text="{{ site.share_text }}" data-url="{{ site.url }}" hidden>More options</button>
+  </div>
+</section>
 {% endblock %}

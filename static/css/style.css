@@ -316,6 +316,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
 .step-list li { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
 .step-num { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--primary); color: var(--primary-text); margin-bottom: 4px; }
 .cta { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; padding: 28px 32px; margin: 0; }
+.share { margin: 40px 0 8px; text-align: center; }
+.share h2 { font-size: 16px; font-weight: 600; color: var(--muted); margin-bottom: 14px; }
+.share-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .cta h2 { font-family: "Outfit", "Inter", system-ui, sans-serif; font-size: 24px; margin-bottom: 4px; }
 
 /* Responsive */

@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.0.5] - 2026-09-26
+
+### Added
+
+- New Nomad Life logo in the header, on the sign in pages and as the browser and home screen icon.
+- Landing page at `/` that explains the app, with a "Launch app" button in the top right corner. The app itself now lives at `/app`.
+- Link preview image and text for social networks (Open Graph and Twitter card tags).
+- Share buttons on the landing page for X, LinkedIn, Facebook, WhatsApp, Telegram and Reddit, plus "Copy link" and the device share menu where available.
+- A funny standalone 404 page (`static/404.html`), served by the app for wrong links and ready for a web server.
+
+### Fixed
+
+- On screens about 961 to 1020 px wide, the floating receipt card on the landing page covered the "At least 183 days" label.
+
 ## [0.0.4] - 2026-09-26
 
 ### Added

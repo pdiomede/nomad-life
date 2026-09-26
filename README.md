@@ -1,12 +1,14 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.4**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v0.0.5**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
 ## Features
 
 - A simple landing page that explains the app, with a "Launch app" button to sign in.
+- Share buttons for X, LinkedIn, Facebook, WhatsApp, Telegram and Reddit, with a link preview image.
+- A friendly 404 page for wrong links.
 - One private workspace per user with sign up, sign in and password reset by email (Gmail).
 - One workspace per solar year, each with a base city and country.
 - Log movements with date range, city and country.
@@ -33,7 +35,7 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | Key | Description |
 | --- | --- |
 | `APP_PORT` | Port the app listens on. Default `5050`. |
-| `APP_BASE_URL` | Public URL used in reset emails. Empty means `http://localhost:APP_PORT`. |
+| `APP_BASE_URL` | Public URL used in reset emails, link previews and share buttons. Empty means `http://localhost:APP_PORT`. |
 | `SECRET_KEY` | Random secret for sessions and reset links. Generated on first run if empty. |
 | `GMAIL_USER` | Gmail address used to send emails. |
 | `GMAIL_APP_PASSWORD` | Gmail App Password (not your normal password). |
@@ -43,6 +45,12 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | `USER_QUOTA_MB` | Total receipt storage per user in MB, across all years. Default `500`. |
 
 To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, reset links are printed in the terminal.
+
+## Link previews and 404 page
+
+Social networks read the preview image and text from `APP_BASE_URL`, so set it to your public address (for example `https://nomadlife.example.com`) once the app is online. Previews cannot work on `localhost`.
+
+The 404 page is a standalone file, `static/404.html`. The app already serves it for wrong links. If you put a web server in front of the app, you can point its error page to the same file, for example in nginx: `error_page 404 /static/404.html;`.
 
 ## Disclaimer
 
