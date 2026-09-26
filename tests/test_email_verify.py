@@ -4,6 +4,8 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
+from unittest import mock
 
 import app as appmod
 import mailer
@@ -254,3 +256,58 @@ class BugHuntTests(AppTestCase):
                          data={"password": "password9", "confirm": "password9"})
         resp = self.client.post("/login", data={"email": EMAIL, "password": "password9"})
         self.assertEqual(resp.headers["Location"], "/app")
+
+
+class SignupDeepHuntTests(AppTestCase):
+    """Regression tests for the deep bug hunt on sign up and the confirmation link."""
+
+    def post_signup(self, email=EMAIL, password="password1", client=None):
+        return (client or self.client).post("/signup", data={
+            "email": email, "password": password, "confirm": password})
+
+    def test_link_opened_while_signed_in_as_someone_else(self):
+        self.signup("other@example.com")
+        self.client.get("/app", follow_redirects=True)  # show (and clear) the sign up messages
+        other = self.app.test_client()
+        self.post_signup(client=other)
+        html = self.client.get(self.last_link(EMAIL), follow_redirects=True).get_data(as_text=True)
+        self.assertIn(f"{EMAIL} is confirmed", html)
+        self.assertIn("sign out", html)
+        self.assertNotIn("Please sign in to start", html)
+
+    def test_expired_resent_link_says_expired(self):
+        self.post_signup()
+        with self.db() as conn:
+            conn.execute("UPDATE users SET created_at = datetime('now', '-15 minutes'), "
+                         "email_sent_at = NULL")
+        self.client.post("/login", data={"email": EMAIL, "password": "password1"})
+        resent = self.last_link(EMAIL)
+        # Six minutes later: the account is past its 20 minutes and the cleanup removes it.
+        with self.db() as conn:
+            conn.execute("UPDATE users SET created_at = datetime('now', '-21 minutes')")
+        later = datetime.now(timezone.utc) + timedelta(minutes=6)
+        with mock.patch.object(appmod, "datetime", wraps=datetime) as fake:
+            fake.now.return_value = later
+            fake.strptime = datetime.strptime
+            html = self.client.get(resent, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("This confirmation link has expired", html)
+
+    def test_signing_up_cannot_delete_an_unconfirmed_account_with_data(self):
+        self.signup(EMAIL)
+        self.new_year(2026)
+        self.client.post("/logout")
+        with self.db() as conn:
+            conn.execute("UPDATE users SET verified_at = NULL, email_sent_at = NULL")
+        self.post_signup(password="attacker1")
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM years").fetchone()[0], 1)
+
+    def test_failed_send_does_not_start_the_wait(self):
+        self.post_signup()
+        self.age_emails()
+        self.send_email.side_effect = None
+        self.send_email.return_value = False
+        self.client.post("/login", data={"email": EMAIL, "password": "password1"})
+        self.send_email.return_value = True
+        html = self.client.post("/login", data={"email": EMAIL, "password": "password1"})
+        self.assertIn("We sent a new link", html.get_data(as_text=True))

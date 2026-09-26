@@ -21,6 +21,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Protection against password guessing: failed sign ins and reset requests are limited.
 - Admin page for the operator: accounts, storage, per account quotas, disable or delete accounts.
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
+- Plans: Free, Pro (EUR 4 a month) and Nomad+ (EUR 9 a month), each with its own storage and receipt limits. The header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
 - Days per country for the year, with a 183 day indicator. Days without a stay count toward the base country once they have passed; logged stays count in full, also future ones.
 - Light and dark mode, inspired by the Aave color palette.
 - Everything stored locally: SQLite database in `data/`, files in `uploads/`.
@@ -48,8 +49,8 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | `GMAIL_APP_PASSWORD` | Gmail App Password (not your normal password). |
 | `DATABASE_PATH` | SQLite file. Default `data/nomad.db`. |
 | `UPLOAD_DIR` | Folder for uploaded files. Default `uploads`. |
-| `MAX_RECEIPT_MB` | Max size of a single receipt in MB. Default `10`. Older configs using `MAX_UPLOAD_MB` still work. |
-| `USER_QUOTA_MB` | Total receipt storage per user in MB, across all years. Default `500`. An admin can set a different quota per account. |
+| `MAX_RECEIPT_MB` | Max size of a single receipt in MB on the Free plan. Default `10`. Older configs using `MAX_UPLOAD_MB` still work. |
+| `USER_QUOTA_MB` | Total receipt storage per user in MB, across all years, on the Free plan. Default `500`. An admin can set a different quota per account. |
 | `ADMIN_EMAILS` | Comma separated emails of the accounts that can open the admin page. Empty by default. |
 | `PROXY_COUNT` | Reverse proxies in front of the app, so sign in limits see each visitor's address. Default `0`; use `1` behind nginx or Caddy. |
 
@@ -70,12 +71,28 @@ Password guessing is slowed down. After 5 failed sign ins for one account, or 20
 Accounts listed in `ADMIN_EMAILS` get an **Admin** link (header and footer) to `/admin`, which shows:
 
 - Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements.
-- Every account with its sign up date, last sign in, number of years and storage used.
-- A storage quota per account (in MB; leave it empty for the `USER_QUOTA_MB` default).
+- Every account with its plan, sign up date, last sign in, number of years and storage used.
+- A storage quota per account (in MB; leave it empty for the quota of the account's plan).
 - Disable or enable an account. Disabling signs it out everywhere and blocks sign in.
 - Delete an account with all its years, movements and receipts. It asks twice and needs the email typed.
 
 Admins cannot disable or delete their own account, and nobody can become an admin from inside the app. Everyone else gets "Page not found" at `/admin`.
+
+## Plans
+
+| Plan | Price | Receipt storage | Per receipt |
+| --- | --- | --- | --- |
+| Free | 0 | `USER_QUOTA_MB` (500 MB) | `MAX_RECEIPT_MB` (10 MB) |
+| Pro | EUR 4 a month | 5 GB | 25 MB |
+| Nomad+ | EUR 9 a month | 25 GB | 50 MB, plus priority support |
+
+Paid plans never get less than Free, and a quota set on the admin page wins over the plan's. Plans are defined in `PLANS` in `app.py`. There is no payment yet, so to move a user to another plan, change the database:
+
+```bash
+sqlite3 data/nomad.db "UPDATE users SET plan = 'pro' WHERE email = 'you@example.com'"
+```
+
+Use `free`, `pro` or `plus`.
 
 ## Accountant package
 

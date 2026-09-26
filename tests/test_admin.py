@@ -60,7 +60,7 @@ class AdminTests(AppTestCase):
         self.assertIn(b"Not enough storage left", resp.data)
         self.assertIn(b"of 1 MB", self.user.get("/year/2026").data)
         html = self.act("quota", quota_mb="").data.decode()
-        self.assertIn("now uses the default storage quota", html)
+        self.assertIn("now uses the storage quota of the Free plan (500 MB)", html)
         self.assertIn(b"of 500 MB", self.user.get("/year/2026").data)
 
     def test_quota_must_be_sensible(self):

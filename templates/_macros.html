@@ -107,3 +107,18 @@
   {% endif %}
 </nav>
 {% endmacro %}
+
+{# One plan: name, price, limits and features. Used by the plan page and the landing page. #}
+{% macro plan_card(p, current=False, highlight=False, heading="h3") %}
+<div class="card plan-card{% if current %} plan-current{% endif %}{% if highlight %} plan-highlight{% endif %}">
+  <div class="row between">
+    <{{ heading }} class="plan-name">{{ p.name }}</{{ heading }}>
+    {% if current %}<span class="pill pill-ok">Your plan</span>{% endif %}
+  </div>
+  <p class="plan-price">{% if p.price %}&euro;{{ p.price }} <span class="muted">/ month</span>{% else %}Free <span class="muted">forever</span>{% endif %}</p>
+  <ul class="plan-features">
+    {% for f in p.features %}<li>{{ f }}</li>{% endfor %}
+  </ul>
+  {{ caller() if caller }}
+</div>
+{% endmacro %}

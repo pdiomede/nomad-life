@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## [1.2.2] - 2026-09-26
 
+### Added
+
+- Plans: Free (500 MB of receipts, 10 MB per receipt), Pro (EUR 4 a month, 5 GB, 25 MB per receipt) and Nomad+ (EUR 9 a month, 25 GB, 50 MB per receipt, priority support). Each plan sets its own storage and receipt limits. Everyone starts on Free; online payment is not available yet.
+- The header shows a chip with your plan before your email. It opens the new plan page.
+- "Upgrade" on the Receipt storage card opens the plan page, with your plan, its limits and usage, and the next plan with its price.
+- The landing page has a Plans section with every plan, its price and features, and a "Pricing" button at the top.
+- The admin page shows each account's plan, and an account without a custom quota gets the quota of its plan.
+
 ### Fixed
 
 - Security: anyone could sign up again with an address still waiting for confirmation, replace its password, and take the account once the owner clicked the newest email. For an admin address this gave the admin page. A pending sign up is never replaced now: the mailbox receives a link to choose the password, and earlier confirmation links stop working.
@@ -16,6 +24,12 @@ All notable changes to this project are documented in this file.
 - After a confirmation email failed to send, signing in again said "with the link we sent a moment ago" when nothing was sent.
 - Accountant package: for the current or a future year without stays, the PDF still said "Every day counts toward the base country", which contradicted its own numbers.
 - Adding a movement while its year was deleted in another tab showed a server error, and editing a movement deleted meanwhile said "Movement updated."
+- Opening a confirmation link in a browser signed in to another account said "Please sign in" and then showed the other account. It now says which address was confirmed and how to switch.
+- A confirmation link sent again from the sign in page, opened after the account's 20 minutes, said to use the newest email instead of saying it had expired.
+- Sizes of 1024 MB and more were shown in MB (for example "5120 MB"). They now show in GB.
+- On phones about 300 px wide the header ran past the right margin once it showed the plan chip.
+- Uploads over a Free plan's receipt limit were read in full before being refused, once paid plans raised the overall limit. Each request is limited to its user's plan again, so oversized files are refused before they are read.
+- Search engine data for the landing page still said the app was only free, priced in US dollars. It now lists every plan in euro.
 
 ## [1.2.1] - 2026-09-26
 

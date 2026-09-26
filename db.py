@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
     disabled INTEGER NOT NULL DEFAULT 0,
     last_login_at TEXT,
     pending_email TEXT,
-    session_version INTEGER NOT NULL DEFAULT 0
+    session_version INTEGER NOT NULL DEFAULT 0,
+    plan TEXT NOT NULL DEFAULT 'free'
 );
 
 CREATE TABLE IF NOT EXISTS years (
@@ -118,6 +119,8 @@ MIGRATIONS = [
     # Raised to sign an account out everywhere for good (disabling it), without a new password.
     ("users", "session_version", ["ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL "
                                   "DEFAULT 0"]),
+    # The user's plan (see PLANS in app.py). Everyone starts on Free.
+    ("users", "plan", ["ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'"]),
 ]
 
 

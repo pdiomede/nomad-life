@@ -61,6 +61,18 @@ DOCUMENT_KINDS = OrderedDict([
     ("other", "Other"),
 ])
 RESIDENCE_THRESHOLD = 183
+# Plans, cheapest first. Free takes its limits from config.env (USER_QUOTA_MB, MAX_RECEIPT_MB);
+# a paid plan is never below Free. There is no payment yet: a plan changes in the database.
+PLANS = OrderedDict([
+    ("free", {"name": "Free", "price": 0, "quota_mb": None, "receipt_mb": None,
+              "extras": []}),
+    ("pro", {"name": "Pro", "price": 4, "quota_mb": 5 * 1024, "receipt_mb": 25,
+             "extras": []}),
+    ("plus", {"name": "Nomad+", "price": 9, "quota_mb": 25 * 1024, "receipt_mb": 50,
+              "extras": ["Priority support"]}),
+])
+PLAN_FEATURES = ["Unlimited years and stays", "Days per country with the 183 day line",
+                 "Accountant package (PDF, spreadsheets, receipts)"]
 NOTES_MAX = 5000
 UPLOAD_GONE = "This stay or year no longer exists, so the file was not saved."
 MOVEMENTS_PER_PAGE = 10
@@ -75,7 +87,7 @@ SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and 
                    "hotel bills and flight tickets in one place. Free for digital nomads.")
 # Paths that need an account. Kept out of search engines via robots.txt.
 PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin",
-                 "/account"]
+                 "/account", "/plan"]
 ADMIN_USERS_PER_PAGE = 25
 MAX_QUOTA_MB = 1024 * 1024  # 1 TB, a sanity cap for quotas typed on the admin page
 RESET_TOKEN_MAX_AGE = 3600
@@ -125,6 +137,7 @@ class User(UserMixin):
         self.email = row["email"]
         self.fingerprint = password_fingerprint(row["password_hash"])
         self.version = row["session_version"] if "session_version" in row.keys() else 0
+        self.plan = row["plan"] if "plan" in row.keys() and row["plan"] in PLANS else "free"
 
     @property
     def is_admin(self):
@@ -247,8 +260,10 @@ def create_app(overrides=None):
     if overrides:
         app.config.update(overrides)
     # Reject oversized request bodies before reading them. The extra megabyte leaves room for
-    # the other form fields; the exact per receipt limit is checked in save_upload.
-    app.config["MAX_CONTENT_LENGTH"] = app.config["MAX_RECEIPT_BYTES"] + MB
+    # the other form fields; the exact per receipt limit of the user's plan is checked in
+    # save_upload.
+    app.config["MAX_CONTENT_LENGTH"] = max(p["receipt_bytes"]
+                                           for p in plan_catalog(app.config)) + MB
 
     db.init_db(app.config["DATABASE_PATH"])
     os.makedirs(app.config["UPLOAD_DIR"], exist_ok=True)
@@ -303,6 +318,12 @@ def create_app(overrides=None):
     last_purge = [0.0]
 
     @app.before_request
+    def request_size_limit():
+        # MAX_CONTENT_LENGTH fits the largest plan; each request gets its sender's own cap, so
+        # a Free user's oversized upload is still refused before the server reads it.
+        request.max_content_length = receipt_limit() + MB
+
+    @app.before_request
     def purge_now_and_then():
         if time.monotonic() - last_purge[0] >= PURGE_EVERY_SECONDS:
             last_purge[0] = time.monotonic()
@@ -320,8 +341,11 @@ def create_app(overrides=None):
     def inject_globals():
         return {"app_version": APP_VERSION, "asset_version": asset_version, "countries": COUNTRIES, "country_data": COUNTRY_DATA,
                 "document_kinds": DOCUMENT_KINDS,
-                "max_receipt_bytes": app.config["MAX_RECEIPT_BYTES"],
-                "max_receipt_label": format_size(app.config["MAX_RECEIPT_BYTES"], "down"),
+                "max_receipt_bytes": receipt_limit(),
+                "max_receipt_label": format_size(receipt_limit(), "down"),
+                "current_plan": current_plan() if current_user.is_authenticated else None,
+                "next_plan_name": (next_plan(current_user.plan) or {}).get("name")
+                if current_user.is_authenticated else None,
                 "storage": storage_summary(current_user.id)
                 if current_user.is_authenticated else None,
                 "site": site_meta()}
@@ -335,7 +359,7 @@ def create_app(overrides=None):
     def too_large(_e):
         # Also raised for oversized text fields, so do not claim a file was sent.
         flash(f"This form was too large to save. Receipts can be at most "
-              f"{format_size(app.config['MAX_RECEIPT_BYTES'], 'down')} each.", "error")
+              f"{format_size(receipt_limit(), 'down')} each.", "error")
         return redirect(request.referrer or url_for("index"))
 
     @app.errorhandler(CSRFError)
@@ -443,10 +467,14 @@ def plural(n, word):
     return f"{n} {word}{'' if n == 1 else 's'}"
 
 
+def verify_deadline(created_at):
+    created = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    return created + timedelta(minutes=VERIFY_MINUTES)
+
+
 def minutes_left(row):
     """Whole minutes before an unconfirmed account is deleted (at least 1)."""
-    created = datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-    left = created + timedelta(minutes=VERIFY_MINUTES) - datetime.now(timezone.utc)
+    left = verify_deadline(row["created_at"]) - datetime.now(timezone.utc)
     return max(math.ceil(left.total_seconds() / 60), 1)
 
 
@@ -484,9 +512,12 @@ def send_password_link(row, template, subject):
 
 
 def send_verification(row):
+    # "c" lets a link for an account that is gone say whether it expired or was replaced.
     token = serializer("email-verify").dumps(
         {"uid": row["id"], "h": password_fingerprint(row["password_hash"]),
-         "v": row["session_version"]})
+         "v": row["session_version"],
+         # "c" lets a link for an account that is gone say whether it expired.
+         "c": row["created_at"]})
     return send_template_email(row["email"], "Confirm your Nomad Life account", "verify",
                                link=email_link("verify", token=token), minutes=minutes_left(row))
 
@@ -516,7 +547,10 @@ def format_size(size, rounding="nearest"):
     kb = step(size / 1024)
     if kb < 1024:  # 1,048,300 bytes rounds to 1024 KB: show it as 1 MB instead
         return f"{kb} KB"
-    return f"{step(size / MB * 10) / 10:.1f}".rstrip("0").rstrip(".") + " MB"
+    mb = step(size / MB * 10) / 10
+    if mb < 1024:  # likewise 1023.96 MB is shown as 1 GB, never "1024 MB"
+        return f"{mb:.1f}".rstrip("0").rstrip(".") + " MB"
+    return f"{step(size / (MB * 1024) * 10) / 10:.1f}".rstrip("0").rstrip(".") + " GB"
 
 
 def get_year_or_404(year):
@@ -588,7 +622,9 @@ def site_meta():
              "applicationCategory": "TravelApplication", "operatingSystem": "Any",
              "browserRequirements": "Requires a modern web browser",
              "isAccessibleForFree": True,
-             "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+             "offers": [{"@type": "Offer", "name": p["name"], "price": str(p["price"]),
+                         "priceCurrency": "EUR", "url": url + "#pricing"}
+                        for p in PLANS.values()],
              "featureList": ["Days per country for each solar year",
                              "183 day indicator for your base country",
                              "Receipt storage for rental contracts, hotel bills and flight tickets",
@@ -608,13 +644,49 @@ def storage_used(user_id):
     return row["used"]
 
 
-def user_quota(user_id):
-    """Storage quota in bytes: the one set on the admin page, else USER_QUOTA_MB."""
+def plan_catalog(config=None):
+    """Every plan with its limits in bytes and the feature list shown to people."""
     from flask import current_app
-    row = db.query("SELECT quota_bytes FROM users WHERE id = ?", (user_id,), one=True)
+    config = config or current_app.config
+    free_quota, free_receipt = config["USER_QUOTA_BYTES"], config["MAX_RECEIPT_BYTES"]
+    plans = []
+    for key, p in PLANS.items():
+        quota = max(p["quota_mb"] * MB, free_quota) if p["quota_mb"] else free_quota
+        receipt = max(p["receipt_mb"] * MB, free_receipt) if p["receipt_mb"] else free_receipt
+        plans.append({"key": key, "name": p["name"], "price": p["price"],
+                      "quota_bytes": quota, "receipt_bytes": receipt,
+                      "features": [f"{format_size(quota, 'down')} of receipt storage",
+                                   f"Receipts up to {format_size(receipt, 'down')} each"]
+                                  + PLAN_FEATURES + p["extras"]})
+    return plans
+
+
+def plan_named(key):
+    plans = plan_catalog()
+    return next((p for p in plans if p["key"] == key), plans[0])
+
+
+def next_plan(key):
+    """The plan after this one, or None on the top plan."""
+    keys = list(PLANS)
+    i = keys.index(key) if key in keys else 0
+    return plan_named(keys[i + 1]) if i + 1 < len(keys) else None
+
+
+def current_plan():
+    return plan_named(current_user.plan if current_user.is_authenticated else "free")
+
+
+def receipt_limit():
+    return current_plan()["receipt_bytes"]
+
+
+def user_quota(user_id):
+    """Storage quota in bytes: the one set on the admin page, else the one of the plan."""
+    row = db.query("SELECT quota_bytes, plan FROM users WHERE id = ?", (user_id,), one=True)
     if row is not None and row["quota_bytes"] is not None:
         return row["quota_bytes"]
-    return current_app.config["USER_QUOTA_BYTES"]
+    return plan_named(row["plan"] if row is not None else "free")["quota_bytes"]
 
 
 def storage_summary(user_id):
@@ -656,7 +728,7 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
 
     # Check both limits before anything is written to the uploads folder.
     size = upload_size(file)
-    limit = current_app.config["MAX_RECEIPT_BYTES"]
+    limit = receipt_limit()
     quota = user_quota(current_user.id)
     if size == 0:
         return "The file is empty. Please choose another file."
@@ -1093,9 +1165,24 @@ def register_routes(app):
             flash("This confirmation link is not valid.", "error")
             return redirect(url_for("signup"))
         row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
+        signed_in = current_user.is_authenticated
         if row and row["verified_at"] is not None:
-            flash("Your email is already confirmed. Please sign in.", "info")
-            return redirect(url_for("login"))
+            if signed_in and current_user.id == row["id"]:
+                flash("Your email is already confirmed.", "info")
+                return redirect(url_for("index"))
+            flash(f"{row['email']} is already confirmed. "
+                  + ("To use it, sign out and sign in with it." if signed_in else "Please sign in."),
+                  "info")
+            return redirect(url_for("index" if signed_in else "login"))
+        if not row and data.get("c"):
+            try:
+                expired = verify_deadline(data["c"]) <= datetime.now(timezone.utc)
+            except (TypeError, ValueError):
+                expired = False
+            if expired:
+                flash("This confirmation link has expired, so the account was removed. Please "
+                      "sign up again.", "error")
+                return redirect(url_for("signup"))
         # A later sign up attempt for this address raises the version, so a confirmation link
         # sent before it (possibly for a stranger's password) stops working.
         if (not row or password_fingerprint(row["password_hash"]) != data.get("h")
@@ -1105,6 +1192,10 @@ def register_routes(app):
             return redirect(url_for("signup"))
         db.execute("UPDATE users SET verified_at = CURRENT_TIMESTAMP WHERE id = ? AND "
                    "verified_at IS NULL", (row["id"],))
+        if signed_in:  # confirmed from a browser signed in to another account
+            flash(f"{row['email']} is confirmed. To use that account, sign out and sign in "
+                  "with it.", "success")
+            return redirect(url_for("index"))
         flash("Your email is confirmed. Please sign in to start.", "success")
         return redirect(url_for("login"))
 
@@ -1213,7 +1304,7 @@ def register_routes(app):
 
     @app.route("/")
     def landing():
-        return render_template("landing.html")
+        return render_template("landing.html", plans=plan_catalog())
 
     @app.route("/robots.txt")
     def robots_txt():
@@ -1244,6 +1335,12 @@ def register_routes(app):
         wanted = date.today().year
         pick = wanted if any(r["year"] == wanted for r in years) else years[0]["year"]
         return redirect(url_for("dashboard", year=pick))
+
+    @app.route("/plan")
+    @login_required
+    def plan():
+        mine = current_plan()
+        return render_template("plan.html", plan=mine, upgrade=next_plan(mine["key"]))
 
     @app.route("/year/new", methods=["GET", "POST"])
     @login_required
@@ -1572,12 +1669,16 @@ def register_routes(app):
         require_admin()
         users = db.query(
             "SELECT u.id, u.email, u.created_at, u.last_login_at, u.disabled, u.quota_bytes, "
-            "u.verified_at, "
+            "u.verified_at, u.plan, "
             "(SELECT COUNT(*) FROM years y WHERE y.user_id = u.id) AS years, "
             "(SELECT COALESCE(SUM(size), 0) FROM documents d WHERE d.user_id = u.id) AS used "
             "FROM users u ORDER BY u.created_at DESC, u.id DESC")
         default_quota = app.config["USER_QUOTA_BYTES"]
-        users = [dict(u, quota=u["quota_bytes"] if u["quota_bytes"] is not None else default_quota,
+        plans = {p["key"]: p for p in plan_catalog()}
+        # Without a custom quota an account gets the quota of its plan.
+        users = [dict(u, plan_name=plans.get(u["plan"], plans["free"])["name"],
+                      quota=u["quota_bytes"] if u["quota_bytes"] is not None
+                      else plans.get(u["plan"], plans["free"])["quota_bytes"],
                       quota_mb=f"{u['quota_bytes'] / MB:.1f}".removesuffix(".0")
                       if u["quota_bytes"] is not None else "",
                       is_admin=u["email"] in app.config["ADMIN_EMAILS"])
@@ -1612,8 +1713,8 @@ def register_routes(app):
             raw = request.form.get("quota_mb", "").strip()
             if not raw:
                 db.execute("UPDATE users SET quota_bytes = NULL WHERE id = ?", (user_id,))
-                flash(f"{email} now uses the default storage quota "
-                      f"({format_size(app.config['USER_QUOTA_BYTES'], 'down')}).", "success")
+                flash(f"{email} now uses the storage quota of the {plan_named(row['plan'])['name']} "
+                      f"plan ({format_size(user_quota(user_id), 'down')}).", "success")
             else:
                 try:
                     mb = float(raw)

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
 {% block title %}{{ site.seo_title }}{% endblock %}
 {% block description %}{{ site.seo_description }}{% endblock %}
 {% block robots %}index, follow, max-image-preview:large{% endblock %}
@@ -20,6 +21,7 @@
     <div class="row wrap gap-sm">
       <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">Launch app</a>
       <a class="btn btn-ghost btn-lg" href="#how-it-works">See how it works</a>
+      <a class="btn btn-ghost btn-lg" href="#pricing">Pricing</a>
     </div>
   </div>
 
@@ -87,6 +89,19 @@
     <li><span class="step-num">2</span><h3>Log your trips</h3><span class="muted">Add dates, place and receipts.</span></li>
     <li><span class="step-num">3</span><h3>Watch your days</h3><span class="muted">See every country's total add up.</span></li>
   </ol>
+</section>
+
+<section class="pricing" id="pricing" aria-labelledby="pricing-title">
+  <h2 id="pricing-title" class="section-title">Plans</h2>
+  <p class="muted center pricing-lead">Start free. Upgrade when your receipts need more room.</p>
+  <div class="plans">
+    {% for p in plans %}
+      {% call ui.plan_card(p, highlight=loop.index == 2) %}
+        <a class="btn {{ 'btn-primary' if loop.first else 'btn-ghost' }} btn-block" href="{{ url_for('signup') }}">{{ 'Start free' if loop.first else 'Start free, upgrade anytime' }}</a>
+      {% endcall %}
+    {% endfor %}
+  </div>
+  <p class="muted small center">Prices in euro. Online payment is coming soon.</p>
 </section>
 
 <section class="card cta" aria-labelledby="cta-title">

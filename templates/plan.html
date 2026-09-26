@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Your plan | Nomad Life{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('index') }}">&larr; Back to your dashboard</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Plan</p>
+    <h1>Your plan</h1>
+  </div>
+</div>
+
+<div class="plans plans-2">
+  {% call ui.plan_card(plan, current=True, heading="h2") %}
+    <p class="muted small">{{ storage.used | filesize('down') }} used of {{ storage.quota | filesize('down') }}.</p>
+  {% endcall %}
+  {% if upgrade %}
+    {% call ui.plan_card(upgrade, highlight=True, heading="h2") %}
+      <button class="btn btn-primary btn-block" type="button" disabled aria-describedby="payment-note">Upgrade to {{ upgrade.name }}, &euro;{{ upgrade.price }} / month</button>
+      <p class="muted small" id="payment-note">Online payment is coming soon.</p>
+    {% endcall %}
+  {% else %}
+    <div class="card plan-card plan-top">
+      <h2 class="plan-name">You are on the top plan</h2>
+      <p class="muted">{{ plan.name }} has the most storage Nomad Life offers. Thank you for your support.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

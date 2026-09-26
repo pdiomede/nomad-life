@@ -20,7 +20,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 
 | File | Role |
 | --- | --- |
-| `app.py` | Flask app factory, config (`config.env`), auth (sign up, email confirmation `verify` and `purge_unverified`, email cooldown `email_allowed`, sign in, password reset tokens, session fingerprint, `send_template_email`), years, movements, movements pagination (`paginate`, `page_window`, `page_size`, `dashboard_url`, `back_to_movement`), day math (`compute_stats`, `stay_order`, `overlap_notes`), uploads (`save_upload`, per receipt limit, per user quota), downloads, accountant package route (`year_package`, `build_package_data`, `can_download_package`), landing, robots.txt, sitemap.xml, SEO and share metadata (`site_meta`), 404 handler, admin page (`admin`, `admin_user`, `ADMIN_EMAILS`, `user_quota`), account page (`account`, `confirm_email`, `delete_account`), sign in limits (`take_attempt`, `forgive`, `auth_events` table, `PROXY_COUNT`) |
+| `app.py` | Flask app factory, config (`config.env`), auth (sign up, email confirmation `verify` and `purge_unverified`, email cooldown `email_allowed`, sign in, password reset tokens, session fingerprint, `send_template_email`), years, movements, movements pagination (`paginate`, `page_window`, `page_size`, `dashboard_url`, `back_to_movement`), day math (`compute_stats`, `stay_order`, `overlap_notes`), uploads (`save_upload`, per receipt limit, per user quota), downloads, accountant package route (`year_package`, `build_package_data`, `can_download_package`), plans (`PLANS`, `plan_catalog`, `current_plan`, `next_plan`, `plan` route, `request_size_limit`), landing, robots.txt, sitemap.xml, SEO and share metadata (`site_meta`), 404 handler, admin page (`admin`, `admin_user`, `ADMIN_EMAILS`, `user_quota`), account page (`account`, `confirm_email`, `delete_account`), sign in limits (`take_attempt`, `forgive`, `auth_events` table, `PROXY_COUNT`) |
 | `package.py` | Annual accountant package: summary model, PDF (fpdf2), CSV with formula protection, safe ZIP paths, streaming ZIP with manifest and checksums |
 | `tests/` | `unittest` suite (`python -m unittest`), helpers with an isolated app per test |
 | `db.py` | SQLite schema, `MIGRATIONS` applied by `migrate()` on start, per request connection, `query`, `execute`, `transaction` (BEGIN IMMEDIATE) |
@@ -29,12 +29,13 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 | `runWebApp.sh` | Launcher: Python check, config creation, venv, requirements, port parsing, freeing the port, start |
 | `requirements.txt`, `config.env.example` | Dependencies and settings (`APP_PORT`, `APP_BASE_URL`, `SECRET_KEY`, Gmail, storage paths, `MAX_RECEIPT_MB`, `USER_QUOTA_MB`) |
 | `templates/base.html` | Layout, head (SEO, Open Graph, Twitter card, robots, manifest), header, flashes, footer |
-| `templates/landing.html` | Public landing page, JSON-LD, share buttons |
-| `templates/dashboard.html` | Year dashboard: stats, movements table, storage card, days per country |
+| `templates/landing.html` | Public landing page, Plans section, JSON-LD, share buttons |
+| `templates/dashboard.html` | Year dashboard: stats, movements table, storage card with Upgrade button, days per country |
 | `templates/admin.html` | Admin page: totals, accounts, quota, disable and delete forms |
 | `templates/account.html`, `templates/email/change_email.*`, `templates/email/finish_signup.*` | Account page (password, email, delete) and the email change confirmation |
+| `templates/plan.html` | Plan page: current plan, next tier and price (no payment yet) |
 | `templates/movement.html`, `base_location.html`, `year_new.html` | Forms for movements, base location and documents, new year |
-| `templates/_macros.html`, `_theme_toggle.html`, `_countries.html` | Upload form, document list, delete form, square page links (`pagination`), theme toggle, country data |
+| `templates/_macros.html`, `_theme_toggle.html`, `_countries.html` | Upload form, document list, delete form, square page links (`pagination`), plan card (`plan_card`), theme toggle, country data |
 | `templates/auth/*.html` | Sign in, sign up, forgot and reset password |
 | `templates/email/*` | Email layout (`_layout.html`, light and dark), confirmation and reset emails in HTML and plain text |
 | `static/css/style.css` | All styles, light and dark tokens, responsive rules |
@@ -52,6 +53,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 3. **Trace these flows end to end**, in the code and in the running app:
    - Sign up, confirmation link (valid, expired after 20 minutes, replaced by a new sign up, reused, tampered), sign in before confirming, cleanup of unconfirmed accounts, one email per minute, sign in (with and without "remember me"), sign out, forgot password, reset link (valid, expired, reused, tampered), sessions after a reset.
    - Emails: HTML and text versions, inline logo, light and dark mode.
+   - Plans: header chip, storage card Upgrade button, `/plan` for each plan, landing Plans section, per plan quota and receipt limit (including oversized requests), unknown plan values.
    - Create a year, edit the base, delete a year (confirm text, files removed, space freed).
    - Add, edit, delete movements, including invalid dates, dates outside the year, leap years, same day stays, overlapping and nested stays, travel days shared by two stays.
    - Movements pages: 10, 11, 20 and 21 movements, bad `page` and `per_page` values, page size choice, deleting the last row of the last page, "Back" from a movement, stats identical on every page.

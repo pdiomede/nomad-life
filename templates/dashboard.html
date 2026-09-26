@@ -114,13 +114,16 @@
   <section class="card storage-card">
     <div class="card-head">
       <h2>Receipt storage</h2>
-      {% if storage.over %}
-        <span class="pill pill-error">Over quota</span>
-      {% elif storage.full %}
-        <span class="pill pill-error">Full</span>
-      {% elif storage.low %}
-        <span class="pill pill-warn">Almost full</span>
-      {% endif %}
+      <div class="row gap-sm">
+        {% if storage.over %}
+          <span class="pill pill-error">Over quota</span>
+        {% elif storage.full %}
+          <span class="pill pill-error">Full</span>
+        {% elif storage.low %}
+          <span class="pill pill-warn">Almost full</span>
+        {% endif %}
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('plan') }}">{{ 'Upgrade' if next_plan_name else 'Your plan' }}</a>
+      </div>
     </div>
     <p class="stat-value">{{ storage.left | filesize('down') }} <span class="muted stat-of">left</span></p>
     <div class="meter {% if storage.over or storage.low %}meter-hot{% endif %}" role="img"
