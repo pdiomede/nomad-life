@@ -466,3 +466,5 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .admin-actions form { margin: 0; }
 .admin-quota { display: flex; align-items: center; gap: 6px; }
 .admin-quota input { width: 110px; }
+.pending-email { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 16px; padding: 10px 14px; border-radius: 6px; background: var(--info-bg); overflow-wrap: anywhere; }
+.pending-email form { margin: 0; }

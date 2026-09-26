@@ -1,0 +1,10 @@
+{% extends "email/_layout.html" %}
+{% set p = "margin:0 0 14px; font-size:15px; line-height:1.6; color:#303549;" %}
+{% block preheader %}Choose your password to activate your Nomad Life account.{% endblock %}
+{% block heading %}Finish setting up your account{% endblock %}
+{% block body %}
+<p class="nl-text" style="{{ p }}">Someone asked to sign up for Nomad Life with <strong>{{ email }}</strong>, and an account for this address is already waiting for confirmation.</p>
+<p class="nl-text" style="{{ p }}">If that was you, use the button below to choose your password and activate the account. The link expires in <strong>{{ hours }} hour{{ "s" if hours != 1 }}</strong>.</p>
+{% endblock %}
+{% block button %}Choose my password{% endblock %}
+{% block note %}If you did not sign up, you can ignore this email. Nobody can use the account without this link.{% endblock %}

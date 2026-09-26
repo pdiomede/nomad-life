@@ -90,16 +90,23 @@ class SignupConfirmationTests(AppTestCase):
         self.appmod_purge_now()
         self.assertIsNotNone(self.user())
 
-    def test_signing_up_again_replaces_the_pending_account(self):
+    def test_signing_up_again_keeps_the_pending_account_and_mails_a_password_link(self):
+        # Signing up again never replaces a pending account (a stranger could be choosing the
+        # password). The mailbox gets a link to choose the password, which also confirms.
         self.post_signup(password="password1")
         first_link, first_id = self.last_link(EMAIL), self.user()["id"]
         self.age_emails()
-        self.post_signup(password="password2")
-        self.assertNotEqual(self.user()["id"], first_id)
-        resp = self.client.get(first_link, follow_redirects=True)
-        self.assertIn("no longer valid", resp.get_data(as_text=True))
-        self.client.get(self.last_link(EMAIL))
-        self.assertEqual(self.login(password="password2").headers["Location"], "/app")
+        html = self.client.post("/signup", data={"email": EMAIL, "password": "password2",
+                                "confirm": "password2"}, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("already waiting for confirmation", html)
+        self.assertEqual(self.user()["id"], first_id)
+        link = self.last_link(EMAIL, kind="reset")
+        self.client.post(link, data={"password": "password3", "confirm": "password3"})
+        self.assertEqual(self.login(password="password3").headers["Location"], "/app")
+        self.client.post("/logout")
+        self.assertEqual(self.login(password="password2").status_code, 200)  # stranger's password never set
+        resp = self.client.get(first_link, follow_redirects=True)  # stale after the password change
+        self.assertNotIn("Your email is confirmed", resp.get_data(as_text=True))
 
     def test_confirmed_email_cannot_sign_up_again(self):
         self.signup(EMAIL)
@@ -234,10 +241,16 @@ class BugHuntTests(AppTestCase):
         self.assertIn("it works for 1 more minute.", html.get_data(as_text=True))
         self.assertIn("within 1 minute:", self.outbox[-1]["text"])
 
-    def test_old_link_after_signing_up_again_points_to_the_newest_email(self):
+    def test_signing_up_again_cancels_earlier_confirmation_links(self):
+        # The first sign up may have been a stranger's: its link must not confirm the account
+        # once the mailbox owner has been sent a link to choose the password.
         self.post_signup(password="password1")
         old = self.last_link(EMAIL)
         self.age_emails()
         self.post_signup(password="password2")
         html = self.client.get(old, follow_redirects=True).get_data(as_text=True)
-        self.assertIn("newest email", html)
+        self.assertIn("no longer valid", html)
+        self.client.post(self.last_link(EMAIL, kind="reset"),
+                         data={"password": "password9", "confirm": "password9"})
+        resp = self.client.post("/login", data={"email": EMAIL, "password": "password9"})
+        self.assertEqual(resp.headers["Location"], "/app")

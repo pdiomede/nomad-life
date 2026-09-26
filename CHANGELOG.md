@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.2] - 2026-09-26
+
+### Fixed
+
+- Security: anyone could sign up again with an address still waiting for confirmation, replace its password, and take the account once the owner clicked the newest email. For an admin address this gave the admin page. A pending sign up is never replaced now: the mailbox receives a link to choose the password, and earlier confirmation links stop working.
+- Security: enabling a disabled account brought back every session and "remember me" cookie it had before. Disabling now signs the account out for good.
+- Security: a mistyped email change could not be cancelled, so the owner of the mistyped address could still take the account. The account page shows a pending change with a Cancel button, and typing your current address again also cancels it.
+- Setting a new password with a reset link did not lift the lock after wrong guesses, although the lock message suggested it would.
+- Disabled accounts could still get password reset emails, reset their password and confirm email changes.
+- An admin's disable or quota on an account waiting for confirmation was undone by signing up again.
+- Signing up could delete an unconfirmed account that held data from an older version.
+- After a confirmation email failed to send, signing in again said "with the link we sent a moment ago" when nothing was sent.
+- Accountant package: for the current or a future year without stays, the PDF still said "Every day counts toward the base country", which contradicted its own numbers.
+- Adding a movement while its year was deleted in another tab showed a server error, and editing a movement deleted meanwhile said "Movement updated."
+
 ## [1.2.1] - 2026-09-26
 
 ### Fixed

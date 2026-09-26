@@ -335,7 +335,9 @@ def summary_blocks(data):
                                    "that takes those days (see the rules below)."))
     else:
         blocks.append(("note", "No stays recorded for this year. Every day counts toward the "
-                               "base country."))
+                               "base country." if data.status == "past" else
+                               "No stays recorded for this year. Days without a stay count "
+                               "toward the base country once they have passed."))
 
     blocks += [("heading", "Rules used for counting"), ("bullets", RULES)]
 

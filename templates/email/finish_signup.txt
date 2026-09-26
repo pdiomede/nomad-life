@@ -1,0 +1,10 @@
+Hi,
+
+Someone asked to sign up for Nomad Life with {{ email }}, and an account for this address is already waiting for confirmation. If that was you, open the link below to choose your password and activate the account. It expires in {{ hours }} hour{{ "s" if hours != 1 }}.
+
+{{ link }}
+
+If you did not sign up, you can ignore this email. Nobody can use the account without this link.
+
+Nomad Life
+{{ site_url }}

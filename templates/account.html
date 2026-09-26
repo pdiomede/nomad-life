@@ -39,6 +39,16 @@
 
   <section class="card" aria-labelledby="email-title">
     <div class="card-head"><h2 id="email-title">Change email</h2></div>
+    {% if row.pending_email %}
+    <div class="pending-email">
+      <p class="small">Waiting for confirmation: <strong>{{ row.pending_email }}</strong>. Until the link we sent there is opened, you keep {{ row.email }}.</p>
+      <form method="post">
+        {{ ui.csrf() }}
+        <input type="hidden" name="action" value="cancel_email">
+        <button class="btn btn-ghost btn-sm" type="submit">Cancel this change</button>
+      </form>
+    </div>
+    {% endif %}
     <form method="post" class="stack">
       {{ ui.csrf() }}
       <input type="hidden" name="action" value="email">

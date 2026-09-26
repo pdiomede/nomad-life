@@ -29,7 +29,7 @@ import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -124,6 +124,7 @@ class User(UserMixin):
         self.id = row["id"]
         self.email = row["email"]
         self.fingerprint = password_fingerprint(row["password_hash"])
+        self.version = row["session_version"] if "session_version" in row.keys() else 0
 
     @property
     def is_admin(self):
@@ -131,8 +132,11 @@ class User(UserMixin):
         return self.email in current_app.config["ADMIN_EMAILS"]
 
     def get_id(self):
-        # Binding the session to the password means a reset signs out every other session.
-        return f"{self.id}:{self.fingerprint}"
+        # Binding the session to the password means a reset signs out every other session; the
+        # version (only added once raised, so older sessions keep working) does the same when
+        # an account is disabled.
+        base = f"{self.id}:{self.fingerprint}"
+        return f"{base}:{self.version}" if self.version else base
 
 
 def load_or_create_secret(path):
@@ -282,10 +286,13 @@ def create_app(overrides=None):
 
     @login_manager.user_loader
     def load_user(session_id):
-        uid, _, fingerprint = session_id.partition(":")
+        uid, _, rest = session_id.partition(":")
+        fingerprint, _, version = rest.partition(":")
         row = db.query("SELECT * FROM users WHERE id = ? AND verified_at IS NOT NULL", (uid,),
                        one=True)
         if row is None or password_fingerprint(row["password_hash"]) != fingerprint:
+            return None
+        if str(row["session_version"]) != (version or "0"):  # signed out by an admin
             return None
         if row["disabled"]:  # disabling an account ends its open sessions too
             return None
@@ -459,9 +466,27 @@ def send_template_email(to, subject, name, **context):
     return send_email(to, subject, text, html)
 
 
+def release_email_wait(user_id):
+    """Nothing was sent, so do not make the user wait a minute before trying again."""
+    db.execute("UPDATE users SET email_sent_at = NULL WHERE id = ?", (user_id,))
+
+
+def send_password_link(row, template, subject):
+    """Email a link to choose a new password (it also confirms a pending account)."""
+    token = serializer().dumps({"uid": row["id"], "h": password_fingerprint(row["password_hash"]),
+                                "e": row["email"]})
+    sent = send_template_email(row["email"], subject, template,
+                               link=email_link("reset", token=token),
+                               hours=RESET_TOKEN_MAX_AGE // 3600)
+    if not sent:
+        release_email_wait(row["id"])
+    return sent
+
+
 def send_verification(row):
     token = serializer("email-verify").dumps(
-        {"uid": row["id"], "h": password_fingerprint(row["password_hash"])})
+        {"uid": row["id"], "h": password_fingerprint(row["password_hash"]),
+         "v": row["session_version"]})
     return send_template_email(row["email"], "Confirm your Nomad Life account", "verify",
                                link=email_link("verify", token=token), minutes=minutes_left(row))
 
@@ -1015,25 +1040,35 @@ def register_routes(app):
             else:
                 pw_hash = generate_password_hash(password)
                 with db.transaction() as conn:
-                    old = conn.execute(
-                        "SELECT verified_at IS NOT NULL AS taken, email_sent_at > datetime('now', "
-                        "?) AS recent FROM users WHERE email = ?",
-                        (f"-{EMAIL_COOLDOWN_SECONDS} seconds", email)).fetchone()
-                    if not old or not (old["taken"] or old["recent"]):
-                        # Signing up again before confirming starts over: the newest password
-                        # and link win, and links sent before stop working.
-                        conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL",
-                                     (email,))
+                    old = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+                    if not old:
                         uid = conn.execute("INSERT INTO users (email, password_hash, email_sent_at) "
                                            "VALUES (?, ?, CURRENT_TIMESTAMP)",
                                            (email, pw_hash)).lastrowid
-                if old and old["taken"]:
+                if old and (old["verified_at"] is not None or old["disabled"]):
                     flash("An account with this email already exists.", "error")
                     return render_template("auth/signup.html")
-                if old and old["recent"]:
-                    flash(f"We just sent a confirmation link to {email}. Please check your inbox, "
-                          "or wait a minute before signing up again.", "info")
-                    return render_template("auth/signup.html")
+                if old:
+                    # A sign up for this address is already waiting. Never replace it: whoever
+                    # signs up again could be a stranger choosing the password. Instead the
+                    # mailbox gets a link to choose the password, which also confirms.
+                    if not email_allowed(old["id"]):
+                        flash(f"We just sent an email to {email}. Please check your inbox, or wait "
+                              "a minute and try again.", "info")
+                        return render_template("auth/signup.html")
+                    # Earlier confirmation links stop working: only the mailbox owner, through
+                    # the link below, decides the password now.
+                    db.execute("UPDATE users SET session_version = session_version + 1 WHERE id = ?",
+                               (old["id"],))
+                    old = db.query("SELECT * FROM users WHERE id = ?", (old["id"],), one=True)
+                    if not send_password_link(old, "finish_signup",
+                                              "Finish setting up your Nomad Life account"):
+                        flash("We could not send the email. Please try again in a few minutes.",
+                              "error")
+                        return render_template("auth/signup.html")
+                    flash(f"This email is already waiting for confirmation. We sent {email} a link "
+                          "to choose a password and activate the account.", "info")
+                    return redirect(url_for("login"))
                 row = db.query("SELECT * FROM users WHERE id = ?", (uid,), one=True)
                 if not send_verification(row):
                     db.execute("DELETE FROM users WHERE id = ? AND verified_at IS NULL", (uid,))
@@ -1061,7 +1096,10 @@ def register_routes(app):
         if row and row["verified_at"] is not None:
             flash("Your email is already confirmed. Please sign in.", "info")
             return redirect(url_for("login"))
-        if not row or password_fingerprint(row["password_hash"]) != data.get("h"):
+        # A later sign up attempt for this address raises the version, so a confirmation link
+        # sent before it (possibly for a stranger's password) stops working.
+        if (not row or password_fingerprint(row["password_hash"]) != data.get("h")
+                or data.get("v", 0) != row["session_version"]):
             flash("This confirmation link is no longer valid. If you signed up more than once, "
                   "use the link in the newest email; otherwise, sign up again.", "error")
             return redirect(url_for("signup"))
@@ -1093,6 +1131,7 @@ def register_routes(app):
                         flash(f"Please confirm your email first. We sent a new link to {email}; "
                               f"it works for {plural(minutes_left(row), 'more minute')}.", "info")
                     else:
+                        release_email_wait(row["id"])
                         flash("Please confirm your email first, with the link we sent when you "
                               "signed up.", "error")
                     return render_template("auth/login.html")
@@ -1122,13 +1161,8 @@ def register_routes(app):
                 flash(too_many_message(wait, scope, "reset requests"), "error")
                 return render_template("auth/forgot.html"), 429
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
-            if row and email_allowed(row["id"]):
-                token = serializer().dumps(
-                    {"uid": row["id"], "h": password_fingerprint(row["password_hash"]),
-                     "e": row["email"]})
-                send_template_email(email, "Reset your Nomad Life password", "reset",
-                                    link=email_link("reset", token=token),
-                                    hours=RESET_TOKEN_MAX_AGE // 3600)
+            if row and not row["disabled"] and email_allowed(row["id"]):
+                send_password_link(row, "reset", "Reset your Nomad Life password")
             flash("If that email is registered, a reset link is on its way.", "info")
             return redirect(url_for("login"))
         return render_template("auth/forgot.html")
@@ -1154,6 +1188,9 @@ def register_routes(app):
         if data.get("e") != row["email"]:  # the email changed since: the old mailbox has no say
             flash("This reset link is no longer valid. Please request a new one.", "error")
             return redirect(url_for("forgot"))
+        if row["disabled"]:
+            flash("This account is disabled. Please contact the administrator.", "error")
+            return redirect(url_for("login"))
         if request.method == "POST":
             password = request.form.get("password", "")
             if len(password) < 8:
@@ -1165,6 +1202,9 @@ def register_routes(app):
                 db.execute("UPDATE users SET password_hash = ?, verified_at = COALESCE(verified_at, "
                            "CURRENT_TIMESTAMP) WHERE id = ?",
                            (generate_password_hash(password), row["id"]))
+                # Proving the mailbox ends a lock from wrong guesses (by anyone) on this account.
+                db.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key = ?",
+                           (f"email:{row['email']}",))
                 flash("Your password has been updated. Please sign in.", "success")
                 return redirect(url_for("login"))
         return render_template("auth/reset.html", token=token)
@@ -1301,11 +1341,16 @@ def register_routes(app):
             if err:
                 flash(err, "error")
             else:
-                mid = db.execute(
-                    "INSERT INTO movements (year_id, city, country, start_date, end_date, notes) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (year_row["id"], data["city"], data["country"], data["start_date"],
-                     data["end_date"], data["notes"]))
+                try:
+                    mid = db.execute(
+                        "INSERT INTO movements (year_id, city, country, start_date, end_date, "
+                        "notes) VALUES (?, ?, ?, ?, ?, ?)",
+                        (year_row["id"], data["city"], data["country"], data["start_date"],
+                         data["end_date"], data["notes"]))
+                except db.IntegrityError:  # the year was deleted meanwhile (another tab)
+                    flash(f"The year {year} no longer exists, so the movement was not saved.",
+                          "error")
+                    return redirect(url_for("index"))
                 err = save_upload(request.files.get("file"), request.form.get("kind"),
                                   year_row["id"], mid, required=False)
                 if err:
@@ -1335,6 +1380,11 @@ def register_routes(app):
                                "end_date = ?, notes = ? WHERE id = ?",
                                (data["city"], data["country"], data["start_date"],
                                 data["end_date"], data["notes"], movement_id))
+                    if not db.query("SELECT 1 FROM movements WHERE id = ?", (movement_id,),
+                                    one=True):  # deleted meanwhile, in another tab
+                        flash("This movement no longer exists, so the changes were not saved.",
+                              "error")
+                        return redirect(url_for("index"))
                     flash("Movement updated.", "success")
                     flash_overlaps(year_row["id"], data, movement_id)
             elif action == "upload":
@@ -1382,6 +1432,12 @@ def register_routes(app):
         row = db.query("SELECT * FROM users WHERE id = ?", (current_user.id,), one=True)
         if request.method == "POST":
             action = request.form.get("action")
+            if action == "cancel_email":  # stopping a change never needs the password
+                if row["pending_email"]:
+                    db.execute("UPDATE users SET pending_email = NULL WHERE id = ?", (row["id"],))
+                    flash(f"The change to {row['pending_email']} was cancelled. The link we sent "
+                          "no longer works.", "success")
+                return redirect(url_for("account"))
             err = check_current_password(row)
             if action == "password":
                 password = request.form.get("password", "")
@@ -1410,7 +1466,12 @@ def register_routes(app):
                 elif not valid_email(new):
                     flash("Please enter a valid email address.", "error")
                 elif new == row["email"]:
-                    flash("That is already your email address.", "error")
+                    if row["pending_email"]:
+                        db.execute("UPDATE users SET pending_email = NULL WHERE id = ?", (row["id"],))
+                        flash("Your pending email change was cancelled. The link we sent no "
+                              "longer works.", "success")
+                    else:
+                        flash("That is already your email address.", "error")
                 elif db.query("SELECT 1 FROM users WHERE email = ? AND verified_at IS NOT NULL",
                               (new,), one=True):
                     flash("Another account already uses this email address.", "error")
@@ -1470,6 +1531,9 @@ def register_routes(app):
         if row and row["email"] == new:
             flash("This email address is already confirmed.", "info")
             return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+        if row and row["disabled"]:
+            flash("This account is disabled. Please contact the administrator.", "error")
+            return redirect(url_for("login"))
         # Stale when the password changed, the email changed since, or a newer change was asked.
         if (not row or password_fingerprint(row["password_hash"]) != data.get("h")
                 or row["email"] != data.get("old") or row["pending_email"] != new):
@@ -1566,7 +1630,10 @@ def register_routes(app):
                     flash(f"Storage quota for {email} set to {format_size(quota, 'down')}.{note}",
                           "success")
         elif action == "disable":
-            db.execute("UPDATE users SET disabled = 1 WHERE id = ?", (user_id,))
+            # Also end every session and remember cookie for good, so enabling the account
+            # later does not bring a stolen one back.
+            db.execute("UPDATE users SET disabled = 1, session_version = session_version + 1 "
+                       "WHERE id = ?", (user_id,))
             flash(f"{email} is disabled and signed out everywhere.", "info")
         elif action == "enable":
             db.execute("UPDATE users SET disabled = 0 WHERE id = ?", (user_id,))

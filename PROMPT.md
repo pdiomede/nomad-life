@@ -32,7 +32,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 | `templates/landing.html` | Public landing page, JSON-LD, share buttons |
 | `templates/dashboard.html` | Year dashboard: stats, movements table, storage card, days per country |
 | `templates/admin.html` | Admin page: totals, accounts, quota, disable and delete forms |
-| `templates/account.html`, `templates/email/change_email.*` | Account page (password, email, delete) and the email change confirmation |
+| `templates/account.html`, `templates/email/change_email.*`, `templates/email/finish_signup.*` | Account page (password, email, delete) and the email change confirmation |
 | `templates/movement.html`, `base_location.html`, `year_new.html` | Forms for movements, base location and documents, new year |
 | `templates/_macros.html`, `_theme_toggle.html`, `_countries.html` | Upload form, document list, delete form, square page links (`pagination`), theme toggle, country data |
 | `templates/auth/*.html` | Sign in, sign up, forgot and reset password |
