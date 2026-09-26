@@ -1,0 +1,19 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Choose a new password | Nomad Life{% endblock %}
+{% block heading %}Choose a new password{% endblock %}
+{% block sub %}Pick something you have not used before.{% endblock %}
+{% block form %}
+<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field">
+    <label for="password">New password</label>
+    <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required autofocus>
+    <span class="hint">At least 8 characters.</span>
+  </div>
+  <div class="field">
+    <label for="confirm">Confirm new password</label>
+    <input id="confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" required>
+  </div>
+  <button class="btn btn-primary btn-block" type="submit">Update password</button>
+</form>
+{% endblock %}

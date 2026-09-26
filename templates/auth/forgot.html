@@ -1,0 +1,15 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Reset password | Nomad Life{% endblock %}
+{% block heading %}Reset your password{% endblock %}
+{% block sub %}Enter your email and we will send you a reset link.{% endblock %}
+{% block form %}
+<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="email" required autofocus>
+  </div>
+  <button class="btn btn-primary btn-block" type="submit">Send reset link</button>
+  <p class="center muted small"><a href="{{ url_for('login') }}">Back to sign in</a></p>
+</form>
+{% endblock %}

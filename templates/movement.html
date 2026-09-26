@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}{{ m.city if m else 'New movement' }} | Nomad Life{% endblock %}
+{% block content %}
+<div class="narrow">
+  <a class="back" href="{{ url_for('dashboard', year=y.year) }}">&larr; Back to {{ y.year }}</a>
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Movement</p>
+      <h1>{{ (m.city ~ ', ' ~ m.country) if m else 'New movement' }}</h1>
+    </div>
+  </div>
+
+  <section class="card">
+    <div class="card-head"><h2>Details</h2></div>
+    <form method="post" class="stack" enctype="multipart/form-data">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="update">
+      <div class="grid-2">
+        <div class="field">
+          <label for="city">City</label>
+          <input id="city" name="city" value="{{ form.city or '' }}" placeholder="Bali" required>
+        </div>
+        <div class="field">
+          <label for="country">Country</label>
+          <input id="country" name="country" list="country-list" value="{{ form.country or '' }}" placeholder="Indonesia" required>
+        </div>
+        <div class="field">
+          <label for="start_date">From</label>
+          <input id="start_date" name="start_date" type="date" min="{{ y.year }}-01-01" max="{{ y.year }}-12-31" value="{{ form.start_date or '' }}" required>
+        </div>
+        <div class="field">
+          <label for="end_date">To</label>
+          <input id="end_date" name="end_date" type="date" min="{{ y.year }}-01-01" max="{{ y.year }}-12-31" value="{{ form.end_date or '' }}" required>
+        </div>
+      </div>
+      <div class="field">
+        <label for="notes">Notes</label>
+        <textarea id="notes" name="notes" rows="3" placeholder="Coworking, visa details, anything useful">{{ form.notes or '' }}</textarea>
+      </div>
+      {% if not m %}
+      <div class="grid-2">
+        <div class="field">
+          <label for="kind-new">Receipt type (optional)</label>
+          <select id="kind-new" name="kind">
+            {% for key, label in document_kinds.items() %}
+              <option value="{{ key }}" {% if key == 'accommodation' %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Receipt file (optional)</label>
+          <label class="file-input">
+            <input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.heic,.webp" data-label="fname-new">
+            <span class="btn btn-ghost btn-sm">Choose file</span>
+            <span class="muted small" id="fname-new">No file selected</span>
+          </label>
+        </div>
+      </div>
+      {% endif %}
+      <div class="row gap-sm">
+        <button class="btn btn-primary" type="submit">{{ 'Save changes' if m else 'Add movement' }}</button>
+        <a class="btn btn-ghost" href="{{ url_for('dashboard', year=y.year) }}">Cancel</a>
+      </div>
+    </form>
+  </section>
+
+  {% if m %}
+  <section class="card">
+    <div class="card-head">
+      <h2>Receipts</h2>
+      <span class="muted small">Hotel or home rent, flight tickets and more</span>
+    </div>
+    {{ ui.doc_list(docs) }}
+    {{ ui.upload_form('accommodation', 'mv') }}
+  </section>
+
+  <section class="card danger-zone">
+    <div class="row between wrap gap-sm">
+      <div>
+        <h2>Delete movement</h2>
+        <p class="muted small">This removes the movement and all its receipts.</p>
+      </div>
+      <form method="post" data-confirm="Delete this movement and all its receipts?">
+        {{ ui.csrf() }}
+        <input type="hidden" name="action" value="delete">
+        <button class="btn btn-danger" type="submit">Delete</button>
+      </form>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

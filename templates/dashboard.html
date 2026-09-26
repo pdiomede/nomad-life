@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}{{ y.year }} | Nomad Life{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Solar year</p>
+    <h1>{{ y.year }}</h1>
+  </div>
+  <div class="row wrap gap-sm">
+    <div class="year-tabs" role="tablist">
+      {% for r in years %}
+        <a class="year-tab {% if r.year == y.year %}active{% endif %}" href="{{ url_for('dashboard', year=r.year) }}">{{ r.year }}</a>
+      {% endfor %}
+      <a class="year-tab add" href="{{ url_for('new_year') }}" title="Add a year">+ Year</a>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('movement_new', year=y.year) }}">+ Add movement</a>
+  </div>
+</div>
+
+<section class="stats">
+  <div class="card stat stat-base">
+    <p class="stat-label">Base</p>
+    <p class="stat-value">{{ y.base_city }}</p>
+    <p class="muted">{{ y.base_country }}</p>
+    <a class="small" href="{{ url_for('base', year=y.year) }}">Manage base and contract ({{ base_docs|length }})</a>
+  </div>
+  <div class="card stat">
+    <p class="stat-label">Days in base country</p>
+    <p class="stat-value">{{ stats.base_days }} <span class="muted stat-of">/ {{ stats.total }}</span></p>
+    <div class="meter" aria-hidden="true">
+      <span style="width: {{ (stats.base_days * 100 / stats.total) | round(1) }}%"></span>
+      <i style="left: {{ (stats.threshold * 100 / stats.total) | round(1) }}%"></i>
+    </div>
+    {% if stats.base_ok %}
+      <p class="pill pill-ok">Above {{ stats.threshold }} days</p>
+    {% else %}
+      <p class="pill pill-warn">{{ stats.threshold - stats.base_days }} days short of {{ stats.threshold }}</p>
+    {% endif %}
+  </div>
+  <div class="card stat">
+    <p class="stat-label">Days abroad</p>
+    <p class="stat-value">{{ stats.abroad_days }}</p>
+    <p class="muted">{{ movements|length }} movement{{ '' if movements|length == 1 else 's' }} logged</p>
+  </div>
+  <div class="card stat">
+    <p class="stat-label">Year elapsed</p>
+    <p class="stat-value">{{ stats.elapsed }} <span class="muted stat-of">/ {{ stats.total }}</span></p>
+    <div class="meter" aria-hidden="true"><span style="width: {{ (stats.elapsed * 100 / stats.total) | round(1) }}%"></span></div>
+  </div>
+</section>
+
+<div class="grid-main">
+  <section class="card">
+    <div class="card-head">
+      <h2>Movements</h2>
+    </div>
+    {% if movements %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th>Dates</th><th>Location</th><th class="num">Days</th><th class="num">Docs</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for m in movements %}
+          <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
+            <td class="nowrap">{{ m.start_date }} <span class="muted">to</span> {{ m.end_date }}</td>
+            <td><strong>{{ m.city }}</strong><div class="muted small">{{ m.country }}</div></td>
+            <td class="num">{{ ((m.end_date | todate) - (m.start_date | todate)).days + 1 }}</td>
+            <td class="num">{{ m.doc_count }}</td>
+            <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}">Open</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="empty">
+        <p>No movements yet for {{ y.year }}.</p>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('movement_new', year=y.year) }}">Log your first trip</a>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Days per country</h2>
+    </div>
+    <p class="muted small">Full year view. Days not covered by a movement count toward your base country. The marker shows the {{ stats.threshold }} day line.</p>
+    <ul class="bars">
+      {% for r in stats.rows %}
+      <li>
+        <div class="row between">
+          <span>{{ r.country }} {% if r.is_base %}<span class="tag">Base</span>{% endif %}</span>
+          <span class="muted small">{{ r.days }} days ({{ r.so_far }} so far)</span>
+        </div>
+        <div class="meter {% if r.over_threshold and not r.is_base %}meter-hot{% endif %}">
+          <span style="width: {{ r.pct }}%"></span>
+          <i style="left: {{ (stats.threshold * 100 / stats.total) | round(1) }}%"></i>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}

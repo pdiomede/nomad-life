@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <div class="auth-head">
+      <span class="brand-mark lg" aria-hidden="true"></span>
+      <h1>{% block heading %}{% endblock %}</h1>
+      <p class="muted">{% block sub %}{% endblock %}</p>
+    </div>
+    {% block form %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

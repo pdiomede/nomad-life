@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Base {{ y.year }} | Nomad Life{% endblock %}
+{% block content %}
+<div class="narrow">
+  <a class="back" href="{{ url_for('dashboard', year=y.year) }}">&larr; Back to {{ y.year }}</a>
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Base location {{ y.year }}</p>
+      <h1>{{ y.base_city }}, {{ y.base_country }}</h1>
+    </div>
+  </div>
+
+  <section class="card">
+    <div class="card-head"><h2>Location</h2></div>
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="update">
+      <div class="grid-2">
+        <div class="field">
+          <label for="base_city">Base city</label>
+          <input id="base_city" name="base_city" value="{{ y.base_city }}" required>
+        </div>
+        <div class="field">
+          <label for="base_country">Base country</label>
+          <input id="base_country" name="base_country" list="country-list" value="{{ y.base_country }}" required>
+        </div>
+      </div>
+      <div><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Documents</h2>
+      <span class="muted small">Rental contract, utility bills, residence papers</span>
+    </div>
+    {{ ui.doc_list(docs) }}
+    {{ ui.upload_form('rental_contract', 'base') }}
+  </section>
+
+  <section class="card danger-zone">
+    <h2>Delete year {{ y.year }}</h2>
+    <p class="muted small">Removes the year, all its movements and every stored document. Type the year to confirm.</p>
+    <form method="post" class="row gap-sm wrap">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="delete_year">
+      <input name="confirm_year" placeholder="{{ y.year }}" class="input-sm" required>
+      <button class="btn btn-danger" type="submit">Delete year</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

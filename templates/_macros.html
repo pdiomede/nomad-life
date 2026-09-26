@@ -1,0 +1,51 @@
+{% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endmacro %}
+
+{% macro upload_form(default_kind, uid) %}
+<form class="upload" method="post" enctype="multipart/form-data">
+  {{ csrf() }}
+  <input type="hidden" name="action" value="upload">
+  <div class="field">
+    <label for="kind-{{ uid }}">Type</label>
+    <select id="kind-{{ uid }}" name="kind">
+      {% for key, label in document_kinds.items() %}
+        <option value="{{ key }}" {% if key == default_kind %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field grow">
+    <label>File (PDF or image)</label>
+    <label class="file-input">
+      <input type="file" name="file" required accept=".pdf,.png,.jpg,.jpeg,.heic,.webp" data-label="fname-{{ uid }}">
+      <span class="btn btn-ghost btn-sm">Choose file</span>
+      <span class="muted small" id="fname-{{ uid }}">No file selected</span>
+    </label>
+  </div>
+  <button class="btn btn-primary" type="submit">Upload</button>
+</form>
+{% endmacro %}
+
+{% macro doc_list(docs) %}
+{% if docs %}
+<ul class="doc-list">
+  {% for d in docs %}
+  <li class="doc">
+    <span class="doc-icon" aria-hidden="true">{{ 'PDF' if d.original_name.lower().endswith('.pdf') else 'IMG' }}</span>
+    <div class="doc-main">
+      <a href="{{ url_for('document', doc_id=d.id) }}" target="_blank" rel="noopener">{{ d.original_name }}</a>
+      <div class="muted small">
+        <span class="tag">{{ document_kinds.get(d.kind, 'Other') }}</span>
+        {{ (d.size / 1024) | round(0) | int }} KB, uploaded {{ d.uploaded_at[:10] }}
+      </div>
+    </div>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('document', doc_id=d.id, download=1) }}">Download</a>
+    <form method="post" action="{{ url_for('document_delete', doc_id=d.id) }}" data-confirm="Delete this document?">
+      {{ csrf() }}
+      <button class="btn btn-danger-ghost btn-sm" type="submit">Delete</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No documents yet.</p>
+{% endif %}
+{% endmacro %}

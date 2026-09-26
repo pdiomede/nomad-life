@@ -1,0 +1,23 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Sign in | Nomad Life{% endblock %}
+{% block heading %}Welcome back{% endblock %}
+{% block sub %}Sign in to your workspace.{% endblock %}
+{% block form %}
+<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="email" required autofocus>
+  </div>
+  <div class="field">
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+  </div>
+  <div class="row between">
+    <label class="check"><input type="checkbox" name="remember" value="1"> Remember me</label>
+    <a class="small" href="{{ url_for('forgot') }}">Forgot password?</a>
+  </div>
+  <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+  <p class="center muted small">New here? <a href="{{ url_for('signup') }}">Create an account</a></p>
+</form>
+{% endblock %}

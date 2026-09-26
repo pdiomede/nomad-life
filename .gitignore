@@ -1,0 +1,8 @@
+config.env
+data/
+uploads/
+.venv/
+.requirements.stamp
+__pycache__/
+*.pyc
+.DS_Store

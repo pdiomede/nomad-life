@@ -1,0 +1,482 @@
+"""Nomad Life: track your yearly movements and keep your receipts in one place."""
+import os
+import uuid
+from collections import OrderedDict
+from datetime import date, datetime, timedelta
+
+from dotenv import load_dotenv
+from flask import (Flask, abort, flash, redirect, render_template, request,
+                   send_from_directory, url_for)
+from flask_login import (LoginManager, UserMixin, current_user, login_required,
+                         login_user, logout_user)
+from flask_wtf.csrf import CSRFProtect
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
+
+import db
+from countries import COUNTRIES
+from mailer import send_email
+
+APP_VERSION = "0.0.1"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "heic", "webp"}
+DOCUMENT_KINDS = OrderedDict([
+    ("rental_contract", "Rental contract"),
+    ("accommodation", "Hotel / home rent"),
+    ("flight", "Flight ticket"),
+    ("other", "Other"),
+])
+RESIDENCE_THRESHOLD = 183
+RESET_TOKEN_MAX_AGE = 3600
+
+load_dotenv(os.path.join(BASE_DIR, "config.env"))
+
+
+def _abs(path):
+    return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
+
+
+class User(UserMixin):
+    def __init__(self, row):
+        self.id = row["id"]
+        self.email = row["email"]
+
+
+def create_app(overrides=None):
+    app = Flask(__name__)
+    app.config.update(
+        SECRET_KEY=os.getenv("SECRET_KEY") or "dev-only-change-me",
+        APP_PORT=int(os.getenv("APP_PORT", "5050")),
+        APP_BASE_URL=os.getenv("APP_BASE_URL", ""),
+        GMAIL_USER=os.getenv("GMAIL_USER", ""),
+        GMAIL_APP_PASSWORD=os.getenv("GMAIL_APP_PASSWORD", "").replace(" ", ""),
+        DATABASE_PATH=_abs(os.getenv("DATABASE_PATH", "data/nomad.db")),
+        UPLOAD_DIR=_abs(os.getenv("UPLOAD_DIR", "uploads")),
+        MAX_CONTENT_LENGTH=int(os.getenv("MAX_UPLOAD_MB", "20")) * 1024 * 1024,
+    )
+    if overrides:
+        app.config.update(overrides)
+
+    db.init_db(app.config["DATABASE_PATH"])
+    os.makedirs(app.config["UPLOAD_DIR"], exist_ok=True)
+    app.teardown_appcontext(db.close_db)
+
+    CSRFProtect(app)
+    login_manager = LoginManager(app)
+    login_manager.login_view = "login"
+    login_manager.login_message_category = "info"
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        row = db.query("SELECT * FROM users WHERE id = ?", (user_id,), one=True)
+        return User(row) if row else None
+
+    @app.context_processor
+    def inject_globals():
+        return {"app_version": APP_VERSION, "countries": COUNTRIES,
+                "document_kinds": DOCUMENT_KINDS}
+
+    app.add_template_filter(parse_date, "todate")
+
+    @app.errorhandler(413)
+    def too_large(_e):
+        flash("The file is too large.", "error")
+        return redirect(request.referrer or url_for("index"))
+
+    register_routes(app)
+    return app
+
+
+# ---------- helpers ----------
+
+def serializer():
+    from flask import current_app
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="password-reset")
+
+
+def parse_date(value):
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def get_year_or_404(year):
+    row = db.query("SELECT * FROM years WHERE user_id = ? AND year = ?",
+                   (current_user.id, year), one=True)
+    if row is None:
+        abort(404)
+    return row
+
+
+def get_movement_or_404(movement_id):
+    row = db.query(
+        "SELECT m.*, y.year FROM movements m JOIN years y ON y.id = m.year_id "
+        "WHERE m.id = ? AND y.user_id = ?", (movement_id, current_user.id), one=True)
+    if row is None:
+        abort(404)
+    return row
+
+
+def documents_for(year_id, movement_id=None):
+    if movement_id is None:
+        return db.query("SELECT * FROM documents WHERE year_id = ? AND movement_id IS NULL "
+                        "ORDER BY uploaded_at DESC", (year_id,))
+    return db.query("SELECT * FROM documents WHERE movement_id = ? ORDER BY uploaded_at DESC",
+                    (movement_id,))
+
+
+def save_upload(file, kind, year_id, movement_id=None):
+    """Store an uploaded file. Returns an error message or None."""
+    from flask import current_app
+    if not file or not file.filename:
+        return None
+    name = secure_filename(file.filename) or "file"
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext not in ALLOWED_EXTENSIONS:
+        return "Unsupported file type. Allowed: " + ", ".join(sorted(ALLOWED_EXTENSIONS))
+    if kind not in DOCUMENT_KINDS:
+        kind = "other"
+    user_dir = os.path.join(current_app.config["UPLOAD_DIR"], str(current_user.id))
+    os.makedirs(user_dir, exist_ok=True)
+    stored = f"{uuid.uuid4().hex}.{ext}"
+    path = os.path.join(user_dir, stored)
+    file.save(path)
+    db.execute(
+        "INSERT INTO documents (user_id, year_id, movement_id, kind, original_name, "
+        "stored_name, mime, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (current_user.id, year_id, movement_id, kind, name, stored,
+         file.mimetype or "application/octet-stream", os.path.getsize(path)))
+    return None
+
+
+def remove_files(rows):
+    from flask import current_app
+    for doc in rows:
+        path = os.path.join(current_app.config["UPLOAD_DIR"], str(doc["user_id"]),
+                            doc["stored_name"])
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def validate_movement(form, year):
+    city = form.get("city", "").strip()
+    country = form.get("country", "").strip()
+    start = parse_date(form.get("start_date"))
+    end = parse_date(form.get("end_date"))
+    if not city or not country:
+        return None, "City and country are required."
+    if not start or not end:
+        return None, "Please provide valid start and end dates."
+    if end < start:
+        return None, "The end date must be on or after the start date."
+    if start.year != year or end.year != year:
+        return None, f"Dates must fall within {year}."
+    return {"city": city, "country": country, "start_date": start.isoformat(),
+            "end_date": end.isoformat(), "notes": form.get("notes", "").strip()}, None
+
+
+def compute_stats(year_row, movements):
+    """Count days per country. Days not covered by a movement count as base."""
+    y = year_row["year"]
+    first, last = date(y, 1, 1), date(y, 12, 31)
+    total = (last - first).days + 1
+    assigned = {}
+    for m in sorted(movements, key=lambda r: r["start_date"]):
+        d, end = parse_date(m["start_date"]), parse_date(m["end_date"])
+        while d <= end:
+            assigned[d] = m["country"]
+            d += timedelta(days=1)
+
+    today = date.today()
+    elapsed_end = min(today, last) if today >= first else first - timedelta(days=1)
+
+    per_country = {}
+    per_country_so_far = {}
+    base = year_row["base_country"]
+    d = first
+    while d <= last:
+        c = assigned.get(d, base)
+        per_country[c] = per_country.get(c, 0) + 1
+        if d <= elapsed_end:
+            per_country_so_far[c] = per_country_so_far.get(c, 0) + 1
+        d += timedelta(days=1)
+
+    rows = [{"country": c, "days": n, "so_far": per_country_so_far.get(c, 0),
+             "pct": round(n * 100 / total, 1), "is_base": c == base,
+             "over_threshold": n >= RESIDENCE_THRESHOLD}
+            for c, n in per_country.items()]
+    rows.sort(key=lambda r: (-r["days"], r["country"]))
+    base_days = per_country.get(base, 0)
+    return {"total": total, "rows": rows, "base_days": base_days,
+            "abroad_days": total - base_days, "threshold": RESIDENCE_THRESHOLD,
+            "base_ok": base_days >= RESIDENCE_THRESHOLD,
+            "elapsed": max((elapsed_end - first).days + 1, 0)}
+
+
+# ---------- routes ----------
+
+def register_routes(app):
+
+    # --- auth ---
+
+    @app.route("/signup", methods=["GET", "POST"])
+    def signup():
+        if current_user.is_authenticated:
+            return redirect(url_for("index"))
+        if request.method == "POST":
+            email = request.form.get("email", "").strip().lower()
+            password = request.form.get("password", "")
+            confirm = request.form.get("confirm", "")
+            if "@" not in email or "." not in email:
+                flash("Please enter a valid email address.", "error")
+            elif len(password) < 8:
+                flash("Password must be at least 8 characters.", "error")
+            elif password != confirm:
+                flash("Passwords do not match.", "error")
+            elif db.query("SELECT 1 FROM users WHERE email = ?", (email,), one=True):
+                flash("An account with this email already exists.", "error")
+            else:
+                uid = db.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)",
+                                 (email, generate_password_hash(password)))
+                login_user(User({"id": uid, "email": email}))
+                flash("Welcome to Nomad Life! Start by setting up your year.", "success")
+                return redirect(url_for("index"))
+        return render_template("auth/signup.html")
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if current_user.is_authenticated:
+            return redirect(url_for("index"))
+        if request.method == "POST":
+            email = request.form.get("email", "").strip().lower()
+            row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
+            if row and check_password_hash(row["password_hash"], request.form.get("password", "")):
+                login_user(User(row), remember=bool(request.form.get("remember")))
+                nxt = request.args.get("next", "")
+                return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//")
+                                else url_for("index"))
+            flash("Invalid email or password.", "error")
+        return render_template("auth/login.html")
+
+    @app.route("/logout", methods=["POST"])
+    @login_required
+    def logout():
+        logout_user()
+        flash("You have been signed out.", "info")
+        return redirect(url_for("login"))
+
+    @app.route("/forgot", methods=["GET", "POST"])
+    def forgot():
+        if request.method == "POST":
+            email = request.form.get("email", "").strip().lower()
+            row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
+            if row:
+                token = serializer().dumps({"uid": row["id"], "h": row["password_hash"][-16:]})
+                base = app.config["APP_BASE_URL"].rstrip("/")
+                link = (base + url_for("reset", token=token)) if base \
+                    else url_for("reset", token=token, _external=True)
+                send_email(email, "Reset your Nomad Life password",
+                           "Hi,\n\nUse the link below to reset your Nomad Life password. "
+                           f"It expires in 1 hour.\n\n{link}\n\n"
+                           "If you did not request this, you can ignore this email.\n")
+            flash("If that email is registered, a reset link is on its way.", "info")
+            return redirect(url_for("login"))
+        return render_template("auth/forgot.html")
+
+    @app.route("/reset/<token>", methods=["GET", "POST"])
+    def reset(token):
+        try:
+            data = serializer().loads(token, max_age=RESET_TOKEN_MAX_AGE)
+        except SignatureExpired:
+            flash("This reset link has expired. Please request a new one.", "error")
+            return redirect(url_for("forgot"))
+        except BadSignature:
+            flash("This reset link is not valid.", "error")
+            return redirect(url_for("forgot"))
+        row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
+        if not row or row["password_hash"][-16:] != data.get("h"):
+            flash("This reset link has already been used.", "error")
+            return redirect(url_for("forgot"))
+        if request.method == "POST":
+            password = request.form.get("password", "")
+            if len(password) < 8:
+                flash("Password must be at least 8 characters.", "error")
+            elif password != request.form.get("confirm", ""):
+                flash("Passwords do not match.", "error")
+            else:
+                db.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                           (generate_password_hash(password), row["id"]))
+                flash("Your password has been updated. Please sign in.", "success")
+                return redirect(url_for("login"))
+        return render_template("auth/reset.html", token=token)
+
+    # --- workspace ---
+
+    @app.route("/")
+    @login_required
+    def index():
+        years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year DESC",
+                         (current_user.id,))
+        if not years:
+            return redirect(url_for("new_year"))
+        wanted = date.today().year
+        pick = wanted if any(r["year"] == wanted for r in years) else years[0]["year"]
+        return redirect(url_for("dashboard", year=pick))
+
+    @app.route("/year/new", methods=["GET", "POST"])
+    @login_required
+    def new_year():
+        if request.method == "POST":
+            try:
+                year = int(request.form.get("year", ""))
+            except ValueError:
+                year = 0
+            city = request.form.get("base_city", "").strip()
+            country = request.form.get("base_country", "").strip()
+            if not 1970 <= year <= 2100:
+                flash("Please enter a valid year.", "error")
+            elif not city or not country:
+                flash("Base city and country are required.", "error")
+            elif db.query("SELECT 1 FROM years WHERE user_id = ? AND year = ?",
+                          (current_user.id, year), one=True):
+                flash(f"You already have a workspace for {year}.", "error")
+            else:
+                db.execute("INSERT INTO years (user_id, year, base_city, base_country) "
+                           "VALUES (?, ?, ?, ?)", (current_user.id, year, city, country))
+                flash(f"Year {year} created with base in {city}, {country}.", "success")
+                return redirect(url_for("dashboard", year=year))
+        return render_template("year_new.html", default_year=date.today().year)
+
+    @app.route("/year/<int:year>")
+    @login_required
+    def dashboard(year):
+        year_row = get_year_or_404(year)
+        movements = db.query(
+            "SELECT m.*, (SELECT COUNT(*) FROM documents d WHERE d.movement_id = m.id) AS doc_count "
+            "FROM movements m WHERE m.year_id = ? ORDER BY m.start_date", (year_row["id"],))
+        years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year DESC",
+                         (current_user.id,))
+        base_docs = documents_for(year_row["id"])
+        return render_template("dashboard.html", y=year_row, movements=movements,
+                               years=years, stats=compute_stats(year_row, movements),
+                               base_docs=base_docs,
+                               today=date.today().isoformat())
+
+    @app.route("/year/<int:year>/base", methods=["GET", "POST"])
+    @login_required
+    def base(year):
+        year_row = get_year_or_404(year)
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "update":
+                city = request.form.get("base_city", "").strip()
+                country = request.form.get("base_country", "").strip()
+                if not city or not country:
+                    flash("Base city and country are required.", "error")
+                else:
+                    db.execute("UPDATE years SET base_city = ?, base_country = ? WHERE id = ?",
+                               (city, country, year_row["id"]))
+                    flash("Base location updated.", "success")
+            elif action == "upload":
+                err = save_upload(request.files.get("file"), request.form.get("kind"),
+                                  year_row["id"])
+                flash(err or "Document uploaded.", "error" if err else "success")
+            elif action == "delete_year":
+                if request.form.get("confirm_year") == str(year):
+                    remove_files(db.query("SELECT * FROM documents WHERE year_id = ?",
+                                          (year_row["id"],)))
+                    db.execute("DELETE FROM years WHERE id = ?", (year_row["id"],))
+                    flash(f"Year {year} deleted.", "info")
+                    return redirect(url_for("index"))
+                flash("Type the year to confirm deletion.", "error")
+            return redirect(url_for("base", year=year))
+        return render_template("base_location.html", y=year_row, docs=documents_for(year_row["id"]))
+
+    @app.route("/year/<int:year>/movements/new", methods=["GET", "POST"])
+    @login_required
+    def movement_new(year):
+        year_row = get_year_or_404(year)
+        form = request.form if request.method == "POST" else {}
+        if request.method == "POST":
+            data, err = validate_movement(request.form, year)
+            if err:
+                flash(err, "error")
+            else:
+                mid = db.execute(
+                    "INSERT INTO movements (year_id, city, country, start_date, end_date, notes) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (year_row["id"], data["city"], data["country"], data["start_date"],
+                     data["end_date"], data["notes"]))
+                err = save_upload(request.files.get("file"), request.form.get("kind"),
+                                  year_row["id"], mid)
+                if err:
+                    flash(err, "error")
+                flash(f"Movement to {data['city']} added.", "success")
+                return redirect(url_for("movement_edit", movement_id=mid))
+        return render_template("movement.html", y=year_row, m=None, form=form, docs=[])
+
+    @app.route("/movements/<int:movement_id>", methods=["GET", "POST"])
+    @login_required
+    def movement_edit(movement_id):
+        m = get_movement_or_404(movement_id)
+        year_row = get_year_or_404(m["year"])
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "update":
+                data, err = validate_movement(request.form, m["year"])
+                if err:
+                    flash(err, "error")
+                else:
+                    db.execute("UPDATE movements SET city = ?, country = ?, start_date = ?, "
+                               "end_date = ?, notes = ? WHERE id = ?",
+                               (data["city"], data["country"], data["start_date"],
+                                data["end_date"], data["notes"], movement_id))
+                    flash("Movement updated.", "success")
+            elif action == "upload":
+                err = save_upload(request.files.get("file"), request.form.get("kind"),
+                                  year_row["id"], movement_id)
+                flash(err or "Document uploaded.", "error" if err else "success")
+            elif action == "delete":
+                remove_files(documents_for(year_row["id"], movement_id))
+                db.execute("DELETE FROM movements WHERE id = ?", (movement_id,))
+                flash("Movement deleted.", "info")
+                return redirect(url_for("dashboard", year=m["year"]))
+            return redirect(url_for("movement_edit", movement_id=movement_id))
+        return render_template("movement.html", y=year_row, m=m, form=m,
+                               docs=documents_for(year_row["id"], movement_id))
+
+    # --- documents ---
+
+    def get_document_or_404(doc_id):
+        row = db.query("SELECT * FROM documents WHERE id = ? AND user_id = ?",
+                       (doc_id, current_user.id), one=True)
+        if row is None:
+            abort(404)
+        return row
+
+    @app.route("/documents/<int:doc_id>")
+    @login_required
+    def document(doc_id):
+        doc = get_document_or_404(doc_id)
+        folder = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id))
+        return send_from_directory(folder, doc["stored_name"], mimetype=doc["mime"],
+                                   as_attachment=request.args.get("download") == "1",
+                                   download_name=doc["original_name"])
+
+    @app.route("/documents/<int:doc_id>/delete", methods=["POST"])
+    @login_required
+    def document_delete(doc_id):
+        doc = get_document_or_404(doc_id)
+        remove_files([doc])
+        db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        flash("Document deleted.", "info")
+        return redirect(request.referrer or url_for("index"))
+
+
+app = create_app()
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=app.config["APP_PORT"],
+            debug=os.getenv("FLASK_DEBUG") == "1")
