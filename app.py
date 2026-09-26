@@ -588,6 +588,10 @@ def register_routes(app):
     # --- workspace ---
 
     @app.route("/")
+    def landing():
+        return render_template("landing.html")
+
+    @app.route("/app")
     @login_required
     def index():
         years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year DESC",

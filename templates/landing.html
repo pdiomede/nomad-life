@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Nomad Life | Track your days abroad{% endblock %}
+
+{% block topnav %}
+  {% include "_theme_toggle.html" %}
+  <a class="btn btn-launch" href="{{ url_for('login') }}">Launch app</a>
+{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">For digital nomads</p>
+    <h1>Know where you spent your year.</h1>
+    <p class="hero-lead">Track the days you spend in each country and keep your travel receipts safe, all in one place.</p>
+    <div class="row wrap gap-sm">
+      <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">Launch app</a>
+      <a class="btn btn-ghost btn-lg" href="#how-it-works">See how it works</a>
+    </div>
+  </div>
+
+  <div class="hero-preview" aria-hidden="true">
+    <div class="card preview-card">
+      <div class="row between">
+        <strong>Days per country</strong>
+        <span class="muted small">2026</span>
+      </div>
+      <ul class="bars">
+        <li>
+          <div class="row between"><span>Portugal <span class="tag">Base</span></span><span class="muted small">279 days</span></div>
+          <div class="meter"><span style="width: 76.4%"></span><i style="left: 50.1%"></i></div>
+        </li>
+        <li>
+          <div class="row between"><span>Indonesia</span><span class="muted small">59 days</span></div>
+          <div class="meter"><span style="width: 16.2%"></span><i style="left: 50.1%"></i></div>
+        </li>
+        <li>
+          <div class="row between"><span>Japan</span><span class="muted small">27 days</span></div>
+          <div class="meter"><span style="width: 7.4%"></span><i style="left: 50.1%"></i></div>
+        </li>
+      </ul>
+      <p class="pill pill-ok">At least 183 days at base</p>
+    </div>
+    <div class="card preview-receipt">
+      <span class="doc-icon">PDF</span>
+      <div>
+        <strong>Flight to Bali</strong>
+        <div class="muted small">Receipt saved</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <div class="card feature">
+    <span class="feature-icon">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 15h3"/></svg>
+    </span>
+    <h2>Count your days</h2>
+    <p class="muted">See your days in each country, with a clear 183 day line.</p>
+  </div>
+  <div class="card feature">
+    <span class="feature-icon">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h7M9 17h5"/></svg>
+    </span>
+    <h2>Keep your receipts</h2>
+    <p class="muted">Rental contracts, hotel bills and flight tickets, right next to each trip.</p>
+  </div>
+  <div class="card feature">
+    <span class="feature-icon">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    </span>
+    <h2>Private by design</h2>
+    <p class="muted">Runs on your own computer. Your data stays with you.</p>
+  </div>
+</section>
+
+<section class="steps" id="how-it-works">
+  <h2 class="section-title">How it works</h2>
+  <ol class="step-list">
+    <li><span class="step-num">1</span><strong>Set your base</strong><span class="muted">Pick your home city for the year.</span></li>
+    <li><span class="step-num">2</span><strong>Log your trips</strong><span class="muted">Add dates, place and receipts.</span></li>
+    <li><span class="step-num">3</span><strong>Watch your days</strong><span class="muted">See every country's total add up.</span></li>
+  </ol>
+</section>
+
+<section class="card cta">
+  <div>
+    <h2>Ready to track your year?</h2>
+    <p class="muted small">A personal organizer, not tax advice.</p>
+  </div>
+  <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">Launch app</a>
+</section>
+{% endblock %}

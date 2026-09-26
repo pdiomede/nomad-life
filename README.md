@@ -6,6 +6,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 
 ## Features
 
+- A simple landing page that explains the app, with a "Launch app" button to sign in.
 - One private workspace per user with sign up, sign in and password reset by email (Gmail).
 - One workspace per solar year, each with a base city and country.
 - Log movements with date range, city and country.
@@ -23,7 +24,7 @@ Requirements: Python 3.10 or newer.
 ./runWebApp.sh
 ```
 
-The script checks Python, creates `config.env` on first run, sets up a virtual environment, installs the requirements when needed, frees the configured port if it is busy and starts the app. Then open `http://localhost:5050`.
+The script checks Python, creates `config.env` on first run, sets up a virtual environment, installs the requirements when needed, frees the configured port if it is busy and starts the app. Then open `http://localhost:5050` and click "Launch app" in the top right corner.
 
 ## Configuration
 
