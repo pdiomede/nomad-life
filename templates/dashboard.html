@@ -105,23 +105,26 @@
   <section class="card map-card" aria-labelledby="map-title">
     <div class="card-head">
       <h2 id="map-title">Map</h2>
-      <span class="muted small">Your base and stays in {{ y.year }}</span>
+      <div class="map-head-right">
+        <span class="muted small">Your base and stays in {{ y.year }}</span>
+        {# Zoom controls sit above the map, so they never cover a pin. Shown by theme.js,
+           which does the zooming (no JavaScript, no buttons). #}
+        <div class="map-zoom" hidden>
+          <button type="button" class="map-zoom-btn" data-map-zoom="in" aria-label="Zoom in" title="Zoom in">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" class="map-zoom-btn" data-map-zoom="out" aria-label="Zoom out" title="Zoom out">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" class="map-zoom-btn" data-map-zoom="reset" aria-label="Reset zoom to the whole world" title="Whole world">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </button>
+        </div>
+      </div>
     </div>
     <div class="map" role="group" aria-label="World map of your base and stays in {{ y.year }}">
       <div class="map-viewport" aria-hidden="true">
         <div class="map-land" style="--map-image: url('{{ url_for('static', filename='img/world.svg', v=asset_version) }}')"></div>
-      </div>
-      {# Zoom controls: shown by theme.js, which does the zooming (no JavaScript, no buttons). #}
-      <div class="map-zoom" hidden>
-        <button type="button" class="map-zoom-btn" data-map-zoom="in" aria-label="Zoom in" title="Zoom in">
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </button>
-        <button type="button" class="map-zoom-btn" data-map-zoom="out" aria-label="Zoom out" title="Zoom out">
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </button>
-        <button type="button" class="map-zoom-btn" data-map-zoom="reset" aria-label="Reset zoom to the whole world" title="Whole world">
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
-        </button>
       </div>
       <span class="visually-hidden" aria-live="polite" data-map-status></span>
       {% for p in pins %}

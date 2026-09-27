@@ -23,6 +23,8 @@ class AppTestCase(unittest.TestCase):
             "UPLOAD_DIR": os.path.join(self.tmp, "uploads"),
             # config.env may hold real Gmail credentials: tests must never send email.
             "GMAIL_USER": "", "GMAIL_APP_PASSWORD": "",
+            # Nor may its size settings change what the tests expect: use the defaults.
+            "MAX_RECEIPT_BYTES": 10 * appmod.MB, "USER_QUOTA_BYTES": 500 * appmod.MB,
         })
         self.client = self.app.test_client()
         self.outbox = []

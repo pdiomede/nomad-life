@@ -289,7 +289,6 @@ def create_app(overrides=None):
         n = app.config["PROXY_COUNT"]
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n, x_host=n)
 
-    CSRFProtect(app)
     login_manager = LoginManager(app)
     login_manager.login_view = "login"
     login_manager.login_message_category = "info"
@@ -326,6 +325,10 @@ def create_app(overrides=None):
         # MAX_CONTENT_LENGTH fits the largest plan; each request gets its sender's own cap, so
         # a Free user's oversized upload is still refused before the server reads it.
         request.max_content_length = receipt_limit() + MB
+
+    # Registered after the size hook on purpose: the CSRF check reads the form, and before
+    # request hooks run in order, so the per plan cap must already be in place by then.
+    CSRFProtect(app)
 
     @app.before_request
     def purge_now_and_then():
@@ -400,7 +403,9 @@ def purge_unverified():
     """Delete accounts that were not confirmed within VERIFY_MINUTES. An account that holds
     data is never one of them (it can only come from a server running an older version), so it
     is kept rather than deleted with everything in it."""
-    db.execute("DELETE FROM users WHERE verified_at IS NULL AND created_at <= datetime('now', ?) "
+    # A disabled account is kept too, so a new sign up cannot undo an admin's decision.
+    db.execute("DELETE FROM users WHERE verified_at IS NULL AND disabled = 0 AND "
+               "created_at <= datetime('now', ?) "
                "AND NOT EXISTS (SELECT 1 FROM years WHERE years.user_id = users.id)",
                (f"-{VERIFY_MINUTES} minutes",))
 
@@ -1258,6 +1263,9 @@ def register_routes(app):
                 flash("This confirmation link has expired, so the account was removed. Please "
                       "sign up again.", "error")
                 return redirect(url_for("signup"))
+        if row and row["disabled"]:
+            flash("This account is disabled. Please contact the administrator.", "error")
+            return redirect(url_for("login"))
         # A later sign up attempt for this address raises the version, so a confirmation link
         # sent before it (possibly for a stranger's password) stops working.
         if (not row or password_fingerprint(row["password_hash"]) != data.get("h")
@@ -1289,6 +1297,15 @@ def register_routes(app):
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
             if row and check_password_hash(row["password_hash"], request.form.get("password", "")):
                 forgive(attempt, email)
+                if row["disabled"]:
+                    flash("This account is disabled. Please contact the administrator.", "error")
+                    return render_template("auth/login.html")
+                if row["verified_at"] is None and row["session_version"]:
+                    # Someone signed up again for this address, so the password on this row may
+                    # be a stranger's: only the mailbox's choose-a-password link can activate it.
+                    flash(f"Please use the link we emailed to {email} to choose your password "
+                          "and activate the account.", "info")
+                    return render_template("auth/login.html")
                 if row["verified_at"] is None:
                     if not email_allowed(row["id"]):
                         flash(f"Please confirm your email first, with the link we sent to {email} "
@@ -1300,9 +1317,6 @@ def register_routes(app):
                         release_email_wait(row["id"])
                         flash("Please confirm your email first, with the link we sent when you "
                               "signed up.", "error")
-                    return render_template("auth/login.html")
-                if row["disabled"]:
-                    flash("This account is disabled. Please contact the administrator.", "error")
                     return render_template("auth/login.html")
                 db.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
                            (row["id"],))

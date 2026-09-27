@@ -330,7 +330,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .tip-below .map-tip { bottom: auto; top: calc(100% + 10px); }
 .tip-below .map-tip::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--surface); }
 .map-pin.is-off { opacity: 0; pointer-events: none; }  /* outside the zoomed view */
-.map-zoom { position: absolute; left: 8px; bottom: 8px; z-index: 5; display: flex; flex-direction: column; gap: 4px; }
+.map-head-right { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px 14px; }
+.map-zoom { display: flex; gap: 4px; }
 .map-zoom[hidden] { display: none; }
 .map-zoom-btn {
   width: 30px; height: 30px; display: grid; place-items: center; padding: 0; cursor: pointer;
@@ -572,8 +573,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
   /* Smaller pins on phones, where neighbouring countries are only a few pixels apart. */
   .map-pin { min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; font-size: 10px; border-width: 1.5px; }
   .map-pin-base { min-width: 22px; height: 22px; border-radius: 11px; font-size: 11px; }
-  .map-zoom { flex-direction: row; left: 6px; bottom: 6px; }  /* the map is short on phones */
-  .map-zoom-btn { width: 28px; height: 28px; }
+  .map-zoom-btn { width: 32px; height: 32px; }
   .doc { flex-wrap: wrap; }
   /* Icon and details on the first line, actions below, so the rename form gets the full width. */
   .doc-main { flex-basis: calc(100% - 52px); }

@@ -373,8 +373,9 @@
   var ZOOMS = [1, 2, 4, 8];
   document.querySelectorAll(".map").forEach(function (map) {
     var land = map.querySelector(".map-land");
-    var controls = map.querySelector(".map-zoom");
-    var status = map.querySelector("[data-map-status]");
+    var card = map.closest(".map-card") || map;
+    var controls = card.querySelector(".map-zoom");
+    var status = card.querySelector("[data-map-status]");
     var pins = [].slice.call(map.querySelectorAll(".map-pin")).map(function (pin) {
       // The server gives each pin's place as a percentage of the whole map.
       return { pin: pin, fx: parseFloat(pin.style.left) / 100, fy: parseFloat(pin.style.top) / 100 };
@@ -467,6 +468,13 @@
       if (i >= 0 && i < ZOOMS.length) zoomTo(ZOOMS[i]);
     };
 
+    var keepFocus = function (el) {
+      // A zoom button that just became disabled drops focus (the browser moves it to the page
+      // at once), so the element that had it is passed in; keep the focus on the controls.
+      if (controls && el && el.matches && el.matches("[data-map-zoom]") && el.disabled) {
+        controls.querySelector("[data-map-zoom]:not(:disabled)").focus();
+      }
+    };
     if (controls) {
       controls.hidden = false;
       controls.addEventListener("click", function (e) {
@@ -475,17 +483,18 @@
         var what = btn.getAttribute("data-map-zoom");
         if (what === "in") step(1); else if (what === "out") step(-1);
         else { tx = 0; ty = 0; zoomTo(1); }
-        // A button that just became disabled drops focus; keep it on the controls.
-        if (btn.disabled) controls.querySelector("[data-map-zoom]:not(:disabled)").focus();
+        keepFocus(btn);
       });
     }
 
     // Drag to pan while zoomed. A drag is not a tap: the pin under the pointer stays closed.
     var drag = null, dragged = false;
     map.addEventListener("pointerdown", function (e) {
-      if (z === 1 || e.button !== 0 || e.target.closest(".map-zoom")) return;
+      dragged = false;  // every gesture starts fresh (a touch drag ends without a click)
+      if (z === 1 || e.button !== 0) return;
+      // With a mouse, pressing on a pin to drag must not focus it (its tooltip would ride along).
+      if (e.pointerType === "mouse") e.preventDefault();
       drag = { x: e.clientX, y: e.clientY, tx: tx, ty: ty, id: e.pointerId };
-      dragged = false;
     });
     map.addEventListener("pointermove", function (e) {
       if (!drag || e.pointerId !== drag.id) return;
@@ -507,7 +516,9 @@
     }, true);
 
     // Keyboard: arrows pan, + and - zoom, 0 shows the whole world, from any pin or button.
-    map.addEventListener("keydown", function (e) {
+    card.addEventListener("keydown", function (e) {
+      if (!e.target.closest(".map, .map-zoom")) return;
+      var had = document.activeElement;
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       var w = map.clientWidth, h = map.clientHeight, moved = true;
       if (e.key === "+" || e.key === "=") step(1);
@@ -518,8 +529,23 @@
       else if (z > 1 && e.key === "ArrowUp") { ty += h * 0.2; render(); }
       else if (z > 1 && e.key === "ArrowDown") { ty -= h * 0.2; render(); }
       else moved = false;
-      if (moved) e.preventDefault();
+      if (moved) {
+        e.preventDefault();
+        keepFocus(had);
+        keepPinInView();
+      }
     });
+
+    // Panning with the keys never hides the pin that has the focus.
+    var keepPinInView = function () {
+      var el = document.activeElement, p = pins.filter(function (q) { return q.pin === el; })[0];
+      if (!p || z === 1) return;
+      var w = map.clientWidth, h = map.clientHeight, m = 16;
+      var x = tx + p.fx * w * z, y = ty + p.fy * h * z;
+      if (x < m) tx += m - x; else if (x > w - m) tx -= x - (w - m);
+      if (y < m) ty += m - y; else if (y > h - m) ty -= y - (h - m);
+      render();
+    };
 
     // Tabbing to a pin outside the zoomed view brings it into view.
     pins.forEach(function (p) {
