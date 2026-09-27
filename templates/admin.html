@@ -66,7 +66,7 @@
           <label for="plan-{{ u.id }}" class="small">Plan</label>
           <select id="plan-{{ u.id }}" name="plan">
             {% for p in plans %}
-              <option value="{{ p.key }}"{% if p.key == u.plan_key %} selected{% endif %}>{{ p.name }}</option>
+              <option value="{{ p.key }}"{% if p.key == u.plan_key %} selected{% endif %}>{{ p.name }} ({% if p.price %}${{ p.price }} / month, ${{ p.year }} / year{% else %}free{% endif %})</option>
             {% endfor %}
           </select>
           <button class="btn btn-ghost btn-sm" type="submit" aria-label="Save plan for {{ u.email }}">Save</button>

@@ -10,7 +10,7 @@ All notable changes to this project are documented in this file.
 - The header shows only your email with an arrow. It opens a menu with your plan (for example FREE, which opens the new plan page), Admin for admins, and Sign out. The Account page is in the footer.
 - "Upgrade" on the Receipt storage card opens the plan page, with your plan, its limits and usage, and the next plan with its price.
 - The landing page has a Plans section with every plan, its price and features, and a "Pricing" button at the top Prices are in US dollars, and each paid plan says "Everything in <previous plan>, plus:" and highlights what it adds.
-- The admin page shows each account's plan and can change it with a plan selector. An account without a custom quota gets the quota of its plan.
+- The admin page shows each account's plan and can change it with a plan selector that shows each plan's monthly and yearly price. An account without a custom quota gets the quota of its plan.
 
 ### Fixed
 

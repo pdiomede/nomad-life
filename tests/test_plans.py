@@ -194,8 +194,9 @@ class AdminPlanSelectorTests(AppTestCase):
     def test_selector_lists_every_plan_with_the_current_one_selected(self):
         html = self.client.get("/admin").get_data(as_text=True)
         self.assertIn(f'id="plan-{self.uid}"', html)
-        self.assertIn('<option value="free" selected>Free</option>', html)
-        self.assertIn('<option value="plus">Nomad+</option>', html)
+        self.assertIn('<option value="free" selected>Free (free)</option>', html)
+        self.assertIn('<option value="pro">Pro ($4 / month, $40 / year)</option>', html)
+        self.assertIn('<option value="plus">Nomad+ ($9 / month, $90 / year)</option>', html)
 
     def test_admin_changes_the_plan(self):
         html = self.set_plan("pro")
