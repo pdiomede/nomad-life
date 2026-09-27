@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.9**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.10**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -65,11 +65,15 @@ Click **Account** in the footer to:
 - Change your password. You stay signed in on this device; every other device is signed out.
 - Change your email. A confirmation link goes to the new address, and the change happens when it is opened.
 - Turn on **two-factor sign in**: scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden...), then signing in also asks for its 6 digit code. Each code works only once.
-- Sign out every other browser and device.
+- Sign out every other browser and device, and see how many were used in the last 31 days. "Sign out" in the menu ends that browser's session for good: a copied session or "Remember me" cookie stops working at once.
 - See your recent security activity (sign ins, password, email and two-factor changes) with the network address.
 - Delete your account with all years, movements and receipts. It asks for your password, asks twice and needs your email typed.
 
-Every change of password, email address or two-factor sign in sends a **security alert** to the account's address (for an email change, to the old address), with a link to reset the password if it was not you.
+Every change of password, email address or two-factor sign in sends a **security alert** to the account's address, with a link to reset the password if it was not you. For an email change the alert goes to the old address, with a link (valid 7 days) that **undoes the change**: it puts the old address back, signs out every device and sends a link to choose a new password.
+
+New passwords (sign up, account page, reset) are refused when they appear in known data breaches, checked with [Have I Been Pwned](https://haveibeenpwned.com/Passwords): only the first 5 characters of the password's SHA-1 hash leave the server, and if the service cannot be reached the password is accepted. Turn it off with `PWNED_CHECK=0`.
+
+Receipts must really be what their name says: a PDF must contain a PDF header, an image must be a PNG, JPEG, WebP or HEIC image. An image saved under another image extension (a WebP downloaded as `.jpg`) is kept under its real type; anything else, such as a web page renamed to `.pdf`, is refused.
 
 Lost the phone with the authenticator app? Whoever runs the server can remove two-factor sign in from the account:
 
@@ -77,7 +81,7 @@ Lost the phone with the authenticator app? Whoever runs the server can remove tw
 .venv/bin/flask --app app reset-2fa someone@example.com
 ```
 
-Password guessing is slowed down. After 5 failed sign ins for one account, or 20 from one network, within 15 minutes, sign in waits until the oldest attempt is 15 minutes old. Wrong current passwords on the account page count the same way. Password reset requests are limited to 5 per network per 15 minutes, on top of one email per account per minute. Behind a reverse proxy, set `PROXY_COUNT=1`.
+Password guessing is slowed down. After 5 failed sign ins for one account, or 20 from one network, within 15 minutes, sign in waits until the oldest attempt is 15 minutes old. A browser that signed in to the account before has its own count, so strangers failing on purpose cannot lock the owner out. Wrong two-factor codes are counted separately (5 per account, 20 per network, per 15 minutes), and only a right code clears them. Wrong current passwords on the account page count the same way. Password reset requests are limited to 5 per network per 15 minutes, on top of one email per account per minute. Behind a reverse proxy, set `PROXY_COUNT=1`.
 
 ## Admin page
 

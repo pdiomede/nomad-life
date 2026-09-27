@@ -43,7 +43,7 @@ class SessionTests(AppTestCase):
         other.post("/logout")
         self.assertEqual(self.client.get("/account").status_code, 200)
         html = self.client.get("/account").get_data(as_text=True)
-        self.assertIn("signed in on 1 browser or device", html)
+        self.assertIn("1 browser or device used your account in the last 31 days", html)
 
     def test_sign_out_everywhere_else_and_password_change_forget_the_rows(self):
         self.signup()
@@ -187,8 +187,8 @@ class ContentTests(AppTestCase):
 
     def test_renamed_files_are_refused(self):
         for name, body in [("page.pdf", b"<html><script>alert(1)</script>"),
-                           ("page.png", b"<svg onload=alert(1)>"), ("x.jpg", PNG),
-                           ("x.webp", b"RIFF\x00\x00\x00\x00AVI "), ("x.heic", PNG)]:
+                           ("page.png", b"<svg onload=alert(1)>"), ("x.pdf", PNG),
+                           ("x.webp", b"RIFF\x00\x00\x00\x00AVI "), ("x.heic", PDF)]:
             html = self.upload("/year/2026/base", name, body).get_data(as_text=True)
             resp = self.client.get("/year/2026/base").get_data(as_text=True)
             self.assertIn(f"{name} is not a real", html + resp, name)

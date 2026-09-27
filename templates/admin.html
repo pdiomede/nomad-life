@@ -78,6 +78,7 @@
           {{ ui.csrf() }}
           <input type="hidden" name="action" value="quota">
           <input type="hidden" name="page" value="{{ pager.page }}">
+          <input type="hidden" name="q" value="{{ activity_q }}">
           <label for="quota-{{ u.id }}" class="small">Quota in MB</label>
           <input id="quota-{{ u.id }}" name="quota_mb" type="number" min="1" max="1048576" step="any" inputmode="decimal"
                  value="{{ u.quota_mb }}"
@@ -89,6 +90,7 @@
           {{ ui.csrf() }}
           <input type="hidden" name="action" value="plan">
           <input type="hidden" name="page" value="{{ pager.page }}">
+          <input type="hidden" name="q" value="{{ activity_q }}">
           <label for="plan-{{ u.id }}" class="small">Plan</label>
           <select id="plan-{{ u.id }}" name="plan">
             {% for p in plans %}
@@ -102,9 +104,10 @@
           {{ ui.csrf() }}
           <input type="hidden" name="action" value="{{ 'enable' if u.disabled else 'disable' }}">
           <input type="hidden" name="page" value="{{ pager.page }}">
+          <input type="hidden" name="q" value="{{ activity_q }}">
           <button class="btn btn-ghost btn-sm" type="submit" aria-label="{{ 'Enable' if u.disabled else 'Disable' }} {{ u.email }}">{{ 'Enable' if u.disabled else 'Disable' }}</button>
         </form>
-        {{ ui.delete_form(url_for('admin_user', user_id=u.id), 'the account ' ~ u.email ~ ' with all its years, movements and receipts', extra={'action': 'delete', 'page': pager.page, 'confirm_email': ''}, type_to_confirm=u.email, type_field='confirm_email', aria_label='Delete ' ~ u.email) }}
+        {{ ui.delete_form(url_for('admin_user', user_id=u.id), 'the account ' ~ u.email ~ ' with all its years, movements and receipts', extra={'action': 'delete', 'page': pager.page, 'q': activity_q, 'confirm_email': ''}, type_to_confirm=u.email, type_field='confirm_email', aria_label='Delete ' ~ u.email) }}
         {% else %}
         <span class="muted small">{{ 'This is you' if u.id == current_user.id else 'Admins cannot be disabled here' }}</span>
         {% endif %}

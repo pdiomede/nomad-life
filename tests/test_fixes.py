@@ -66,7 +66,7 @@ class RobustnessTests(AppTestCase):
         https = appmod.create_app({
             "TESTING": True, "WTF_CSRF_ENABLED": False, "SECRET_KEY": "x",
             "APP_BASE_URL": "https://nomad.example.com",
-            "DATABASE_PATH": os.path.join(self.tmp, "https.db"),
+            "DATABASE_PATH": os.path.join(self.tmp, "https.db"), "PWNED_CHECK": False,
             "UPLOAD_DIR": os.path.join(self.tmp, "https-up")})
         c = https.test_client()
         resp = c.post("/signup", base_url="https://nomad.example.com",

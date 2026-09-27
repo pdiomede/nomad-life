@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.10] - 2026-09-27
+
+### Added
+
+- "Sign out" now ends that browser's session on the server: a copied session or "Remember me" cookie stops working at once. Each sign in has its own session record; sessions unused for 31 days are forgotten, and the account page shows how many browsers were used in that time.
+- New passwords are checked against Have I Been Pwned's list of breached passwords (only the first 5 characters of the password's SHA-1 hash are sent). A password found there is refused at sign up, on the account page and on reset. If the service does not answer within 3 seconds the password is accepted; `PWNED_CHECK=0` turns the check off.
+- Receipts are checked by content, not only by name: a web page renamed to `.pdf` is refused. An image saved under another image extension (a WebP downloaded as `.jpg`) is kept under its real type.
+- The email change alert sent to the old address now has an "Undo this change" link (valid 7 days): it puts the old address back, signs out every device and sends a link to choose a new password. Before, it pointed to a password reset that could not work for an address no longer on the account.
+- Tests now also run on Python 3.10 (the oldest supported version) and 3.12 in the GitHub Action.
+
+### Fixed
+
+- Two-factor codes: typing the password again reset the count of wrong codes, so someone who knew the password could keep guessing codes. Wrong codes now have their own limit, which only a right code clears.
+- Two-factor codes: wrong codes when turning two-factor sign in off were not limited or recorded.
+- Two-factor codes typed with full width digits (some phone keyboards) caused a server error; they now work.
+- The two-factor setup key stayed in the browser after signing out and was offered to the next account signed in there, so the first person could generate the second one's codes.
+- A leftover "Remember me" cookie from a session ended elsewhere turned a later sign in without "Remember me" into a remembered one after a password change, "Sign out everywhere else" or turning on two-factor sign in.
+- A browser unused for more than 31 days could stay signed in when its own request happened to run the cleanup.
+- Disabling an account left its session records, so the device count was wrong after enabling it again.
+- Finishing a sign up with the "choose your password" link sent a "your password was reset" security alert.
+- `flask reset-2fa` on an account without two-factor sign in reported success and sent an alert; it now says two-factor sign in is not on. The alert it sends explains the lost phone case.
+- The breached password message said "appears 1 times".
+- The admin "Security activity" filter lost the history from before an email change; it now follows the account. Paging or saving an account's settings no longer clears the filter.
+- A PDF whose header starts in the last bytes of its first kilobyte was refused.
+- `fonttools` was pinned to a version that needs Python 3.11, so installing failed on Python 3.10, which the app supports.
+
 ## [1.2.9] - 2026-09-27
 
 ### Added

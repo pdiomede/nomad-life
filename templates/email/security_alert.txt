@@ -2,13 +2,11 @@ Hi,
 
 {{ what }}
 
-Account: {{ email }}
+Account: {{ account }}
 When: {{ when }}{% if ip %}
 From network address: {{ ip }}{% endif %}
 
-If this was you, there is nothing to do.
-
-If it was not you, reset your password now with the link below. Resetting signs out every browser and device:
+{{ advice }}
 
 {{ link }}
 

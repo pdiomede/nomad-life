@@ -1,0 +1,11 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Undo email change | Nomad Life{% endblock %}
+{% block heading %}Undo the email change{% endblock %}
+{% block sub %}Put {{ old }} back as the address of this account instead of {{ new }}.{% endblock %}
+{% block form %}
+<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <p class="muted small">Every browser and device is signed out, and we email {{ old }} a link to choose a new password.</p>
+  <button class="btn btn-primary btn-block" type="submit">Undo the change</button>
+</form>
+{% endblock %}

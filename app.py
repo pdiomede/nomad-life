@@ -24,7 +24,7 @@ from flask import (Flask, Response, abort, current_app, flash, has_request_conte
                    render_template, request, send_from_directory, session, url_for)
 from markupsafe import escape
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
-                         login_url, login_user, logout_user)
+                         login_url, login_user, logout_user, user_loaded_from_cookie)
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -37,7 +37,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.9"
+APP_VERSION = "1.2.10"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -115,7 +115,10 @@ LIMIT_WINDOW_MINUTES = 15
 # A browser that signed in before carries a device cookie: its failures count per device
 # instead of per account, so strangers failing on purpose cannot lock the owner out.
 LIMITS = {("fail", "email"): 5, ("fail", "device"): 5, ("fail", "ip"): 20,
-          ("forgot", "ip"): 5, ("signup", "ip"): 10}
+          ("forgot", "ip"): 5, ("signup", "ip"): 10,
+          # Wrong two-factor codes count apart from passwords, and only a right code clears
+          # them, so typing the password again never buys more guesses.
+          ("code", "email"): 5, ("code", "ip"): 20}
 DEVICE_COOKIE = "nomadlife_device"
 DEVICE_MAX_AGE = 365 * 24 * 3600
 # Sign up and sign in hash passwords with scrypt (about 32 MB of memory each), so only a few
@@ -148,7 +151,8 @@ FILE_SIGNATURES = {
     "webp": lambda h: h[:4] == b"RIFF" and h[8:12] == b"WEBP",
     "heic": lambda h: h[4:8] == b"ftyp" and h[8:12] in (b"heic", b"heix", b"hevc", b"hevx",
                                                         b"heim", b"heis", b"mif1", b"msf1"),
-    "pdf": lambda h: b"%PDF-" in h[:1024],
+    # The header may start anywhere in the first 1024 bytes, so look 4 bytes further.
+    "pdf": lambda h: b"%PDF-" in h[:1028],
 }
 # Content-Security-Policy of every HTML page. Scripts only from static/js (no inline scripts or
 # on* attributes anywhere); inline style attributes stay allowed for the meters and map pins.
@@ -157,6 +161,8 @@ CSP = ("default-src 'self'; script-src 'self'; "
        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
        "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 EMAIL_CHANGE_MAX_AGE = 3600
+# How long the "undo this change" link sent to the old address works.
+EMAIL_REVERT_MAX_AGE = 7 * 24 * 3600
 
 # config.env is the source of truth, as the README says: it overrides variables that happen to
 # be exported in the shell (SECRET_KEY or DATABASE_PATH from another project, for example).
@@ -361,6 +367,10 @@ def create_app(overrides=None):
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n, x_host=n)
 
     login_manager = LoginManager(app)
+
+    @user_loaded_from_cookie.connect_via(app)
+    def remembered(_app, user):
+        session["nl_remember"] = True  # signed in again from the "Remember me" cookie
     login_manager.login_view = "login"
     login_manager.login_message_category = "info"
 
@@ -388,8 +398,9 @@ def create_app(overrides=None):
             return None
         if sid:
             # Signed out (here or with "Sign out everywhere else") or unused for too long.
-            if not db.query("SELECT 1 FROM user_sessions WHERE id = ? AND user_id = ?",
-                            (sid, row["id"]), one=True):
+            if not db.query("SELECT 1 FROM user_sessions WHERE id = ? AND user_id = ? AND "
+                            "last_seen_at >= datetime('now', ?)",
+                            (sid, row["id"], f"-{SESSION_IDLE_DAYS} days"), one=True):
                 return None
             db.execute("UPDATE user_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ? "
                        "AND last_seen_at < datetime('now', '-1 hour')", (sid,))
@@ -496,14 +507,22 @@ def create_app(overrides=None):
         email = email.strip().lower()
         # Emails build their links with url_for, which needs a request.
         with app.test_request_context(environ_base={"REMOTE_ADDR": "command line"}):
-            row = db.query("SELECT id FROM users WHERE email = ?", (email,), one=True)
+            row = db.query("SELECT id, totp_secret FROM users WHERE email = ?", (email,),
+                           one=True)
             if row is None:
                 raise click.ClickException(f"No account for {email}.")
+            if not row["totp_secret"]:
+                raise click.ClickException(f"Two-factor sign in is not on for {email}.")
             db.execute("UPDATE users SET totp_secret = NULL, totp_step = 0 WHERE id = ?",
                        (row["id"],))
             audit("2fa_reset", row["id"], email, "", "command line")
             security_alert(email, "Two-factor sign in was removed from your Nomad Life account "
-                           "by the person who runs the server.")
+                           "by the person who runs the server.",
+                           advice=("This is usually because you lost the phone with your "
+                                   "authenticator app: sign in with your password and turn "
+                                   "two-factor sign in on again on the account page. If you did "
+                                   "not ask for this, reset your password now with the link "
+                                   "below and contact the person who runs the server."))
         click.echo(f"Two-factor sign in removed from {email}. They can sign in with the "
                    "password alone and turn it on again on the account page.")
 
@@ -582,6 +601,14 @@ def take_attempt(kind, email=None, device=None):
     return 0, None, ids
 
 
+def clear_code_failures(email, ids=()):
+    """A right code: drop this attempt and the account's earlier wrong codes (per network
+    counts stay, as for passwords)."""
+    if ids:
+        db.execute(f"DELETE FROM auth_events WHERE id IN ({','.join('?' * len(ids))})", ids)
+    db.execute("DELETE FROM auth_events WHERE kind = 'code' AND key = ?", (f"email:{email}",))
+
+
 def forgive(ids, email, device=None):
     """A right password: drop this attempt and the account's (or device's) earlier failures."""
     if ids:
@@ -646,8 +673,9 @@ def totp_code(secret, step):
 def totp_match(secret, code, last_step=0):
     """The time step the code belongs to, or None. Steps at or before last_step were used
     already, so a code seen once (over a shoulder, in a proxy log) never works again."""
-    code = "".join((code or "").split())
-    if not secret or len(code) != 6 or not code.isdigit():
+    # Phone keyboards may send full width or other digits; compare plain ASCII only.
+    code = "".join(unicodedata.normalize("NFKC", code or "").split())
+    if not secret or len(code) != 6 or not code.isascii() or not code.isdigit():
         return None
     now = int(time.time() // TOTP_STEP_SECONDS)
     for step in (now - 1, now, now + 1):
@@ -684,6 +712,9 @@ def sign_in_user(row, remember, keep_current=False):
         sid = secrets.token_urlsafe(24)
         db.execute("INSERT INTO user_sessions (id, user_id) VALUES (?, ?)", (sid, row["id"]))
     login_user(User(row, sid), remember=remember)
+    # What this browser chose, so a later re-sign in (new password, sign out elsewhere) keeps
+    # it; a leftover remember cookie from an ended session must not turn it on.
+    session["nl_remember"] = bool(remember)
     return sid
 
 
@@ -694,7 +725,7 @@ def end_other_sessions(user_id, keep_sid):
 def stay_signed_in_here(user_id):
     """After a change that ends the other sessions (new password, new session version): keep
     this browser signed in, with the same session row, and forget every other one."""
-    remember = current_app.config["REMEMBER_COOKIE_NAME"] in request.cookies
+    remember = session.get("nl_remember", False)
     row = db.query("SELECT * FROM users WHERE id = ?", (user_id,), one=True)
     end_other_sessions(user_id, sign_in_user(row, remember, keep_current=True))
 
@@ -704,6 +735,9 @@ def sign_out():
     if current_user.is_authenticated and current_user.sid:
         db.execute("DELETE FROM user_sessions WHERE id = ?", (current_user.sid,))
     logout_user()
+    # Nothing of this account may stay for the next person on this browser.
+    for key in ("totp_setup", "tfa", "nl_remember"):
+        session.pop(key, None)
 
 
 def breach_count(password):
@@ -739,22 +773,28 @@ def password_problem(password, confirm, breaches=True):
         return "Passwords do not match."
     found = breach_count(password) if breaches else 0
     if found:
-        return (f"This password appears {found:,} times in known data breaches, so attackers "
+        times = f"{found:,} time{'' if found == 1 else 's'}"
+        return (f"This password appears {times} in known data breaches, so attackers "
                 "try it early. Please choose another one.")
     return None
 
 
-def content_problem(file, ext, name):
-    """None when the file starts like a real file of its extension."""
+IMAGE_EXTENSIONS = ("jpg", "png", "webp", "heic")
+
+
+def detect_type(file, ext):
+    """The extension the content really has: ext when it matches, another image type when an
+    image was saved under the wrong image extension (a WebP downloaded as .jpg is common), or
+    None when the content is not an allowed type at all."""
     stream = file.stream
     pos = stream.tell()
     stream.seek(0)
-    head = stream.read(1024)
+    head = stream.read(1028)
     stream.seek(pos)
-    check = FILE_SIGNATURES.get(ext)
-    if check and not check(head):
-        return (f"{name} is not a real {ext.upper()} file (its content does not match its name). "
-                "Please upload the original file.")
+    if FILE_SIGNATURES[ext](head):
+        return ext
+    if ext in IMAGE_EXTENSIONS or ext == "jpeg":
+        return next((other for other in IMAGE_EXTENSIONS if FILE_SIGNATURES[other](head)), None)
     return None
 
 
@@ -764,6 +804,8 @@ AUDIT_LABELS = {
     "sign_in": "Signed in",
     "sign_in_failed": "Wrong password at sign in",
     "sign_in_code_failed": "Wrong two-factor code at sign in",
+    "code_failed": "Wrong two-factor code on the account page",
+    "email_reverted": "Email change undone from the old address",
     "account_confirmed": "Account confirmed",
     "password_changed": "Password changed",
     "password_reset": "Password reset by email link",
@@ -797,14 +839,20 @@ def audit_rows(rows):
     return [dict(r, label=AUDIT_LABELS.get(r["event"], r["event"])) for r in rows]
 
 
-def security_alert(email, what):
+def security_alert(email, what, account=None, link=None, advice=None, button=None):
     """Tell the account's mailbox that something important changed, with a way to act if it
-    was not them. Sent every time (no cooldown): each change needs the password or a link."""
+    was not them. Sent every time (no cooldown): each change needs the password or a link.
+    By default the way out is a password reset; callers may give another link and wording."""
     ip = client_ip() if has_request_context() else ""
     ok = send_template_email(email, "Security alert for your Nomad Life account",
-                             "security_alert", email=email, what=what, ip=ip,
-                             when=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-                             link=email_link("forgot"))
+                             "security_alert", email=email, account=account or email, what=what,
+                             ip=ip, when=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+                             link=link or email_link("forgot"),
+                             advice=advice or ("If this was you, there is nothing to do. If it "
+                                               "was not you, reset your password now with the "
+                                               "link below. Resetting signs out every browser "
+                                               "and device."),
+                             button=button or "Reset my password")
     if not ok:
         current_app.logger.error("Could not send the security alert to %s", email)
     return ok
@@ -1124,9 +1172,13 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
     quota = user_quota(current_user.id)
     if size == 0:
         return "The file is empty. Please choose another file."
-    problem = content_problem(file, ext, name)
-    if problem:
-        return problem
+    real = detect_type(file, ext)
+    if real is None:
+        return (f"{name} is not a real {ext.upper()} file (its content does not match its name). "
+                "Please upload the original file.")
+    if real != ext:  # keep the image, under the name of what it really is
+        name = display_name(name.rsplit(".", 1)[0] + "." + real)
+        ext = real
     if size > limit:
         return (f"{name} is {format_size(size, 'up')}, larger than the "
                 f"{format_size(limit, 'down')} limit per receipt.")
@@ -1725,14 +1777,13 @@ def register_routes(app):
             flash("Please sign in again.", "info")
             return redirect(url_for("login"))
         if request.method == "POST":
-            device = device_for(row["email"])
-            wait, scope, attempt = take_attempt("fail", row["email"], device)
+            wait, scope, attempt = take_attempt("code", row["email"])
             if wait:
                 flash(too_many_message(wait, scope, "wrong codes"), "error")
                 return render_template("auth/login_code.html"), 429
             step = totp_match(row["totp_secret"], request.form.get("code"), row["totp_step"])
             if step is not None and use_totp_step(row["id"], step):
-                forgive(attempt, row["email"], device)
+                clear_code_failures(row["email"], attempt)
                 session.pop("tfa", None)
                 return finish_sign_in(row, pending.get("remember", False),
                                       safe_next(pending.get("next", "")) or url_for("index"),
@@ -1803,9 +1854,14 @@ def register_routes(app):
                            (f"email:{row['email']}",))
                 # The new password already ends every session; forget their rows too.
                 db.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
-                audit("password_reset", row["id"], row["email"])
-                security_alert(row["email"], "The password of your Nomad Life account was reset "
-                               "with a link sent to this address.")
+                if row["verified_at"] is None:
+                    # The first password of an account still waiting for confirmation: this
+                    # completes the sign up, it does not change anything the owner had.
+                    audit("account_confirmed", row["id"], row["email"])
+                else:
+                    audit("password_reset", row["id"], row["email"])
+                    security_alert(row["email"], "The password of your Nomad Life account was "
+                                   "reset with a link sent to this address.")
                 flash("Your password has been updated. Please sign in.", "success")
                 return redirect(url_for("login"))
         return render_template("auth/reset.html", token=token)
@@ -2124,7 +2180,9 @@ def register_routes(app):
                         flash("We could not send the confirmation email. Please try again later.",
                               "error")
             elif action == "2fa_enable":
-                secret = session.get("totp_setup")
+                setup = session.get("totp_setup")
+                secret = (setup.get("secret") if isinstance(setup, dict)
+                          and setup.get("uid") == row["id"] else None)
                 step = totp_match(secret, request.form.get("code"))
                 if err:
                     flash(err, "error")
@@ -2152,10 +2210,14 @@ def register_routes(app):
                     flash(err, "error")
                 elif not row["totp_secret"]:
                     flash("Two-factor sign in is already off.", "info")
+                elif (wait := take_attempt("code", row["email"]))[0]:
+                    flash(too_many_message(wait[0], wait[1], "wrong codes"), "error")
                 elif step is None or not use_totp_step(row["id"], step):
+                    audit("code_failed", row["id"], row["email"])
                     flash("That code is not correct. Type the current code from your "
                           "authenticator app.", "error")
                 else:
+                    clear_code_failures(row["email"], wait[2])
                     db.execute("UPDATE users SET totp_secret = NULL, totp_step = 0 WHERE id = ?",
                                (row["id"],))
                     audit("2fa_disabled", row["id"], row["email"])
@@ -2184,16 +2246,19 @@ def register_routes(app):
                           (row["id"], row["id"]), one=True)
         totp = None
         if not row["totp_secret"]:
-            # A new secret for this setup; it only counts once a code from it is confirmed.
-            session.setdefault("totp_setup", new_totp_secret())
-            totp = {"secret": session["totp_setup"],
-                    "qr": totp_qr(session["totp_setup"], row["email"])}
+            # A new secret for this setup, for this account only; it counts once a code from
+            # it is confirmed.
+            setup = session.get("totp_setup")
+            if not isinstance(setup, dict) or setup.get("uid") != row["id"]:
+                setup = session["totp_setup"] = {"uid": row["id"], "secret": new_totp_secret()}
+            totp = {"secret": setup["secret"], "qr": totp_qr(setup["secret"], row["email"])}
         activity = audit_rows(db.query(
             "SELECT * FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 10", (row["id"],)))
         devices = db.query("SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = ?",
                            (row["id"],), one=True)["n"]
         return render_template("account.html", row=row, counts=counts, account_storage=storage,
-                               totp=totp, activity=activity, devices=max(devices, 1))
+                               totp=totp, activity=activity, devices=max(devices, 1),
+                               idle_days=SESSION_IDLE_DAYS)
 
     @app.route("/account/email/<token>")
     def confirm_email(token):
@@ -2232,13 +2297,63 @@ def register_routes(app):
         audit("email_changed", row["id"], new, f"{row['email']} to {new}")
         # The old mailbox hears about it too: if the account was taken over, that is where the
         # owner still reads.
+        # This address has no account any more, so a password reset link would not work here:
+        # it gets a link that puts itself back instead.
+        revert = serializer("email-revert").dumps({"uid": row["id"], "old": row["email"],
+                                                    "new": new})
         security_alert(row["email"], f"The email address of your Nomad Life account was changed "
-                       f"from {row['email']} to {new}. This address can no longer sign in.")
+                       f"from {row['email']} to {new}. This address can no longer sign in.",
+                       account=new, link=email_link("revert_email", token=revert),
+                       advice=("If this was you, there is nothing to do. If it was not you, undo "
+                               f"the change with the link below within "
+                               f"{EMAIL_REVERT_MAX_AGE // 86400} days: it puts this address "
+                               "back, signs out every browser and device, and sends you a link "
+                               "to choose a new password."),
+                       button="Undo this change")
         if current_user.is_authenticated and current_user.id != row["id"]:
             flash(f"That link was for another account; its email address is now {new}.", "info")
             return redirect(url_for("account"))
         flash(f"Your email address is now {new}.", "success")
         return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+
+    @app.route("/account/email/undo/<token>", methods=["GET", "POST"])
+    def revert_email(token):
+        """The old address takes the account back after an email change it did not ask for."""
+        try:
+            data = serializer("email-revert").loads(token, max_age=EMAIL_REVERT_MAX_AGE)
+        except SignatureExpired:
+            flash("This link has expired. Please contact the person who runs this Nomad Life "
+                  "server.", "error")
+            return redirect(url_for("login"))
+        except BadSignature:
+            flash("This link is not valid.", "error")
+            return redirect(url_for("login"))
+        row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
+        if not row or row["email"] != data.get("new"):  # already undone, or changed again
+            flash("This link is no longer valid.", "error")
+            return redirect(url_for("login"))
+        if request.method == "GET":  # a mail scanner opening the link must not act on it
+            return render_template("auth/revert_email.html", old=data["old"], new=data["new"])
+        try:
+            with db.transaction() as conn:
+                conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL AND NOT "
+                             "EXISTS (SELECT 1 FROM years WHERE years.user_id = users.id)",
+                             (data["old"],))
+                conn.execute("UPDATE users SET email = ?, pending_email = NULL, session_version "
+                             "= session_version + 1 WHERE id = ?", (data["old"], row["id"]))
+                conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
+        except db.IntegrityError:
+            flash(f"{data['old']} is used by another account now. Please contact the person who "
+                  "runs this Nomad Life server.", "error")
+            return redirect(url_for("login"))
+        if current_user.is_authenticated:
+            sign_out()
+        audit("email_reverted", row["id"], data["old"], f"{data['new']} to {data['old']}")
+        fresh = db.query("SELECT * FROM users WHERE id = ?", (row["id"],), one=True)
+        send_password_link(fresh, "reset", "Reset your Nomad Life password")
+        flash(f"The account uses {data['old']} again and every device was signed out. We sent "
+              "you a link to choose a new password.", "success")
+        return redirect(url_for("login"))
 
     # --- admin ---
 
@@ -2252,8 +2367,9 @@ def register_routes(app):
             flash("Turn on two-factor sign in to use the admin page.", "info")
             abort(redirect(url_for("account") + "#two-factor"))
 
-    def admin_url(page=1):
-        return url_for("admin", page=page if page > 1 else None)
+    def admin_url(page=1, q=""):
+        # The activity filter stays while paging and after saving a user's settings.
+        return url_for("admin", page=page if page > 1 else None, q=q or None)
 
     @app.route("/admin")
     @login_required
@@ -2286,11 +2402,13 @@ def register_routes(app):
             "documents": db.query("SELECT COUNT(*) AS n FROM documents", one=True)["n"],
         }
         pager = paginate(users, request.args.get("page"), ADMIN_USERS_PER_PAGE,
-                         lambda n, _size: admin_url(n))
+                         lambda n, _size: admin_url(n, request.args.get("q", "").strip()))
         activity_q = request.args.get("q", "").strip().lower()[:254]
         activity = audit_rows(db.query(
-            "SELECT * FROM audit_log WHERE (? = '' OR email = ? OR actor = ?) "
-            "ORDER BY id DESC LIMIT ?", (activity_q, activity_q, activity_q, ADMIN_AUDIT_ROWS)))
+            # The account's whole history, also from before an email change.
+            "SELECT * FROM audit_log WHERE (? = '' OR email = ? OR actor = ? OR user_id = "
+            "(SELECT id FROM users WHERE email = ?)) ORDER BY id DESC LIMIT ?",
+            (activity_q, activity_q, activity_q, activity_q, ADMIN_AUDIT_ROWS)))
         return render_template("admin.html", pager=pager, totals=totals,
                                default_quota=default_quota, plans=list(plans.values()),
                                activity=activity, activity_q=activity_q,
@@ -2337,7 +2455,7 @@ def register_routes(app):
         row = db.query("SELECT * FROM users WHERE id = ?", (user_id,), one=True)
         if row is None:
             abort(404)
-        back = admin_url(to_int(request.form.get("page"), 1))
+        back = admin_url(to_int(request.form.get("page"), 1), request.form.get("q", "").strip())
         action = request.form.get("action")
         email = row["email"]
         who = current_user.email
@@ -2393,6 +2511,7 @@ def register_routes(app):
             # later does not bring a stolen one back.
             db.execute("UPDATE users SET disabled = 1, session_version = session_version + 1 "
                        "WHERE id = ?", (user_id,))
+            db.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
             audit("admin_disable", user_id, email, "", who)
             flash(f"{email} is disabled and signed out everywhere.", "info")
         elif action == "enable":
