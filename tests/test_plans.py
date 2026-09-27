@@ -169,3 +169,48 @@ class AdminPlanTests(AppTestCase):
         html = self.client.get("/admin").get_data(as_text=True)
         self.assertIn("0 B used of 5 GB", html)
         self.assertIn("(Pro plan)", html)
+
+
+class AdminPlanSelectorTests(AppTestCase):
+    def setUp(self):
+        super().setUp()
+        self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
+        self.user = self.app.test_client()
+        self.signup("user@example.com", client=self.user)
+        self.signup("admin@example.com")
+        with self.db() as conn:
+            self.uid = conn.execute("SELECT id FROM users WHERE email = 'user@example.com'"
+                                    ).fetchone()[0]
+
+    def set_plan(self, key):
+        return self.client.post(f"/admin/users/{self.uid}", data={"action": "plan", "plan": key},
+                                follow_redirects=True).get_data(as_text=True)
+
+    def plan(self):
+        with self.db() as conn:
+            return conn.execute("SELECT plan FROM users WHERE id = ?", (self.uid,)).fetchone()[0]
+
+    def test_selector_lists_every_plan_with_the_current_one_selected(self):
+        html = self.client.get("/admin").get_data(as_text=True)
+        self.assertIn(f'id="plan-{self.uid}"', html)
+        self.assertIn('<option value="free" selected>Free</option>', html)
+        self.assertIn('<option value="plus">Nomad+</option>', html)
+
+    def test_admin_changes_the_plan(self):
+        html = self.set_plan("pro")
+        self.assertIn("user@example.com is now on the Pro plan (5 GB of storage).", html)
+        self.assertEqual(self.plan(), "pro")
+        self.assertIn('aria-label="Your plan: Pro"', self.user.get("/plan").get_data(as_text=True))
+
+    def test_unknown_plan_is_refused(self):
+        self.assertIn("Choose one of the plans.", self.set_plan("gold"))
+        self.assertEqual(self.plan(), "free")
+
+    def test_custom_quota_is_mentioned(self):
+        self.client.post(f"/admin/users/{self.uid}", data={"action": "quota", "quota_mb": "100"})
+        self.assertIn("custom storage quota (100 MB) still applies", self.set_plan("plus"))
+
+    def test_only_admins(self):
+        resp = self.user.post(f"/admin/users/{self.uid}", data={"action": "plan", "plan": "plus"})
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(self.plan(), "free")

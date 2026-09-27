@@ -31,7 +31,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 | `templates/base.html` | Layout, head (SEO, Open Graph, Twitter card, robots, manifest), header, flashes, footer |
 | `templates/landing.html` | Public landing page, Plans section, JSON-LD, share buttons |
 | `templates/dashboard.html` | Year dashboard: stats, movements table, storage card with Upgrade button, days per country |
-| `templates/admin.html` | Admin page: totals, accounts, quota, disable and delete forms |
+| `templates/admin.html` | Admin page: totals, accounts, quota, plan selector, disable and delete forms |
 | `templates/account.html`, `templates/email/change_email.*`, `templates/email/finish_signup.*` | Account page (password, email, delete) and the email change confirmation |
 | `templates/plan.html` | Plan page: current plan, next tier and price (no payment yet) |
 | `templates/movement.html`, `base_location.html`, `year_new.html` | Forms for movements, base location and documents, new year |

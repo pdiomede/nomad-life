@@ -10,7 +10,7 @@ All notable changes to this project are documented in this file.
 - The header shows a chip with your plan before your email. It opens the new plan page.
 - "Upgrade" on the Receipt storage card opens the plan page, with your plan, its limits and usage, and the next plan with its price.
 - The landing page has a Plans section with every plan, its price and features, and a "Pricing" button at the top.
-- The admin page shows each account's plan, and an account without a custom quota gets the quota of its plan.
+- The admin page shows each account's plan and can change it with a plan selector. An account without a custom quota gets the quota of its plan.
 
 ### Fixed
 

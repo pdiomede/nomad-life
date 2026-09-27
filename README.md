@@ -73,6 +73,7 @@ Accounts listed in `ADMIN_EMAILS` get an **Admin** link (header and footer) to `
 - Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements.
 - Every account with its plan, sign up date, last sign in, number of years and storage used.
 - A storage quota per account (in MB; leave it empty for the quota of the account's plan).
+- The plan of each account (Free, Pro or Nomad+).
 - Disable or enable an account. Disabling signs it out everywhere and blocks sign in.
 - Delete an account with all its years, movements and receipts. It asks twice and needs the email typed.
 
@@ -86,13 +87,11 @@ Admins cannot disable or delete their own account, and nobody can become an admi
 | Pro | EUR 4 a month | 5 GB | 25 MB |
 | Nomad+ | EUR 9 a month | 25 GB | 50 MB, plus priority support |
 
-Paid plans never get less than Free, and a quota set on the admin page wins over the plan's. Plans are defined in `PLANS` in `app.py`. There is no payment yet, so to move a user to another plan, change the database:
+Paid plans never get less than Free, and a quota set on the admin page wins over the plan's. Plans are defined in `PLANS` in `app.py`. There is no payment yet, so an admin moves an account to another plan with the plan selector on the [admin page](#admin-page). Without an admin, change the database (`free`, `pro` or `plus`):
 
 ```bash
 sqlite3 data/nomad.db "UPDATE users SET plan = 'pro' WHERE email = 'you@example.com'"
 ```
-
-Use `free`, `pro` or `plus`.
 
 ## Accountant package
 

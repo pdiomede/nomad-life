@@ -1677,6 +1677,7 @@ def register_routes(app):
         plans = {p["key"]: p for p in plan_catalog()}
         # Without a custom quota an account gets the quota of its plan.
         users = [dict(u, plan_name=plans.get(u["plan"], plans["free"])["name"],
+                      plan_key=u["plan"] if u["plan"] in plans else "free",
                       quota=u["quota_bytes"] if u["quota_bytes"] is not None
                       else plans.get(u["plan"], plans["free"])["quota_bytes"],
                       quota_mb=f"{u['quota_bytes'] / MB:.1f}".removesuffix(".0")
@@ -1695,7 +1696,7 @@ def register_routes(app):
         pager = paginate(users, request.args.get("page"), ADMIN_USERS_PER_PAGE,
                          lambda n, _size: admin_url(n))
         return render_template("admin.html", pager=pager, totals=totals,
-                               default_quota=default_quota)
+                               default_quota=default_quota, plans=list(plans.values()))
 
     @app.route("/admin/users/<int:user_id>", methods=["POST"])
     @login_required
@@ -1730,6 +1731,23 @@ def register_routes(app):
                             "they delete receipts.") if storage_used(user_id) > quota else ""
                     flash(f"Storage quota for {email} set to {format_size(quota, 'down')}.{note}",
                           "success")
+        elif action == "plan":
+            key = request.form.get("plan", "")
+            if key not in PLANS:
+                flash("Choose one of the plans.", "error")
+            else:
+                db.execute("UPDATE users SET plan = ? WHERE id = ?", (key, user_id))
+                plan = plan_named(key)
+                if row["quota_bytes"] is not None:
+                    note = (f" Their custom storage quota ({format_size(row['quota_bytes'], 'down')})"
+                            " still applies; clear it to use the plan's.")
+                elif storage_used(user_id) > plan["quota_bytes"]:
+                    note = (" They already use more than its storage, so new uploads are blocked "
+                            "until they delete receipts.")
+                else:
+                    note = ""
+                flash(f"{email} is now on the {plan['name']} plan "
+                      f"({format_size(plan['quota_bytes'], 'down')} of storage).{note}", "success")
         elif action == "disable":
             # Also end every session and remember cookie for good, so enabling the account
             # later does not bring a stolen one back.

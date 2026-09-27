@@ -59,6 +59,18 @@
           <button class="btn btn-ghost btn-sm" type="submit">Save</button>
           <span class="visually-hidden" id="quota-help-{{ u.id }}">Leave empty to use the default quota.</span>
         </form>
+        <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}" class="admin-quota">
+          {{ ui.csrf() }}
+          <input type="hidden" name="action" value="plan">
+          <input type="hidden" name="page" value="{{ pager.page }}">
+          <label for="plan-{{ u.id }}" class="small">Plan</label>
+          <select id="plan-{{ u.id }}" name="plan">
+            {% for p in plans %}
+              <option value="{{ p.key }}"{% if p.key == u.plan_key %} selected{% endif %}>{{ p.name }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-ghost btn-sm" type="submit" aria-label="Save plan for {{ u.email }}">Save</button>
+        </form>
         {% if u.id != current_user.id %}
         <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}">
           {{ ui.csrf() }}
