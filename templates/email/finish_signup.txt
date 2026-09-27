@@ -1,4 +1,4 @@
-Hi,
+Hi{% if first_name %} {{ first_name }}{% endif %},
 
 Someone asked to sign up for Nomad Life with {{ email }}, and an account for this address is already waiting for confirmation. If that was you, open the link below to choose your password and activate the account. It expires in {{ hours }} hour{{ "s" if hours != 1 }}.
 

@@ -16,15 +16,15 @@ class AccountTests(AppTestCase):
         self.age_emails()  # the sign up email went out just now; allow the next one
 
     def post(self, client=None, **data):
-        return (client or self.client).post("/account", data=data, follow_redirects=True)
+        return (client or self.client).post("/settings", data=data, follow_redirects=True)
 
     def test_page_and_links(self):
-        html = self.client.get("/account").data.decode()
+        html = self.client.get("/settings").data.decode()
         self.assertIn("<h1>a@example.com</h1>", html)
         self.assertIn("1 year", html)
         dash = self.client.get("/year/2026").data.decode()
-        self.assertIn('href="/account"', dash)
-        self.assertIn("/login", self.app.test_client().get("/account").headers["Location"])
+        self.assertIn('href="/settings"', dash)
+        self.assertIn("/login", self.app.test_client().get("/settings").headers["Location"])
 
     def test_change_password(self):
         other = self.app.test_client()
@@ -131,9 +131,9 @@ class LimitTests(AppTestCase):
 
     def test_wrong_current_passwords_on_the_account_page_count(self):
         for _ in range(5):
-            self.client.post("/account", data={"action": "password", "current_password": "x",
+            self.client.post("/settings", data={"action": "password", "current_password": "x",
                                                "password": "newpass123", "confirm": "newpass123"})
-        html = self.client.post("/account", data={
+        html = self.client.post("/settings", data={
             "action": "password", "current_password": "password1", "password": "newpass123",
             "confirm": "newpass123"}, follow_redirects=True).data.decode()
         self.assertIn("Too many wrong passwords on this device.", html)

@@ -15,7 +15,7 @@ class EmailLinkTests(AppTestCase):
 
     def request_change(self, email):
         self.age_emails()
-        return self.client.post("/account", data={"action": "email", "email": email,
+        return self.client.post("/settings", data={"action": "email", "email": email,
                                                   "current_password": "password1"},
                                 follow_redirects=True).data.decode()
 
@@ -68,7 +68,7 @@ class EmailLinkTests(AppTestCase):
         self.send_email.side_effect = lambda *a, **k: False
         self.assertIn("We could not send", self.request_change("n@example.com"))
         self.send_email.side_effect = self._record_email
-        html = self.client.post("/account", data={"action": "email", "email": "n@example.com",
+        html = self.client.post("/settings", data={"action": "email", "email": "n@example.com",
                                                   "current_password": "password1"},
                                 follow_redirects=True).data.decode()
         self.assertIn("We sent a confirmation link to n@example.com", html)
@@ -80,7 +80,7 @@ class LimitMessageTests(AppTestCase):
         anon = self.app.test_client()
         for i in range(20):
             anon.post("/login", data={"email": f"g{i}@example.com", "password": "x"})
-        html = self.client.post("/account", data={
+        html = self.client.post("/settings", data={
             "action": "password", "current_password": "password1", "password": "newpass123",
             "confirm": "newpass123"}, follow_redirects=True).data.decode()
         self.assertIn("Too many wrong passwords from this network.", html)

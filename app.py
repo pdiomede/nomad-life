@@ -98,7 +98,7 @@ SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and 
                    "hotel bills and flight tickets in one place. Free for digital nomads.")
 # Paths that need an account. Kept out of search engines via robots.txt.
 PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin",
-                 "/account", "/plan"]
+                 "/account", "/settings", "/plan"]
 ADMIN_USERS_PER_PAGE = 25
 MAX_QUOTA_MB = 1024 * 1024  # 1 TB, a sanity cap for quotas typed on the admin page
 RESET_TOKEN_MAX_AGE = 3600
@@ -127,6 +127,8 @@ HASH_SLOTS = threading.BoundedSemaphore(4)
 # Place names and the number of stays per year are capped so one account cannot fill the
 # disk or make its dashboard slow for everyone.
 PLACE_MAX = 100
+# First and last name on the Settings page, each.
+NAME_MAX = 60
 MOVEMENTS_MAX = 1000
 # Security history kept on the admin and account pages.
 AUDIT_DAYS = 365
@@ -182,6 +184,19 @@ def clean_place(value):
     return " ".join(value.split())
 
 
+def clean_name(value):
+    """A first or last name as typed: like a place, invisible characters removed."""
+    return clean_place(value)
+
+
+def full_name(row):
+    """"First Last" of a users row, or "" when no name was given."""
+    keys = row.keys()
+    first = row["first_name"] if "first_name" in keys else ""
+    last = row["last_name"] if "last_name" in keys else ""
+    return " ".join(part for part in (first, last) if part)
+
+
 def valid_email(email):
     """Pragmatic address check: one @, no spaces or brackets, a dotted domain with a real TLD."""
     if len(email) > 254 or email.count("@") != 1:
@@ -209,6 +224,8 @@ class User(UserMixin):
         self.fingerprint = password_fingerprint(row["password_hash"])
         self.version = row["session_version"] if "session_version" in row.keys() else 0
         self.plan = row["plan"] if "plan" in row.keys() and row["plan"] in PLANS else "free"
+        self.first_name = row["first_name"] if "first_name" in row.keys() else ""
+        self.name = full_name(row)  # shown in the header menu instead of the email
 
     @property
     def is_admin(self):
@@ -811,6 +828,7 @@ AUDIT_LABELS = {
     "password_reset": "Password reset by email link",
     "email_changed": "Email address changed",
     "sessions_revoked": "Signed out on every other device",
+    "profile_changed": "Name changed",
     "2fa_enabled": "Two-factor sign in turned on",
     "2fa_disabled": "Two-factor sign in turned off",
     "2fa_reset": "Two-factor sign in removed by the server operator",
@@ -839,7 +857,8 @@ def audit_rows(rows):
     return [dict(r, label=AUDIT_LABELS.get(r["event"], r["event"])) for r in rows]
 
 
-def security_alert(email, what, account=None, link=None, advice=None, button=None):
+def security_alert(email, what, account=None, link=None, advice=None, button=None,
+                   first_name=None):
     """Tell the account's mailbox that something important changed, with a way to act if it
     was not them. Sent every time (no cooldown): each change needs the password or a link.
     By default the way out is a password reset; callers may give another link and wording."""
@@ -852,7 +871,8 @@ def security_alert(email, what, account=None, link=None, advice=None, button=Non
                                                "was not you, reset your password now with the "
                                                "link below. Resetting signs out every browser "
                                                "and device."),
-                             button=button or "Reset my password")
+                             button=button or "Reset my password",
+                             **({} if first_name is None else {"first_name": first_name}))
     if not ok:
         current_app.logger.error("Could not send the security alert to %s", email)
     return ok
@@ -887,6 +907,11 @@ def send_template_email(to, subject, name, **context):
     """Render templates/email/<name>.txt and .html and send them as one email."""
     from flask import current_app
     site = current_app.config["APP_BASE_URL"].rstrip("/") + "/"
+    if "first_name" not in context:
+        # "Hi Paolo," for an account that gave its name on the Settings page, else "Hi,".
+        row = db.query("SELECT first_name FROM users WHERE email = ? AND verified_at IS NOT NULL",
+                       (to,), one=True)
+        context["first_name"] = row["first_name"] if row else ""
     context.update(subject=subject, email=to, site_url=site, logo_cid=LOGO_CID,
                    site_host=site.split("://", 1)[-1].rstrip("/"))
     text = render_template(f"email/{name}.txt", **context)
@@ -1509,7 +1534,17 @@ def build_package_data(year_row, include_notes):
         base_days=stats["base_days"], abroad_days=stats["abroad_days"], base_so_far=base_so_far,
         abroad_so_far=stats["elapsed"] - base_so_far, threshold=stats["threshold"],
         base_ok=stats["base_ok"], countries=countries, stays=stays, receipts=receipts,
-        include_notes=include_notes, upcoming_days=stats["upcoming"])
+        include_notes=include_notes, upcoming_days=stats["upcoming"],
+        holder=package_holder(year_row["user_id"]))
+
+
+def package_holder(user_id):
+    """Whose package it is, for the accountant: the name from Settings, or else the email."""
+    row = db.query("SELECT * FROM users WHERE id = ?", (user_id,), one=True)
+    if not row:
+        return ""
+    name = full_name(row)
+    return f"{name} ({row['email']})" if name else row["email"]
 
 
 def compute_stats(year_row, movements):
@@ -2103,22 +2138,46 @@ def register_routes(app):
     @app.route("/account", methods=["GET", "POST"])
     @login_required
     def account():
+        """The Settings page was called Account before 1.2.11: bookmarks land on Settings, and
+        forms in pages left open still work."""
+        if request.method == "POST":
+            return settings()
+        return redirect(url_for("settings"))
+
+    @app.route("/settings", methods=["GET", "POST"])
+    @login_required
+    def settings():
         row = db.query("SELECT * FROM users WHERE id = ?", (current_user.id,), one=True)
         if request.method == "POST":
             action = request.form.get("action")
+            if action == "profile":  # only display text, so no password needed
+                first = clean_name(request.form.get("first_name", ""))
+                last = clean_name(request.form.get("last_name", ""))
+                if len(first) > NAME_MAX or len(last) > NAME_MAX:
+                    flash(f"First and last name can be at most {NAME_MAX} characters each.",
+                          "error")
+                elif (first, last) != (row["first_name"], row["last_name"]):
+                    db.execute("UPDATE users SET first_name = ?, last_name = ? WHERE id = ?",
+                               (first, last, row["id"]))
+                    audit("profile_changed", row["id"], row["email"])
+                    flash("Your name was saved." if first or last else "Your name was removed.",
+                          "success")
+                else:
+                    flash("Nothing changed.", "info")
+                return redirect(url_for("settings") + "#profile")
             if action == "cancel_email":  # stopping a change never needs the password
                 if row["pending_email"]:
                     db.execute("UPDATE users SET pending_email = NULL WHERE id = ?", (row["id"],))
                     flash(f"The change to {row['pending_email']} was cancelled. The link we sent "
                           "no longer works.", "success")
-                return redirect(url_for("account"))
+                return redirect(url_for("settings"))
             if action == "sessions":  # ending other sessions only takes access away
                 db.execute("UPDATE users SET session_version = session_version + 1 WHERE id = ?",
                            (row["id"],))
                 stay_signed_in_here(row["id"])
                 audit("sessions_revoked", row["id"], row["email"])
                 flash("Every other browser and device has been signed out.", "success")
-                return redirect(url_for("account"))
+                return redirect(url_for("settings"))
             err = check_current_password(row)
             if action == "password":
                 password = request.form.get("password", "")
@@ -2168,6 +2227,7 @@ def register_routes(app):
                         {"uid": row["id"], "email": new, "old": row["email"],
                          "h": password_fingerprint(row["password_hash"])})
                     if send_template_email(new, "Confirm your new Nomad Life email", "change_email",
+                                           first_name=row["first_name"],
                                            link=email_link("confirm_email", token=token),
                                            old_email=row["email"],
                                            hours=EMAIL_CHANGE_MAX_AGE // 3600):
@@ -2239,7 +2299,7 @@ def register_routes(app):
                     logout_user()
                     flash("Your account and all its data have been deleted.", "info")
                     return redirect(url_for("landing"))
-            return redirect(url_for("account"))
+            return redirect(url_for("settings"))
         storage = storage_summary(row["id"])
         counts = db.query("SELECT (SELECT COUNT(*) FROM years WHERE user_id = ?) AS years, "
                           "(SELECT COUNT(*) FROM documents WHERE user_id = ?) AS documents",
@@ -2251,14 +2311,17 @@ def register_routes(app):
             setup = session.get("totp_setup")
             if not isinstance(setup, dict) or setup.get("uid") != row["id"]:
                 setup = session["totp_setup"] = {"uid": row["id"], "secret": new_totp_secret()}
-            totp = {"secret": setup["secret"], "qr": totp_qr(setup["secret"], row["email"])}
+            secret = setup["secret"]
+            totp = {"secret": secret, "qr": totp_qr(secret, row["email"]),
+                    # Groups of 4, as authenticator apps show and accept a typed key.
+                    "grouped": " ".join(secret[i:i + 4] for i in range(0, len(secret), 4))}
         activity = audit_rows(db.query(
             "SELECT * FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 10", (row["id"],)))
         devices = db.query("SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = ?",
                            (row["id"],), one=True)["n"]
-        return render_template("account.html", row=row, counts=counts, account_storage=storage,
+        return render_template("settings.html", row=row, counts=counts, account_storage=storage,
                                totp=totp, activity=activity, devices=max(devices, 1),
-                               idle_days=SESSION_IDLE_DAYS)
+                               idle_days=SESSION_IDLE_DAYS, name_max=NAME_MAX)
 
     @app.route("/account/email/<token>")
     def confirm_email(token):
@@ -2266,15 +2329,15 @@ def register_routes(app):
             data = serializer("email-change").loads(token, max_age=EMAIL_CHANGE_MAX_AGE)
         except SignatureExpired:
             flash("This link has expired. Please ask for the email change again.", "error")
-            return redirect(url_for("account"))
+            return redirect(url_for("settings"))
         except BadSignature:
             flash("This link is not valid.", "error")
-            return redirect(url_for("account"))
+            return redirect(url_for("settings"))
         row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
         new = data.get("email", "")
         if row and row["email"] == new:
             flash("This email address is already confirmed.", "info")
-            return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+            return redirect(url_for("settings") if current_user.is_authenticated else url_for("login"))
         if row and row["disabled"]:
             flash("This account is disabled. Please contact the administrator.", "error")
             return redirect(url_for("login"))
@@ -2282,7 +2345,7 @@ def register_routes(app):
         if (not row or password_fingerprint(row["password_hash"]) != data.get("h")
                 or row["email"] != data.get("old") or row["pending_email"] != new):
             flash("This link is no longer valid. Please ask for the email change again.", "error")
-            return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+            return redirect(url_for("settings") if current_user.is_authenticated else url_for("login"))
         try:
             with db.transaction() as conn:
                 # Opening the link proves this mailbox is theirs: an unconfirmed sign up with
@@ -2293,7 +2356,7 @@ def register_routes(app):
                              (new, row["id"]))
         except db.IntegrityError:
             flash("Another account started using this email address in the meantime.", "error")
-            return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+            return redirect(url_for("settings") if current_user.is_authenticated else url_for("login"))
         audit("email_changed", row["id"], new, f"{row['email']} to {new}")
         # The old mailbox hears about it too: if the account was taken over, that is where the
         # owner still reads.
@@ -2309,12 +2372,12 @@ def register_routes(app):
                                f"{EMAIL_REVERT_MAX_AGE // 86400} days: it puts this address "
                                "back, signs out every browser and device, and sends you a link "
                                "to choose a new password."),
-                       button="Undo this change")
+                       button="Undo this change", first_name=row["first_name"])
         if current_user.is_authenticated and current_user.id != row["id"]:
             flash(f"That link was for another account; its email address is now {new}.", "info")
-            return redirect(url_for("account"))
+            return redirect(url_for("settings"))
         flash(f"Your email address is now {new}.", "success")
-        return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+        return redirect(url_for("settings") if current_user.is_authenticated else url_for("login"))
 
     @app.route("/account/email/undo/<token>", methods=["GET", "POST"])
     def revert_email(token):
@@ -2365,7 +2428,7 @@ def register_routes(app):
         if app.config["ADMIN_REQUIRE_2FA"] and not db.query(
                 "SELECT totp_secret FROM users WHERE id = ?", (current_user.id,), one=True)[0]:
             flash("Turn on two-factor sign in to use the admin page.", "info")
-            abort(redirect(url_for("account") + "#two-factor"))
+            abort(redirect(url_for("settings") + "#two-factor"))
 
     def admin_url(page=1, q=""):
         # The activity filter stays while paging and after saving a user's settings.
@@ -2377,7 +2440,7 @@ def register_routes(app):
         require_admin()
         users = db.query(
             "SELECT u.id, u.email, u.created_at, u.last_login_at, u.disabled, u.quota_bytes, "
-            "u.verified_at, u.plan, u.totp_secret IS NOT NULL AS has_2fa, "
+            "u.verified_at, u.plan, u.totp_secret IS NOT NULL AS has_2fa, u.first_name, u.last_name, "
             "(SELECT COUNT(*) FROM years y WHERE y.user_id = u.id) AS years, "
             "(SELECT COALESCE(SUM(size), 0) FROM documents d WHERE d.user_id = u.id) AS used "
             "FROM users u ORDER BY u.created_at DESC, u.id DESC")
@@ -2390,7 +2453,7 @@ def register_routes(app):
                       else plans.get(u["plan"], plans["free"])["quota_bytes"],
                       quota_mb=f"{u['quota_bytes'] / MB:.1f}".removesuffix(".0")
                       if u["quota_bytes"] is not None else "",
-                      is_admin=u["email"] in app.config["ADMIN_EMAILS"])
+                      is_admin=u["email"] in app.config["ADMIN_EMAILS"], full_name=full_name(u))
                  for u in users]
         totals = {
             "users": len(users),

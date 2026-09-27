@@ -30,7 +30,7 @@ class AdminAndAccountTests(AppTestCase):
 
     def test_disabled_accounts_get_no_reset_and_cannot_use_links(self):
         self.age_emails()
-        self.victim.post("/account", data={"action": "email", "email": "new@example.com",
+        self.victim.post("/settings", data={"action": "email", "email": "new@example.com",
                                            "current_password": "password1"})
         change = self.last_link("new@example.com", kind="account/email")
         anon = self.app.test_client()
@@ -54,19 +54,19 @@ class PendingChangeTests(AppTestCase):
     def test_a_pending_email_change_can_be_cancelled(self):
         self.signup()
         self.age_emails()
-        self.client.post("/account", data={"action": "email", "email": "me@x.cm",
+        self.client.post("/settings", data={"action": "email", "email": "me@x.cm",
                                            "current_password": "password1"})
         link = self.last_link("me@x.cm", kind="account/email")
-        self.assertIn(b"Waiting for confirmation", self.client.get("/account").data)
-        html = self.client.post("/account", data={"action": "cancel_email"},
+        self.assertIn(b"Waiting for confirmation", self.client.get("/settings").data)
+        html = self.client.post("/settings", data={"action": "cancel_email"},
                                 follow_redirects=True).data.decode()
         self.assertIn("was cancelled", html)
         self.assertIn(b"no longer valid", self.app.test_client().get(link, follow_redirects=True).data)
         # typing your own address again cancels too
         self.age_emails()
-        self.client.post("/account", data={"action": "email", "email": "me@x.cm",
+        self.client.post("/settings", data={"action": "email", "email": "me@x.cm",
                                            "current_password": "password1"})
-        html = self.client.post("/account", data={"action": "email", "email": "a@example.com",
+        html = self.client.post("/settings", data={"action": "email", "email": "a@example.com",
                                                   "current_password": "password1"},
                                 follow_redirects=True).data.decode()
         self.assertIn("Your pending email change was cancelled.", html)

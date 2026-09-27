@@ -635,3 +635,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .activity-list li:last-child { border-bottom: 0; }
 #activity .activity-list li > span { min-width: 0; overflow-wrap: anywhere; }
 #activity form { margin-bottom: 8px; }
+
+/* Settings page: jump links to each card, and the numbered two-factor setup steps. */
+.settings-nav { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0 0 16px; }
+.settings-nav a { display: inline-block; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--link); font-size: 13px; font-weight: 500; }
+.settings-nav a:hover { background: var(--surface-2); text-decoration: none; }
+.settings-nav a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.narrow > .card[id] { scroll-margin-top: 16px; }
+.tfa-steps { flex: 1 1 220px; min-width: 0; margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.tfa-key { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
+.tfa-steps li:nth-child(2) .tfa-key { display: inline-block; white-space: normal; word-spacing: 2px; }
+.admin-name { margin: 0 0 2px; font-weight: 600; overflow-wrap: anywhere; }

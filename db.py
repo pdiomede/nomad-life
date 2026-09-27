@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS users (
     session_version INTEGER NOT NULL DEFAULT 0,
     plan TEXT NOT NULL DEFAULT 'free',
     totp_secret TEXT,
-    totp_step INTEGER NOT NULL DEFAULT 0
+    totp_step INTEGER NOT NULL DEFAULT 0,
+    first_name TEXT NOT NULL DEFAULT '',
+    last_name TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS years (
@@ -167,6 +169,9 @@ MIGRATIONS = [
     # code can never be used twice.
     ("users", "totp_secret", ["ALTER TABLE users ADD COLUMN totp_secret TEXT"]),
     ("users", "totp_step", ["ALTER TABLE users ADD COLUMN totp_step INTEGER NOT NULL DEFAULT 0"]),
+    # The name set on the Settings page (optional; empty means not given).
+    ("users", "first_name", ["ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''"]),
+    ("users", "last_name", ["ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''"]),
 ]
 
 

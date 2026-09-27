@@ -28,21 +28,21 @@ class SessionTests(AppTestCase):
         thief = self.app.test_client()
         for name, value in stolen.items():
             thief.set_cookie(name, value)
-        self.assertEqual(thief.get("/account").status_code, 200)  # the copy works...
+        self.assertEqual(thief.get("/settings").status_code, 200)  # the copy works...
         victim.post("/logout")
-        self.assertEqual(victim.get("/account").status_code, 302)
-        self.assertEqual(thief.get("/account").status_code, 302)  # ...until the owner signs out
+        self.assertEqual(victim.get("/settings").status_code, 302)
+        self.assertEqual(thief.get("/settings").status_code, 302)  # ...until the owner signs out
         remember_only = self.app.test_client()  # the remember cookie alone is dead too
         remember_only.set_cookie("nomadlife_remember", stolen["nomadlife_remember"])
-        self.assertEqual(remember_only.get("/account").status_code, 302)
+        self.assertEqual(remember_only.get("/settings").status_code, 302)
 
     def test_signing_out_one_browser_keeps_the_others(self):
         self.signup()
         other = self.app.test_client()
         other.post("/login", data={"email": "a@example.com", "password": "password1"})
         other.post("/logout")
-        self.assertEqual(self.client.get("/account").status_code, 200)
-        html = self.client.get("/account").get_data(as_text=True)
+        self.assertEqual(self.client.get("/settings").status_code, 200)
+        html = self.client.get("/settings").get_data(as_text=True)
         self.assertIn("1 browser or device used your account in the last 31 days", html)
 
     def test_sign_out_everywhere_else_and_password_change_forget_the_rows(self):
@@ -52,13 +52,13 @@ class SessionTests(AppTestCase):
                                                         "password": "password1"})
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM user_sessions").fetchone()[0], 3)
-        self.client.post("/account", data={"action": "sessions"})
+        self.client.post("/settings", data={"action": "sessions"})
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM user_sessions").fetchone()[0], 1)
-        self.assertEqual(self.client.get("/account").status_code, 200)
-        self.client.post("/account", data={"action": "password", "current_password": "password1",
+        self.assertEqual(self.client.get("/settings").status_code, 200)
+        self.client.post("/settings", data={"action": "password", "current_password": "password1",
                                            "password": "newpass123", "confirm": "newpass123"})
-        self.assertEqual(self.client.get("/account").status_code, 200)  # same row kept
+        self.assertEqual(self.client.get("/settings").status_code, 200)  # same row kept
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM user_sessions").fetchone()[0], 1)
 
@@ -70,7 +70,7 @@ class SessionTests(AppTestCase):
         with legacy.session_transaction() as sess:
             sess["_user_id"] = f"{row['id']}:{appmod.password_fingerprint(row['password_hash'])}"
             sess["_fresh"] = True
-        self.assertEqual(legacy.get("/account").status_code, 200)
+        self.assertEqual(legacy.get("/settings").status_code, 200)
 
     def test_idle_sessions_are_pruned(self):
         self.signup()
@@ -80,9 +80,9 @@ class SessionTests(AppTestCase):
             conn.execute("UPDATE user_sessions SET last_seen_at = datetime('now', '-40 days') "
                          "WHERE rowid = (SELECT MAX(rowid) FROM user_sessions)")
         with mock.patch.object(appmod, "PURGE_EVERY_SECONDS", 0):
-            self.client.get("/account")  # any request prunes (at most once a minute)
-        self.assertEqual(idle.get("/account").status_code, 302)
-        self.assertEqual(self.client.get("/account").status_code, 200)
+            self.client.get("/settings")  # any request prunes (at most once a minute)
+        self.assertEqual(idle.get("/settings").status_code, 302)
+        self.assertEqual(self.client.get("/settings").status_code, 200)
 
 
 class BreachedPasswordTests(AppTestCase):
@@ -149,7 +149,7 @@ class BreachedPasswordTests(AppTestCase):
         self.age_emails()
         self.app.config["PWNED_CHECK"] = True
         with self.fake_api():
-            html = self.client.post("/account", data={
+            html = self.client.post("/settings", data={
                 "action": "password", "current_password": "safe-pass-123", "password": "password1",
                 "confirm": "password1"}, follow_redirects=True).get_data(as_text=True)
             self.assertIn("known data breaches", html)

@@ -1,4 +1,4 @@
-Hi,
+Hi{% if first_name %} {{ first_name }}{% endif %},
 
 Someone tried to sign up for Nomad Life with {{ email }}, but this address already has an account. If it was you, just sign in:
 

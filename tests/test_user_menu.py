@@ -20,7 +20,7 @@ class UserMenuTests(AppTestCase):
         self.assertIn('action="/logout"', panel)
         self.assertIn('name="csrf_token"', panel)
         self.assertNotIn("/admin", menu)
-        self.assertNotIn("/account", menu)
+        self.assertLess(panel.index('href="/settings">Settings</a>'), panel.index("Sign out"))
 
     def test_admin_item_only_for_admins(self):
         self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})

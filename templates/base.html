@@ -47,12 +47,13 @@
         {% block topnav %}
         {% if current_user.is_authenticated %}
           <details class="user-menu" data-user-menu>
-            <summary class="user-menu-trigger" aria-label="Account menu for {{ current_user.email }}" title="{{ current_user.email }}">
-              <span class="topnav-email">{{ current_user.email }}</span>
+            <summary class="user-menu-trigger" aria-label="Account menu for {{ current_user.name ~ " (" ~ current_user.email ~ ")" if current_user.name else current_user.email }}" title="{{ current_user.email }}">
+              <span class="topnav-email">{{ current_user.name or current_user.email }}</span>
               <svg class="user-menu-arrow" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </summary>
             <div class="user-menu-panel">
               <a class="plan-chip" href="{{ url_for('plan') }}" title="Your plan: {{ current_plan.name }}" aria-label="Your plan: {{ current_plan.name }}">{{ current_plan.name }}</a>
+              <a class="user-menu-item" href="{{ url_for('settings') }}">Settings</a>
               {% if current_user.is_admin %}<a class="user-menu-item" href="{{ url_for('admin') }}">Admin</a>{% endif %}
               <form method="post" action="{{ url_for('logout') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -87,7 +88,7 @@
 
   <footer class="footer">
     <div class="container footer-inner">
-      <span>Nomad Life v{{ app_version }} <span class="muted hide-sm">&middot; Track your year. Keep your receipts.</span>{% if current_user.is_authenticated %} &middot; <a href="{{ url_for('account') }}">Account</a>{% if current_user.is_admin %} &middot; <a href="{{ url_for('admin') }}">Admin</a>{% endif %}{% endif %}</span>
+      <span>Nomad Life v{{ app_version }} <span class="muted hide-sm">&middot; Track your year. Keep your receipts.</span>{% if current_user.is_authenticated %} &middot; <a href="{{ url_for('settings') }}">Settings</a>{% if current_user.is_admin %} &middot; <a href="{{ url_for('admin') }}">Admin</a>{% endif %}{% endif %}</span>
       <span class="muted">&copy; 2026 Built by <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a></span>
     </div>
   </footer>

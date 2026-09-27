@@ -42,10 +42,10 @@ class TwoFactorTests(AppTestCase):
         client = client or self.client
         with client.session_transaction() as sess:
             sess.pop("totp_setup", None)
-        html = client.get("/account").get_data(as_text=True)
-        secret = re.search(r'<code class="tfa-key">(\w+)</code>', html).group(1)
+        html = client.get("/settings").get_data(as_text=True)
+        secret = re.search(r'<code class="tfa-key">([\w ]+)</code>', html).group(1).replace(" ", "")
         self.assertIn('src="data:image/svg+xml', html)  # the QR code
-        resp = client.post("/account", data={"action": "2fa_enable", "code": current_code(secret),
+        resp = client.post("/settings", data={"action": "2fa_enable", "code": current_code(secret),
                                               "current_password": "password1"},
                            follow_redirects=True)
         self.assertIn("Two-factor sign in is on.", resp.get_data(as_text=True))
@@ -58,13 +58,13 @@ class TwoFactorTests(AppTestCase):
         return client.post("/login/code", data={"code": code})
 
     def test_turning_on_needs_a_right_code_and_password(self):
-        html = self.client.get("/account").get_data(as_text=True)
-        secret = re.search(r'<code class="tfa-key">(\w+)</code>', html).group(1)
+        html = self.client.get("/settings").get_data(as_text=True)
+        secret = re.search(r'<code class="tfa-key">([\w ]+)</code>', html).group(1).replace(" ", "")
         for data, message in [({"code": "000000", "current_password": "password1"},
                                "That code is not correct."),
                               ({"code": current_code(secret), "current_password": "nope"},
                                "Your current password is not correct.")]:
-            html = self.client.post("/account", data={"action": "2fa_enable", **data},
+            html = self.client.post("/settings", data={"action": "2fa_enable", **data},
                                     follow_redirects=True).get_data(as_text=True)
             self.assertIn(message, html)
         with self.db() as conn:
@@ -74,19 +74,19 @@ class TwoFactorTests(AppTestCase):
         other = self.app.test_client()
         self.sign_in(other)  # signed in before two-factor was on
         secret = self.enable()
-        self.assertEqual(other.get("/account").status_code, 302)  # signed out by turning it on
+        self.assertEqual(other.get("/settings").status_code, 302)  # signed out by turning it on
         self.assertIn("Security alert", self.outbox[-1]["subject"])
         fresh = self.app.test_client()
         resp = self.sign_in(fresh)
         self.assertEqual(resp.headers["Location"], "/login/code")
-        self.assertEqual(fresh.get("/account").status_code, 302)  # password alone: not signed in
+        self.assertEqual(fresh.get("/settings").status_code, 302)  # password alone: not signed in
         resp = fresh.post("/login/code", data={"code": "000000"})
         self.assertIn(b"That code is not correct", resp.data)
         with self.db() as conn:  # the code from the enable step was used: wait for a new one
             conn.execute("UPDATE users SET totp_step = totp_step - 5")
         resp = fresh.post("/login/code", data={"code": current_code(secret)})
         self.assertEqual(resp.status_code, 302)
-        self.assertEqual(fresh.get("/account").status_code, 200)
+        self.assertEqual(fresh.get("/settings").status_code, 200)
 
     def test_a_code_works_only_once(self):
         secret = self.enable()
@@ -120,11 +120,11 @@ class TwoFactorTests(AppTestCase):
         secret = self.enable()
         with self.db() as conn:
             conn.execute("UPDATE users SET totp_step = 0")
-        html = self.client.post("/account", data={
+        html = self.client.post("/settings", data={
             "action": "2fa_disable", "code": "000000", "current_password": "password1"},
             follow_redirects=True).get_data(as_text=True)
         self.assertIn("That code is not correct.", html)
-        html = self.client.post("/account", data={
+        html = self.client.post("/settings", data={
             "action": "2fa_disable", "code": current_code(secret), "current_password": "password1"},
             follow_redirects=True).get_data(as_text=True)
         self.assertIn("Two-factor sign in is off.", html)
@@ -151,7 +151,7 @@ class AdminTwoFactorTests(AppTestCase):
     def test_admin_page_needs_two_factor(self):
         resp = self.client.get("/admin")
         self.assertEqual(resp.status_code, 302)
-        self.assertIn("/account#two-factor", resp.headers["Location"])
+        self.assertIn("/settings#two-factor", resp.headers["Location"])
         self.assertEqual(self.client.post("/admin/users/1", data={"action": "disable"})
                          .status_code, 302)
         with self.db() as conn:
@@ -187,7 +187,7 @@ class AlertTests(AppTestCase):
         return [m for m in self.outbox if m["to"] == to and "Security alert" in m["subject"]]
 
     def test_password_change_and_reset_send_alerts(self):
-        self.client.post("/account", data={"action": "password", "current_password": "password1",
+        self.client.post("/settings", data={"action": "password", "current_password": "password1",
                                            "password": "newpass123", "confirm": "newpass123"})
         self.assertEqual(len(self.alerts()), 1)
         self.assertIn("password of your Nomad Life account was changed", self.alerts()[0]["text"])
@@ -201,7 +201,7 @@ class AlertTests(AppTestCase):
         self.assertIn("was reset", self.alerts()[1]["text"])
 
     def test_email_change_alerts_the_old_address(self):
-        self.client.post("/account", data={"action": "email", "email": "new@example.com",
+        self.client.post("/settings", data={"action": "email", "email": "new@example.com",
                                            "current_password": "password1"})
         self.client.get(self.last_link("new@example.com", kind="account/email"))
         alerts = self.alerts("a@example.com")
@@ -210,7 +210,7 @@ class AlertTests(AppTestCase):
 
     def test_alert_failure_does_not_break_the_change(self):
         with mock.patch.object(appmod, "send_email", return_value=False):
-            html = self.client.post("/account", data={
+            html = self.client.post("/settings", data={
                 "action": "password", "current_password": "password1", "password": "newpass123",
                 "confirm": "newpass123"}, follow_redirects=True).get_data(as_text=True)
         self.assertIn("Your password has been changed.", html)
@@ -229,7 +229,7 @@ class AuditTests(AppTestCase):
         anon = self.app.test_client()
         anon.post("/login", data={"email": "a@example.com", "password": "wrong"})
         anon.post("/login", data={"email": "nobody@example.com", "password": "wrong"})
-        self.client.post("/account", data={"action": "sessions"})
+        self.client.post("/settings", data={"action": "sessions"})
         names = [e[0] for e in self.events("a@example.com")]
         self.assertEqual(names, ["account_confirmed", "sign_in", "sign_in_failed",
                                  "sessions_revoked"])
@@ -256,7 +256,7 @@ class AuditTests(AppTestCase):
     def test_account_page_shows_own_activity_only(self):
         self.signup()
         self.signup("b@example.com", client=self.app.test_client())
-        html = self.client.get("/account").get_data(as_text=True)
+        html = self.client.get("/settings").get_data(as_text=True)
         self.assertIn("Recent security activity", html)
         self.assertEqual(html.count("<li><span>Signed in</span>"), 1)
 
@@ -265,7 +265,7 @@ class AuditTests(AppTestCase):
         with self.db() as conn:
             conn.execute("UPDATE audit_log SET created_at = datetime('now', '-400 days')")
         with mock.patch.object(appmod, "PURGE_EVERY_SECONDS", 0):
-            self.client.get("/account")
+            self.client.get("/settings")
         self.assertEqual(self.events(), [])
 
 

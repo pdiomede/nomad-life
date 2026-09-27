@@ -120,6 +120,7 @@ class PackageData:
     receipts: list = field(default_factory=list)
     include_notes: bool = False
     upcoming_days: int = 0   # future days not covered by a stay, not counted anywhere yet
+    holder: str = ""         # whose package this is: the name from Settings, or the email
 
     @property
     def root(self):
@@ -264,7 +265,7 @@ def summary_blocks(data):
     y = data.period.label
     blocks = [
         ("title", f"Accountant package {y}"),
-        ("meta", [
+        ("meta", ([f"Prepared for: {data.holder}"] if data.holder else []) + [
             f"Base: {data.base_city}, {country_label(data.base_country, data.base_iso)}",
             f"Period: {data.period.start.isoformat()} to {data.period.end.isoformat()} "
             f"({data.total_days} days)",
@@ -522,6 +523,7 @@ def readme_text(data):
     lines = [
         f"Nomad Life accountant package {data.period.label}",
         "",
+    ] + ([f"Prepared for: {data.holder}"] if data.holder else []) + [
         f"Base: {data.base_city}, {country_label(data.base_country, data.base_iso)}",
         f"Period: {data.period.start.isoformat()} to {data.period.end.isoformat()}",
         f"Generated: {data.generated_at.strftime('%Y-%m-%d %H:%M')} (local time) by Nomad Life v{data.app_version}",

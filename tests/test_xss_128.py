@@ -14,7 +14,7 @@ class CspTests(AppTestCase):
     def test_html_pages_only_run_the_apps_own_scripts(self):
         self.signup()
         self.new_year(2026)
-        for path in ("/", "/login", "/year/2026", "/account", "/does-not-exist"):
+        for path in ("/", "/login", "/year/2026", "/settings", "/does-not-exist"):
             csp = self.client.get(path).headers["Content-Security-Policy"]
             self.assertIn("script-src 'self';", csp, path)
             self.assertIn("object-src 'none'", csp, path)

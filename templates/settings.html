@@ -1,18 +1,48 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui with context %}
-{% block title %}Account | Nomad Life{% endblock %}
+{% block title %}Settings | Nomad Life{% endblock %}
 {% block content %}
 <div class="narrow">
   <a class="back" href="{{ url_for('index') }}">&larr; Back to my years</a>
   <div class="page-head">
     <div>
-      <p class="eyebrow">Account</p>
-      <h1>{{ row.email }}</h1>
-      <p class="muted">Member since {{ row.created_at | localdate }} &middot; {{ counts.years }} year{{ '' if counts.years == 1 else 's' }} &middot; {{ counts.documents }} document{{ '' if counts.documents == 1 else 's' }} &middot; {{ account_storage.used | filesize('down') }} used of {{ account_storage.quota | filesize('down') }}</p>
+      <p class="eyebrow">Settings</p>
+      <h1>{{ current_user.name or row.email }}</h1>
+      <p class="muted">{% if current_user.name %}{{ row.email }} &middot; {% endif %}Member since {{ row.created_at | localdate }} &middot; {{ counts.years }} year{{ '' if counts.years == 1 else 's' }} &middot; {{ counts.documents }} document{{ '' if counts.documents == 1 else 's' }} &middot; {{ account_storage.used | filesize('down') }} used of {{ account_storage.quota | filesize('down') }}</p>
     </div>
   </div>
 
-  <section class="card" aria-labelledby="pw-title">
+  <nav class="settings-nav" aria-label="Settings sections">
+    <a href="#profile">Profile</a>
+    <a href="#password">Password</a>
+    <a href="#two-factor">Two-factor</a>
+    <a href="#email">Email</a>
+    <a href="#devices">Devices</a>
+    <a href="#activity">Activity</a>
+    <a href="#delete">Delete account</a>
+  </nav>
+
+  <section class="card" id="profile" aria-labelledby="profile-title">
+    <div class="card-head"><h2 id="profile-title">Profile</h2></div>
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="profile">
+      <div class="grid-2">
+        <div class="field">
+          <label for="first-name">First name</label>
+          <input id="first-name" name="first_name" type="text" autocomplete="given-name" maxlength="{{ name_max }}" value="{{ row.first_name }}">
+        </div>
+        <div class="field">
+          <label for="last-name">Last name</label>
+          <input id="last-name" name="last_name" type="text" autocomplete="family-name" maxlength="{{ name_max }}" value="{{ row.last_name }}">
+        </div>
+      </div>
+      <p class="muted small">Optional. Shown in the menu at the top, used to greet you in our emails and printed on your accountant package.</p>
+      <div><button class="btn btn-primary" type="submit">Save name</button></div>
+    </form>
+  </section>
+
+  <section class="card" id="password" aria-labelledby="pw-title">
     <div class="card-head"><h2 id="pw-title">Change password</h2></div>
     <form method="post" class="stack">
       {{ ui.csrf() }}
@@ -37,7 +67,55 @@
     </form>
   </section>
 
-  <section class="card" aria-labelledby="email-title">
+  <section class="card" id="two-factor" aria-labelledby="tfa-title">
+    <div class="card-head"><h2 id="tfa-title">Two-factor sign in</h2>{% if row.totp_secret %}<span class="pill pill-ok">On</span>{% endif %}</div>
+    {% if row.totp_secret %}
+    <p class="muted small">Signing in asks for a code from your authenticator app after your password.{% if current_user.is_admin %} The admin page needs it.{% endif %}</p>
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="2fa_disable">
+      <div class="grid-2">
+        <div class="field">
+          <label for="tfa-off-current">Current password</label>
+          <input id="tfa-off-current" name="current_password" type="password" autocomplete="current-password" required>
+        </div>
+        <div class="field">
+          <label for="tfa-off-code">Code from the app</label>
+          <input id="tfa-off-code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required>
+        </div>
+      </div>
+      <div><button class="btn btn-ghost" type="submit">Turn off two-factor sign in</button></div>
+    </form>
+    {% else %}
+    <p class="muted small">Protect your account with a 6 digit code from an authenticator app, asked after your password. Google Authenticator works, and so do Microsoft Authenticator, 1Password, Bitwarden and other apps.{% if current_user.is_admin %} <strong>The admin page needs it.</strong>{% endif %}</p>
+    <div class="tfa-setup">
+      <img class="tfa-qr" src="{{ totp.qr }}" width="185" height="185" alt="QR code to add Nomad Life to your authenticator app">
+      <ol class="tfa-steps small">
+        <li>In the app, tap <strong>+</strong> and choose <strong>Scan a QR code</strong>, then scan this code.</li>
+        <li>Can't scan it? Choose <strong>Enter a setup key</strong> and type this key (time based): <code class="tfa-key">{{ totp.grouped }}</code></li>
+        <li>Type the 6 digit code the app now shows for Nomad Life, with your password.</li>
+      </ol>
+    </div>
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="2fa_enable">
+      <div class="grid-2">
+        <div class="field">
+          <label for="tfa-on-code">Code from the app</label>
+          <input id="tfa-on-code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required>
+        </div>
+        <div class="field">
+          <label for="tfa-on-current">Current password</label>
+          <input id="tfa-on-current" name="current_password" type="password" autocomplete="current-password" required>
+        </div>
+      </div>
+      <p class="muted small">Other devices are signed out when you turn it on.</p>
+      <div><button class="btn btn-primary" type="submit">Turn on two-factor sign in</button></div>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="card" id="email" aria-labelledby="email-title">
     <div class="card-head"><h2 id="email-title">Change email</h2></div>
     {% if row.pending_email %}
     <div class="pending-email">
@@ -67,54 +145,7 @@
     </form>
   </section>
 
-  <section class="card" id="two-factor" aria-labelledby="tfa-title">
-    <div class="card-head"><h2 id="tfa-title">Two-factor sign in</h2>{% if row.totp_secret %}<span class="pill pill-ok">On</span>{% endif %}</div>
-    {% if row.totp_secret %}
-    <p class="muted small">Signing in asks for a code from your authenticator app after your password.{% if current_user.is_admin %} The admin page needs it.{% endif %}</p>
-    <form method="post" class="stack">
-      {{ ui.csrf() }}
-      <input type="hidden" name="action" value="2fa_disable">
-      <div class="grid-2">
-        <div class="field">
-          <label for="tfa-off-current">Current password</label>
-          <input id="tfa-off-current" name="current_password" type="password" autocomplete="current-password" required>
-        </div>
-        <div class="field">
-          <label for="tfa-off-code">Code from the app</label>
-          <input id="tfa-off-code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required>
-        </div>
-      </div>
-      <div><button class="btn btn-ghost" type="submit">Turn off two-factor sign in</button></div>
-    </form>
-    {% else %}
-    <p class="muted small">Protect your account with a code from an authenticator app (such as Google Authenticator, Microsoft Authenticator, 1Password or Bitwarden), asked after your password.{% if current_user.is_admin %} <strong>The admin page needs it.</strong>{% endif %}</p>
-    <div class="tfa-setup">
-      <img class="tfa-qr" src="{{ totp.qr }}" width="185" height="185" alt="QR code to add Nomad Life to your authenticator app">
-      <div class="stack">
-        <p class="small">1. Scan the QR code with your authenticator app, or type this key: <code class="tfa-key">{{ totp.secret }}</code></p>
-        <p class="small">2. Type the 6 digit code the app shows, with your password.</p>
-      </div>
-    </div>
-    <form method="post" class="stack">
-      {{ ui.csrf() }}
-      <input type="hidden" name="action" value="2fa_enable">
-      <div class="grid-2">
-        <div class="field">
-          <label for="tfa-on-code">Code from the app</label>
-          <input id="tfa-on-code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required>
-        </div>
-        <div class="field">
-          <label for="tfa-on-current">Current password</label>
-          <input id="tfa-on-current" name="current_password" type="password" autocomplete="current-password" required>
-        </div>
-      </div>
-      <p class="muted small">Other devices are signed out when you turn it on.</p>
-      <div><button class="btn btn-primary" type="submit">Turn on two-factor sign in</button></div>
-    </form>
-    {% endif %}
-  </section>
-
-  <section class="card" aria-labelledby="sessions-title">
+  <section class="card" id="devices" aria-labelledby="sessions-title">
     <div class="card-head"><h2 id="sessions-title">Signed in devices</h2></div>
     <form method="post" class="stack">
       {{ ui.csrf() }}
@@ -125,7 +156,7 @@
     </form>
   </section>
 
-  <section class="card" aria-labelledby="activity-title">
+  <section class="card" id="activity" aria-labelledby="activity-title">
     <div class="card-head"><h2 id="activity-title">Recent security activity</h2></div>
     {% if activity %}
     <ul class="activity-list">
@@ -139,7 +170,7 @@
     {% endif %}
   </section>
 
-  <section class="card danger-zone" aria-labelledby="delete-title">
+  <section class="card danger-zone" id="delete" aria-labelledby="delete-title">
     <h2 id="delete-title">Delete my account</h2>
     <p class="muted small">Permanently removes your account, every year, movement and receipt. You will confirm twice and type your email.</p>
     <form method="post" class="stack" data-confirm-delete="your account with all its years, movements and receipts" data-confirm-type="{{ row.email }}" data-confirm-field="confirm_email">

@@ -51,7 +51,7 @@ class SignupTests(AppTestCase):
         self.signup("b@example.com", client=self.app.test_client())
         self.signup()
         self.age_emails()
-        html = self.client.post("/account", data={
+        html = self.client.post("/settings", data={
             "action": "email", "email": "b@example.com", "current_password": "password1"},
             follow_redirects=True).get_data(as_text=True)
         self.assertNotIn("Another account", html)
@@ -93,7 +93,7 @@ class SignInTests(AppTestCase):
         # The owner's browser signed in before, so its device cookie gets it in.
         resp = self.client.post("/login", data={"email": "a@example.com", "password": "password1"})
         self.assertEqual(resp.status_code, 302)
-        self.assertEqual(self.client.get("/account").status_code, 200)
+        self.assertEqual(self.client.get("/settings").status_code, 200)
 
     def test_a_device_is_still_limited(self):
         self.signup()
@@ -121,12 +121,12 @@ class SessionTests(AppTestCase):
         other = self.app.test_client()
         other.post("/login", data={"email": "a@example.com", "password": "password1",
                                    "remember": "1"})
-        self.assertEqual(other.get("/account").status_code, 200)
-        html = self.client.post("/account", data={"action": "sessions"},
+        self.assertEqual(other.get("/settings").status_code, 200)
+        html = self.client.post("/settings", data={"action": "sessions"},
                                 follow_redirects=True).get_data(as_text=True)
         self.assertIn("Every other browser and device has been signed out.", html)
-        self.assertEqual(self.client.get("/account").status_code, 200)
-        self.assertEqual(other.get("/account").status_code, 302)
+        self.assertEqual(self.client.get("/settings").status_code, 200)
+        self.assertEqual(other.get("/settings").status_code, 302)
 
     def test_remember_me_lasts_a_month(self):
         self.assertEqual(self.app.config["REMEMBER_COOKIE_DURATION"].days, 30)
@@ -137,7 +137,7 @@ class HeaderTests(AppTestCase):
     def test_private_pages_are_never_cached(self):
         self.signup()
         self.new_year(2026)
-        for path in ("/app", "/year/2026", "/account", "/plan"):
+        for path in ("/app", "/year/2026", "/settings", "/plan"):
             self.assertEqual(self.client.get(path).headers["Cache-Control"], "private, no-store",
                              path)
         self.assertNotIn("no-store", self.client.get("/static/css/style.css")

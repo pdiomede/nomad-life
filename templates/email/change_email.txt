@@ -1,4 +1,4 @@
-Hi,
+Hi{% if first_name %} {{ first_name }}{% endif %},
 
 You asked to use {{ email }} for your Nomad Life account instead of {{ old_email }}. Open the link below to confirm the new address. It expires in {{ hours }} hour{{ "s" if hours != 1 }}.
 

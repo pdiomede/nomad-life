@@ -52,10 +52,10 @@ class TwoFactorFixTests(AppTestCase):
         self.assertIsNone(appmod.totp_match(self.secret, "١٢٣٤٥٦"))  # no TypeError
 
     def test_turning_off_limits_wrong_codes(self):
-        statuses = [self.client.post("/account", data={
+        statuses = [self.client.post("/settings", data={
             "action": "2fa_disable", "code": "000000", "current_password": "password1"})
             .status_code for _ in range(7)]
-        html = self.client.get("/account").get_data(as_text=True)
+        html = self.client.get("/settings").get_data(as_text=True)
         self.assertIn("Too many wrong codes for this account.", html)
         with self.db() as conn:
             self.assertIsNotNone(conn.execute("SELECT totp_secret FROM users").fetchone()[0])
@@ -76,21 +76,21 @@ class TwoFactorFixTests(AppTestCase):
 class SetupSecretTests(AppTestCase):
     def test_setup_key_is_never_shown_to_the_next_account(self):
         self.signup()
-        first = re.search(r'tfa-key">(\w+)<', self.client.get("/account").get_data(as_text=True))
+        first = re.search(r'tfa-key">([\w ]+)<', self.client.get("/settings").get_data(as_text=True))
         self.client.post("/logout")
         with self.client.session_transaction() as sess:
             self.assertNotIn("totp_setup", sess)
         self.signup("b@example.com")
-        second = re.search(r'tfa-key">(\w+)<', self.client.get("/account").get_data(as_text=True))
+        second = re.search(r'tfa-key">([\w ]+)<', self.client.get("/settings").get_data(as_text=True))
         self.assertNotEqual(first.group(1), second.group(1))
 
     def test_a_setup_key_of_another_account_is_refused(self):
         self.signup()
-        html = self.client.get("/account").get_data(as_text=True)
-        secret = re.search(r'tfa-key">(\w+)<', html).group(1)
+        html = self.client.get("/settings").get_data(as_text=True)
+        secret = re.search(r'tfa-key">([\w ]+)<', html).group(1).replace(" ", "")
         with self.client.session_transaction() as sess:
             sess["totp_setup"] = {"uid": 999, "secret": secret}
-        html = self.client.post("/account", data={
+        html = self.client.post("/settings", data={
             "action": "2fa_enable", "code": code_now(secret), "current_password": "password1"},
             follow_redirects=True).get_data(as_text=True)
         self.assertNotIn("Two-factor sign in is on.", html)
@@ -106,33 +106,33 @@ class SessionFixTests(AppTestCase):
         # Signed out from elsewhere: the remember cookie stays in the kiosk, but is dead.
         other = self.app.test_client()
         other.post("/login", data={"email": "a@example.com", "password": "password1"})
-        other.post("/account", data={"action": "sessions"})
-        self.assertEqual(kiosk.get("/account").status_code, 302)
+        other.post("/settings", data={"action": "sessions"})
+        self.assertEqual(kiosk.get("/settings").status_code, 302)
         # Someone signs in on the kiosk without "Remember me", then signs out elsewhere.
         kiosk.post("/login", data={"email": "a@example.com", "password": "password1"})
-        kiosk.post("/account", data={"action": "sessions"})
+        kiosk.post("/settings", data={"action": "sessions"})
         remember = kiosk.get_cookie("nomadlife_remember")
         closed = self.app.test_client()  # the browser is closed: only lasting cookies remain
         if remember is not None:
             closed.set_cookie("nomadlife_remember", remember.value)
-        self.assertEqual(closed.get("/account").status_code, 302)
+        self.assertEqual(closed.get("/settings").status_code, 302)
 
     def test_remembered_browsers_stay_remembered_after_a_password_change(self):
         self.signup()
         self.client.post("/logout")
         self.client.post("/login", data={"email": "a@example.com", "password": "password1",
                                          "remember": "1"})
-        self.client.post("/account", data={"action": "password", "current_password": "password1",
+        self.client.post("/settings", data={"action": "password", "current_password": "password1",
                                            "password": "newpass123", "confirm": "newpass123"})
         closed = self.app.test_client()
         closed.set_cookie("nomadlife_remember", self.client.get_cookie("nomadlife_remember").value)
-        self.assertEqual(closed.get("/account").status_code, 200)
+        self.assertEqual(closed.get("/settings").status_code, 200)
 
     def test_an_idle_session_cannot_revive_itself(self):
         self.signup()
         with self.db() as conn:
             conn.execute("UPDATE user_sessions SET last_seen_at = datetime('now', '-40 days')")
-        self.assertEqual(self.client.get("/account").status_code, 302)
+        self.assertEqual(self.client.get("/settings").status_code, 302)
 
     def test_admin_disable_forgets_the_sessions(self):
         self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
@@ -148,7 +148,7 @@ class AlertFixTests(AppTestCase):
     def test_email_change_alert_can_undo_the_change(self):
         self.signup()
         self.age_emails()
-        self.client.post("/account", data={"action": "email", "email": "thief@example.com",
+        self.client.post("/settings", data={"action": "email", "email": "thief@example.com",
                                            "current_password": "password1"})
         self.client.get(self.last_link("thief@example.com", kind="account/email"))
         alert = self.outbox[-1]
@@ -166,7 +166,7 @@ class AlertFixTests(AppTestCase):
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT email FROM users").fetchone()[0], "a@example.com")
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM user_sessions").fetchone()[0], 0)
-        self.assertEqual(self.client.get("/account").status_code, 302)  # the thief is out
+        self.assertEqual(self.client.get("/settings").status_code, 302)  # the thief is out
         self.assertEqual(self.outbox[-1]["to"], "a@example.com")
         self.assertIn("/reset/", self.outbox[-1]["text"])
         self.assertIn(b"no longer valid", owner.post(undo, follow_redirects=True).data)
@@ -217,7 +217,7 @@ class ReviewTwoTests(AppTestCase):
     def test_admin_history_filter_follows_the_account_across_email_changes(self):
         self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
         self.age_emails()
-        self.client.post("/account", data={"action": "email", "email": "new@example.com",
+        self.client.post("/settings", data={"action": "email", "email": "new@example.com",
                                            "current_password": "password1"})
         self.client.get(self.last_link("new@example.com", kind="account/email"))
         admin = self.signup("admin@example.com", client=self.app.test_client())

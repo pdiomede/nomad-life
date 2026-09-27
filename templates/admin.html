@@ -62,6 +62,7 @@
     {% for u in pager.rows %}
     <li class="admin-user">
       <div class="admin-user-main">
+        {% if u.full_name %}<p class="admin-name">{{ u.full_name }}</p>{% endif %}
         <p class="admin-email"><strong>{{ u.email }}</strong>
           <span class="tag">{{ u.plan_name }}</span>
           {% if u.is_admin %}<span class="tag">Admin</span>{% endif %}
