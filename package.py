@@ -543,7 +543,8 @@ def readme_text(data):
         "  summary.pdf         Readable report: headline numbers, days per country, travel timeline, rules, receipt index.",
         "  timeline.csv        One row per stay" + (" (with notes)." if data.include_notes else " (notes not included)."),
         "  country-totals.csv  One row per country with days and share of the year.",
-        "  receipts/           Original receipts, byte for byte. receipts/base holds base documents,",
+        "  receipts/           The receipts as stored (large photos are resized when uploaded).",
+        "                      receipts/base holds base documents,",
         "                      the other folders are numbered stays: 01_<start date>_<city>_<country>.",
         "  manifest.csv        Every other file in this package with its size and SHA-256 checksum.",
         "",
@@ -565,6 +566,30 @@ def readme_text(data):
 
 
 # ---------- ZIP ----------
+
+def open_receipt(path):
+    """(readable file, size) of a stored receipt: the one file inside its ZIP (since 1.2.12),
+    or the plain file stored before. The package holds the receipt, never a ZIP in a ZIP."""
+    if not path.endswith(".zip"):
+        fh = open(path, "rb")
+        return fh, os.fstat(fh.fileno()).st_size
+    archive = zipfile.ZipFile(path)
+    try:
+        info = archive.infolist()[0]
+        member = archive.open(info)
+    except BaseException:
+        archive.close()
+        raise
+    close_member = member.close
+
+    def close():
+        try:
+            close_member()
+        finally:
+            archive.close()
+
+    member.close = close
+    return member, info.file_size
 
 class _Sink(io.RawIOBase):
     """Write only, non seekable buffer. zipfile then writes data descriptors instead of
@@ -642,11 +667,11 @@ def stream(data, entries):
                 continue
             digest, written = hashlib.sha256(), 0
             try:
-                fh = open(source.path, "rb")
-            except OSError:
+                fh, size = open_receipt(source.path)
+            except (OSError, zipfile.BadZipFile, IndexError):
                 source.exists = False
                 continue
-            with fh, zf.open(_info(arcname, when, os.fstat(fh.fileno()).st_size, fast), "w") as dest:
+            with fh, zf.open(_info(arcname, when, size, fast), "w") as dest:
                 while True:
                     chunk = fh.read(CHUNK)
                     if not chunk:

@@ -57,7 +57,9 @@ CREATE TABLE IF NOT EXISTS documents (
     stored_name TEXT NOT NULL,
     mime TEXT NOT NULL,
     size INTEGER NOT NULL,
-    uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    format TEXT NOT NULL DEFAULT '',
+    file_size INTEGER NOT NULL DEFAULT 0
 );
 
 -- Failed sign ins and password reset requests, to slow down password guessing and email
@@ -172,6 +174,13 @@ MIGRATIONS = [
     # The name set on the Settings page (optional; empty means not given).
     ("users", "first_name", ["ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''"]),
     ("users", "last_name", ["ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''"]),
+    # Receipts are stored as ZIP files since 1.2.12: size is the ZIP on disk (what quotas
+    # count), format and file_size describe the file inside. Older rows point to plain files.
+    ("documents", "format", ["ALTER TABLE documents ADD COLUMN format TEXT NOT NULL DEFAULT ''",
+                             "UPDATE documents SET format = lower(substr(stored_name, "
+                             "instr(stored_name, '.') + 1))"]),
+    ("documents", "file_size", ["ALTER TABLE documents ADD COLUMN file_size INTEGER NOT NULL "
+                                "DEFAULT 0", "UPDATE documents SET file_size = size"]),
 ]
 
 

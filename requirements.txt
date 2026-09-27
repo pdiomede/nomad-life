@@ -10,6 +10,8 @@ fpdf2==2.8.8
 segno==1.6.6
 # Draws right to left names (Arabic, Hebrew) correctly in the accountant PDF.
 uharfbuzz==0.56.2
+# Production web server (see setup_vps.md); runWebApp.sh uses the built in one.
+gunicorn==26.2.0
 # Installed by the packages above, pinned too.
 blinker==1.9.0
 click==8.5.0

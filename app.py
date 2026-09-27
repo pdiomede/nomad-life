@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import hmac
+import io
 import math
 import mimetypes
 import os
@@ -15,13 +16,14 @@ from urllib.parse import quote, urlencode
 import uuid
 from collections import OrderedDict
 import unicodedata
+import zipfile
 from datetime import date, datetime, timedelta, timezone
 
 import click
 import segno
 from dotenv import load_dotenv
 from flask import (Flask, Response, abort, current_app, flash, has_request_context, redirect,
-                   render_template, request, send_from_directory, session, url_for)
+                   render_template, request, send_file, send_from_directory, session, url_for)
 from markupsafe import escape
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_url, login_user, logout_user, user_loaded_from_cookie)
@@ -262,7 +264,18 @@ def load_or_create_secret(path):
     except FileNotFoundError:
         pass
     key = secrets.token_hex(32)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        # O_EXCL: when several server processes start at once, only one creates the key and
+        # the others read it, so they all sign sessions with the same secret.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        for _ in range(50):  # the winner may still be writing it
+            with open(path) as fh:
+                existing = fh.read().strip()
+            if existing:
+                return existing
+            time.sleep(0.02)
+        raise
     with os.fdopen(fd, "w") as fh:
         fh.write(key)
     return key
@@ -527,6 +540,52 @@ def create_app(overrides=None):
         return resp
 
     register_routes(app)
+
+    @app.cli.command("zip-receipts")
+    @click.option("--no-shrink", is_flag=True, help="Only zip; keep big photos as they are.")
+    def zip_receipts(no_shrink):
+        """Store receipts uploaded before 1.2.12 as ZIP files (and shrink big photos)."""
+        rows = db.query("SELECT * FROM documents WHERE stored_name NOT LIKE '%.zip' ORDER BY id")
+        done = missing = failed = 0
+        before = after = 0
+        for doc in rows:
+            folder = os.path.join(app.config["UPLOAD_DIR"], str(doc["user_id"]))
+            old_path = os.path.join(folder, doc["stored_name"])
+            if not os.path.isfile(old_path):
+                missing += 1
+                continue
+            try:
+                with open(old_path, "rb") as fh:
+                    data = fh.read()
+                ext, name = doc_format(doc), doc["original_name"]
+                shrunk = None if no_shrink else shrink_photo(data, ext)
+                if shrunk is not None:
+                    data, ext, name = shrunk, "jpg", display_name(stem(name) + ".jpg")
+                stored = f"{uuid.uuid4().hex}.zip"
+                new_path = os.path.join(folder, stored)
+                size = write_receipt_zip(new_path, zip_member_name(name, ext), data)
+            except (OSError, ValueError) as exc:
+                failed += 1
+                click.echo(f"Could not convert document {doc['id']}: {exc}", err=True)
+                continue
+            try:
+                # The row points to the ZIP before the old file goes, so an interruption
+                # never leaves a document without its file.
+                db.execute("UPDATE documents SET stored_name = ?, size = ?, format = ?, "
+                           "file_size = ?, original_name = ?, mime = ? WHERE id = ? AND "
+                           "stored_name = ?", (stored, size, ext, len(data), name,
+                                               MIME_TYPES[ext], doc["id"], doc["stored_name"]))
+            except BaseException:
+                os.remove(new_path)
+                raise
+            os.remove(old_path)
+            done += 1
+            before += doc["size"]
+            after += size
+        click.echo(f"Converted {done} receipt{'' if done == 1 else 's'} to ZIP: "
+                   f"{format_size(before, 'up')} before, {format_size(after, 'up')} after."
+                   + (f" {missing} file{'' if missing == 1 else 's'} missing on disk." if missing
+                      else "") + (f" {failed} failed." if failed else ""))
 
     @app.cli.command("reset-2fa")
     @click.argument("email")
@@ -1220,24 +1279,29 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
         return (f"{name} is {format_size(size, 'up')}, larger than the "
                 f"{format_size(limit, 'down')} limit per receipt.")
     left = max(quota - storage_used(current_user.id), 0)
-    if size > left:
+    if left == 0:  # the exact check, with the size on disk, comes after compressing
         return quota_message(name, size, left, quota)
+    file.stream.seek(0)
+    data = file.stream.read()
+    shrunk = shrink_photo(data, ext)
+    if shrunk is not None:  # a big photo: keep a smaller JPEG instead
+        data, ext = shrunk, "jpg"
+        name = display_name(stem(name) + ".jpg")
 
     user_dir = os.path.join(current_app.config["UPLOAD_DIR"], str(current_user.id))
     os.makedirs(user_dir, mode=0o700, exist_ok=True)
-    stored = f"{uuid.uuid4().hex}.{ext}"
+    stored = f"{uuid.uuid4().hex}.zip"
     path = os.path.join(user_dir, stored)
     try:
-        file.save(path)
+        size = write_receipt_zip(path, zip_member_name(name, ext), data)
     except OSError as exc:
         current_app.logger.error("Could not store upload %s: %s", path, exc)
         if os.path.exists(path):
             os.remove(path)  # do not keep a partial file that no quota accounts for
         return "The server could not store the file (its disk may be full). Please try again later."
-    size = os.path.getsize(path)
     try:
-        # Re-check the quota and insert under one write lock, so parallel uploads cannot
-        # both pass the check above and exceed the quota together.
+        # Check the quota with the size really used on disk and insert under one write lock,
+        # so parallel uploads cannot both pass the check and exceed the quota together.
         with db.transaction() as conn:
             used = conn.execute("SELECT COALESCE(SUM(size), 0) FROM documents WHERE user_id = ?",
                                 (current_user.id,)).fetchone()[0]
@@ -1245,9 +1309,10 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
                 raise QuotaExceeded(max(quota - used, 0))
             conn.execute(
                 "INSERT INTO documents (user_id, year_id, movement_id, kind, original_name, "
-                "stored_name, mime, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "stored_name, mime, size, format, file_size) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (current_user.id, year_id, movement_id, kind, name, stored,
-                 MIME_TYPES[ext], size))
+                 MIME_TYPES[ext], size, ext, len(data)))
     except QuotaExceeded as exc:
         os.remove(path)
         return quota_message(name, size, exc.left, quota)
@@ -1258,6 +1323,102 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
         os.remove(path)  # no orphan file when the row could not be saved
         raise
     return None
+
+
+# ---------- receipt files: stored as one file per ZIP, big photos shrunk ----------
+
+# Photos over either limit are resized to PHOTO_MAX_SIDE and re-saved as JPEG; the original
+# is not kept. Larger images than PHOTO_MAX_PIXELS are never decoded (decompression bombs).
+PHOTO_MAX_SIDE = 2000
+PHOTO_SHRINK_BYTES = 1024 * 1024
+PHOTO_MAX_PIXELS = 50_000_000
+PHOTO_QUALITY = 85
+SHRINKABLE = ("jpg", "jpeg", "png", "webp")
+IMAGE_SLOTS = threading.BoundedSemaphore(2)  # decoding a photo can take ~150 MB
+
+
+def shrink_photo(data, ext):
+    """Smaller JPEG bytes for a big photo, or None to keep the file as it is (small, not a
+    photo, unreadable, too many pixels, or not smaller once re-saved)."""
+    if ext not in SHRINKABLE:
+        return None
+    from PIL import Image, ImageOps
+    with IMAGE_SLOTS:
+        try:
+            with Image.open(io.BytesIO(data)) as img:
+                width, height = img.size
+                if width * height > PHOTO_MAX_PIXELS:
+                    return None
+                if max(width, height) <= PHOTO_MAX_SIDE and len(data) <= PHOTO_SHRINK_BYTES:
+                    return None
+                if img.format == "JPEG":
+                    img.draft("RGB", (PHOTO_MAX_SIDE, PHOTO_MAX_SIDE))  # decode at reduced size
+                img = ImageOps.exif_transpose(img)  # the photo stays upright without its EXIF
+                if img.mode in ("RGBA", "LA", "P", "PA"):
+                    img = img.convert("RGBA")
+                    background = Image.new("RGB", img.size, "white")
+                    background.paste(img, mask=img.getchannel("A"))
+                    img = background
+                elif img.mode != "RGB":
+                    img = img.convert("RGB")
+                img.thumbnail((PHOTO_MAX_SIDE, PHOTO_MAX_SIDE), Image.LANCZOS)
+                out = io.BytesIO()
+                # No EXIF or other metadata is written, so the location of the photo is gone.
+                img.save(out, "JPEG", quality=PHOTO_QUALITY, optimize=True, progressive=True)
+        except Exception as exc:  # noqa: BLE001 - a photo Pillow cannot handle is kept as is
+            current_app.logger.warning("Photo kept unshrunk: %s", exc)
+            return None
+    smaller = out.getvalue()
+    return smaller if len(smaller) < len(data) else None
+
+
+def zip_member_name(name, ext):
+    """The file name inside a receipt ZIP: the receipt's name, never a path."""
+    name = name.replace("/", "-").replace("\\", "-").strip()
+    if name in ("", ".", "..") or name.startswith("."):
+        name = f"receipt.{ext}"
+    return name
+
+
+def write_receipt_zip(path, member, data):
+    """Write a one file ZIP to path through a temporary file, so a crash never leaves a half
+    written receipt. Deflate is used when it makes the file smaller, else the file is stored."""
+    tmp = f"{path}.tmp"
+    info = zipfile.ZipInfo(member, date_time=time.localtime()[:6])
+    info.external_attr = 0o600 << 16
+    try:
+        for method in (zipfile.ZIP_DEFLATED, zipfile.ZIP_STORED):
+            info.compress_type = method
+            with zipfile.ZipFile(tmp, "w") as zf:
+                zf.writestr(info, data, compresslevel=6 if method == zipfile.ZIP_DEFLATED else None)
+                written = zf.getinfo(member).compress_size
+            if method == zipfile.ZIP_STORED or written < len(data):
+                break
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return os.path.getsize(path)
+
+
+def read_receipt(path):
+    """(member name, bytes) of a stored receipt; legacy files (before 1.2.12) are plain."""
+    if path.endswith(".zip"):
+        with zipfile.ZipFile(path) as zf:
+            info = zf.infolist()[0]
+            return info.filename, zf.read(info)
+    with open(path, "rb") as fh:
+        return os.path.basename(path), fh.read()
+
+
+def doc_format(doc):
+    """Extension of the file inside a stored receipt."""
+    keys = doc.keys()
+    return (doc["format"] if "format" in keys and doc["format"] else file_ext(doc["stored_name"]))
+
+
+def stem(name):
+    return name.rsplit(".", 1)[0] if "." in name else name
 
 
 class QuotaExceeded(Exception):
@@ -1533,8 +1694,9 @@ def build_package_data(year_row, include_notes):
         receipts.append(package.Receipt(
             stay_number=stay.number if stay else 0,
             kind=DOCUMENT_KINDS.get(d["kind"], "Other"), name=d["original_name"],
-            ext=file_ext(d["stored_name"]), path=path, uploaded=local_date(d["uploaded_at"]),
-            size=os.path.getsize(path) if exists else d["size"], exists=exists))
+            ext=doc_format(d), path=path, uploaded=local_date(d["uploaded_at"]),
+            # The size of the receipt itself (inside its ZIP), as the accountant receives it.
+            size=d["file_size"] or d["size"], exists=exists))
 
     countries = [package.CountryTotal(country=r["country"], iso=iso(r["country"]), days=r["days"],
                                       share=r["pct"], so_far=r["so_far"], is_base=r["is_base"])
@@ -2645,10 +2807,22 @@ def register_routes(app):
     def document(doc_id):
         doc = get_document_or_404(doc_id)
         folder = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id))
-        mime = MIME_TYPES.get(file_ext(doc["stored_name"]), "application/octet-stream")
-        resp = send_from_directory(folder, doc["stored_name"], mimetype=mime,
-                                   as_attachment=request.args.get("download") == "1",
-                                   download_name=doc["original_name"])
+        download_name = f"{stem(doc['original_name'])}.zip"
+        if doc["stored_name"].endswith(".zip"):
+            resp = send_from_directory(folder, doc["stored_name"], mimetype="application/zip",
+                                       as_attachment=True, download_name=download_name)
+        else:
+            # Stored before 1.2.12 and not converted yet (flask zip-receipts): zip it now, so
+            # every download is a ZIP.
+            path = os.path.join(folder, doc["stored_name"])
+            if not os.path.isfile(path):
+                abort(404)
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.write(path, zip_member_name(doc["original_name"], doc_format(doc)))
+            buf.seek(0)
+            resp = send_file(buf, mimetype="application/zip", as_attachment=True,
+                             download_name=download_name)
         resp.headers["X-Content-Type-Options"] = "nosniff"
         # Personal documents must never sit in a shared or browser cache.
         resp.headers["Cache-Control"] = "private, no-store"
@@ -2672,7 +2846,7 @@ def register_routes(app):
         typed = request.form.get("name", "").replace("/", "-").replace("\\", "-").strip()
         name = display_name(typed) if typed else ""
         kind = request.form.get("kind", "")
-        ext = file_ext(doc["stored_name"])
+        ext = doc_format(doc)
         if not name:
             flash("Please enter a name for the document.", "error")
         elif kind not in DOCUMENT_KINDS:
@@ -2680,6 +2854,18 @@ def register_routes(app):
         else:
             if file_ext(name) != ext:
                 name = f"{name}.{ext}"  # keep the real extension so downloads still open
+            if name != doc["original_name"] and doc["stored_name"].endswith(".zip"):
+                # The file inside the ZIP carries the name too: rewrite it.
+                path = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id),
+                                    doc["stored_name"])
+                try:
+                    _member, data = read_receipt(path)
+                    size = write_receipt_zip(path, zip_member_name(name, ext), data)
+                except (OSError, zipfile.BadZipFile, IndexError) as exc:
+                    app.logger.error("Could not rename the file in %s: %s", path, exc)
+                    size = None
+                if size is not None:
+                    db.execute("UPDATE documents SET size = ? WHERE id = ?", (size, doc_id))
             db.execute("UPDATE documents SET original_name = ?, kind = ? WHERE id = ?",
                        (name, kind, doc_id))
             flash("Document updated.", "success")

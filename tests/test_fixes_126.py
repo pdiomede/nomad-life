@@ -1,4 +1,5 @@
 """Regression tests for the 1.2.6 app fixes."""
+import os
 import io
 
 import app as appmod
@@ -54,7 +55,7 @@ class RequestSizeTests(AppTestCase):
         self.app.config["WTF_CSRF_ENABLED"] = True
         resp = self.client.post("/year/2026/base", data={
             "action": "upload", "kind": "other", "csrf_token": "x",
-            "file": (io.BytesIO(b"%PDF" + b"x" * (15 * appmod.MB)), "big.pdf")},
+            "file": (io.BytesIO(b"%PDF" + os.urandom(15 * appmod.MB)), "big.pdf")},
             content_type="multipart/form-data", follow_redirects=True)
         self.assertIn(b"This form was too large to save. Receipts can be at most 10 MB each.",
                       resp.data)

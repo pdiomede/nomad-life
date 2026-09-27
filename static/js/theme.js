@@ -579,7 +579,9 @@
         error = file.name + " is empty.";
       } else if (file && max && file.size > max) {
         error = file.name + " is too large (max " + input.getAttribute("data-max-label") + " per receipt).";
-      } else if (file && left >= 0 && file.size > left) {
+      } else if (file && left >= 0 && (/\.(jpe?g|png|webp)$/i.test(file.name) ? left === 0 : file.size > left)) {
+        // Big photos are resized on the server, so only the server can tell whether they fit;
+        // they are refused here only when no space is left at all.
         error = "Not enough storage left for " + file.name + " (" + input.getAttribute("data-left-label") + " free).";
       }
       if (error) input.value = "";

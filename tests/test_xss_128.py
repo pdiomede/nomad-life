@@ -21,12 +21,12 @@ class CspTests(AppTestCase):
             self.assertIn("base-uri 'self'", csp, path)
             self.assertIn("frame-ancestors 'none'", csp, path)
 
-    def test_receipts_keep_a_policy_the_pdf_viewer_accepts(self):
+    def test_receipt_downloads_get_only_the_frame_policy(self):
         self.signup()
         self.new_year(2026)
         self.upload("/year/2026/base", "r.pdf", b"%PDF-1 x")
         resp = self.client.get("/documents/1")
-        self.assertEqual(resp.mimetype, "application/pdf")
+        self.assertEqual(resp.mimetype, "application/zip")
         self.assertEqual(resp.headers["Content-Security-Policy"], "frame-ancestors 'none'")
         self.assertEqual(resp.headers["X-Content-Type-Options"], "nosniff")
 

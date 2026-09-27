@@ -46,12 +46,12 @@
 <ul class="doc-list">
   {% for d in docs %}
   <li class="doc">
-    <span class="doc-icon" aria-hidden="true">{{ 'PDF' if d.original_name.lower().endswith('.pdf') else 'IMG' }}</span>
+    <span class="doc-icon" aria-hidden="true">{{ 'PDF' if (d.format or d.original_name.lower().rsplit('.', 1)[-1]) == 'pdf' else 'IMG' }}</span>
     <div class="doc-main">
-      <a href="{{ url_for('document', doc_id=d.id) }}" target="_blank" rel="noopener">{{ d.original_name }}</a>
+      <a href="{{ url_for('document', doc_id=d.id) }}" title="Download {{ d.original_name }} as a ZIP file">{{ d.original_name }}</a>
       <div class="muted small">
         <span class="tag">{{ document_kinds.get(d.kind, 'Other') }}</span>
-        {{ d.size | filesize }}, uploaded {{ d.uploaded_at | localdate }}
+        {{ (d.file_size or d.size) | filesize }}{% if d.stored_name.endswith('.zip') %} (ZIP {{ d.size | filesize }}){% endif %}, uploaded {{ d.uploaded_at | localdate }}
       </div>
       <details class="doc-edit">
         <summary aria-label="Rename or change type of {{ d.original_name }}">Rename or change type</summary>
@@ -73,7 +73,7 @@
         </form>
       </details>
     </div>
-    <a class="btn btn-ghost btn-sm" href="{{ url_for('document', doc_id=d.id, download=1) }}" aria-label="Download {{ d.original_name }}">Download</a>
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('document', doc_id=d.id) }}" aria-label="Download {{ d.original_name }} as a ZIP file">Download ZIP</a>
     {{ delete_form(url_for('document_delete', doc_id=d.id), 'the document "' ~ d.original_name ~ '"', aria_label='Delete ' ~ d.original_name) }}
   </li>
   {% endfor %}

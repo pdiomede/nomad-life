@@ -206,9 +206,9 @@ class ReviewTwoTests(AppTestCase):
         webp = b"RIFF\x24\x00\x00\x00WEBPVP8 " + b"\x00" * 64
         self.upload("/year/2026/base", "photo.jpg", webp)
         with self.db() as conn:
-            row = conn.execute("SELECT original_name, stored_name, mime FROM documents").fetchone()
+            row = conn.execute("SELECT original_name, format, mime FROM documents").fetchone()
         self.assertEqual(row[0], "photo.webp")
-        self.assertTrue(row[1].endswith(".webp"))
+        self.assertEqual(row[1], "webp")
         self.assertEqual(row[2], "image/webp")
         html = self.upload("/year/2026/base", "page.jpg", b"<html>").get_data(as_text=True)
         self.assertIn("page.jpg is not a real JPG file", html + self.client.get(
