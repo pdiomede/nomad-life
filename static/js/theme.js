@@ -448,9 +448,14 @@
         it.pin.style.setProperty("--nudge-y", it.dy.toFixed(1) + "px");
       });
       if (controls) {
-        controls.querySelector('[data-map-zoom="in"]').disabled = z >= ZOOMS[ZOOMS.length - 1];
-        controls.querySelector('[data-map-zoom="out"]').disabled = z <= 1;
-        controls.querySelector('[data-map-zoom="reset"]').disabled = z <= 1;
+        // aria-disabled, not disabled: the button keeps the focus, so pressing Enter again at a
+        // limit does nothing instead of acting on the next button.
+        var limit = function (what, on) {
+          controls.querySelector('[data-map-zoom="' + what + '"]').setAttribute("aria-disabled", on ? "true" : "false");
+        };
+        limit("in", z >= ZOOMS[ZOOMS.length - 1]);
+        limit("out", z <= 1);
+        limit("reset", z <= 1);
       }
     };
 
@@ -468,22 +473,14 @@
       if (i >= 0 && i < ZOOMS.length) zoomTo(ZOOMS[i]);
     };
 
-    var keepFocus = function (el) {
-      // A zoom button that just became disabled drops focus (the browser moves it to the page
-      // at once), so the element that had it is passed in; keep the focus on the controls.
-      if (controls && el && el.matches && el.matches("[data-map-zoom]") && el.disabled) {
-        controls.querySelector("[data-map-zoom]:not(:disabled)").focus();
-      }
-    };
     if (controls) {
       controls.hidden = false;
       controls.addEventListener("click", function (e) {
         var btn = e.target.closest("[data-map-zoom]");
-        if (!btn || btn.disabled) return;
+        if (!btn || btn.getAttribute("aria-disabled") === "true") return;
         var what = btn.getAttribute("data-map-zoom");
         if (what === "in") step(1); else if (what === "out") step(-1);
         else { tx = 0; ty = 0; zoomTo(1); }
-        keepFocus(btn);
       });
     }
 
@@ -518,7 +515,6 @@
     // Keyboard: arrows pan, + and - zoom, 0 shows the whole world, from any pin or button.
     card.addEventListener("keydown", function (e) {
       if (!e.target.closest(".map, .map-zoom")) return;
-      var had = document.activeElement;
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       var w = map.clientWidth, h = map.clientHeight, moved = true;
       if (e.key === "+" || e.key === "=") step(1);
@@ -531,7 +527,6 @@
       else moved = false;
       if (moved) {
         e.preventDefault();
-        keepFocus(had);
         keepPinInView();
       }
     });

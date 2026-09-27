@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.6] - 2026-09-27
+
+### Added
+
+- Map zoom: +, - and a "whole world" button next to the map title. Zoom goes up to 8x around the middle of the view, the map always fills its frame, and pins keep their size. While zoomed, drag the map (mouse or finger) or use the arrow keys to move around; the + - and 0 keys zoom too. Tabbing to a pin outside the view brings it into view.
+
+### Fixed
+
+- Security: a stranger who signed up first with someone's address could still take over the account, including an admin address, by signing in after the owner signed up: that sent the owner a new confirmation link for the stranger's password. When a sign up was retried, only the link to choose a password can activate the account now.
+- An account disabled by an admin while it was waiting for confirmation still received confirmation emails, could still be confirmed, and was removed after 20 minutes, so signing up again undid the admin's decision.
+- The upload size of the Free plan was only checked after the whole request had been read, so an oversized upload was still received in full.
+- Map zoom: the tests found and fixed, before release, that the buttons could cover pins in the lower left corner, that a tap on a button after dragging with a finger was ignored, that the keyboard zoom keys lost the focus, that moving with the arrow keys could hide the focused pin, and that a tooltip followed the pointer during a drag.
+- Map zoom: pressing Enter on "Zoom in" at the maximum jumped the focus to "Zoom out", so the next press zoomed back out.
+- Plans page: the "Upgrade to..." button text ran past the button on phones and made the page scroll sideways.
+- Movements table: place names and "counted" were split in the middle of a word on phones (for example "Amsterda m").
+- Emails: a long email address made confirmation and reset emails scroll sideways on small phones.
+- Landing page: the "Private by design" card said the app runs on your own computer, next to the hosted storage plans.
+- Tests no longer depend on the size settings in your local config.env.
+
 ## [1.2.5] - 2026-09-27
 
 ### Fixed

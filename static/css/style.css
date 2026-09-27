@@ -338,9 +338,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
   background: var(--surface); color: var(--text); border: 1px solid var(--input-border); border-radius: 6px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
-.map-zoom-btn:hover:not(:disabled) { background: var(--surface-2); }
+.map-zoom-btn:hover:not([aria-disabled="true"]) { background: var(--surface-2); }
 .map-zoom-btn:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
-.map-zoom-btn:disabled { color: var(--muted); opacity: 0.5; cursor: not-allowed; }
+.map-zoom-btn[aria-disabled="true"] { color: var(--muted); opacity: 0.5; cursor: not-allowed; }
 .map-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 12px; }
 .map-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .map-credit { margin-left: auto; }
@@ -355,6 +355,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .bars { list-style: none; padding: 0; margin: 14px 0 0; display: flex; flex-direction: column; gap: 14px; }
 .bars .meter { margin-top: 6px; }
 .bars .row > span:first-child, .stat p, .table td .small { min-width: 0; overflow-wrap: anywhere; }
+/* The location column gets its share of the width, so place names only break when a single
+   word is longer than the column, and "N counted" never splits. */
+#movements .table td:nth-child(2) { width: 40%; }
+.table td.num .small { overflow-wrap: normal; }
+.plan-card .btn-block { white-space: normal; text-align: center; }
 
 /* Table */
 .table-wrap { overflow-x: auto; margin: 0 -20px; }
@@ -592,6 +597,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
   /* The plan chip, Sign out and the theme button must still fit beside the name. */
   .topnav { gap: 4px; }
   .user-menu-trigger { max-width: calc(100vw - 190px); }
+}
+@media (max-width: 360px) {
+  /* A slightly smaller table on the smallest phones keeps place names like "Amsterdam" whole. */
+  #movements .table { font-size: 13px; }
+  #movements .table .small { font-size: 12px; }
 }
 @media (max-width: 319px) {
   .brand { font-size: 15px; }

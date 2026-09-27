@@ -58,3 +58,27 @@ class RequestSizeTests(AppTestCase):
             content_type="multipart/form-data", follow_redirects=True)
         self.assertIn(b"This form was too large to save. Receipts can be at most 10 MB each.",
                       resp.data)
+
+
+class UiFixTests(AppTestCase):
+    def read(self, *parts):
+        import os
+        return open(os.path.join(appmod.BASE_DIR, *parts), encoding="utf-8").read()
+
+    def test_email_addresses_can_wrap_on_phones(self):
+        for name in ("verify", "reset", "finish_signup", "change_email"):
+            html = self.read("templates", "email", f"{name}.html")
+            self.assertIn('<strong style="word-break:break-all;">{{ email }}</strong>', html, name)
+
+    def test_zoom_limits_keep_the_focus_on_the_pressed_button(self):
+        js = self.read("static", "js", "theme.js")
+        self.assertIn('setAttribute("aria-disabled"', js)
+        self.assertNotIn(".disabled = z", js)
+
+    def test_layout_rules(self):
+        css = self.read("static", "css", "style.css")
+        self.assertIn(".plan-card .btn-block { white-space: normal;", css)
+        self.assertIn(".table td.num .small { overflow-wrap: normal; }", css)
+
+    def test_landing_does_not_claim_the_app_runs_on_your_computer(self):
+        self.assertNotIn(b"Runs on your own computer", self.client.get("/").data)
