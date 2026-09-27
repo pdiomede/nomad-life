@@ -662,6 +662,7 @@ def plan_catalog(config=None):
             storage += f" ({quota // prev['quota_bytes']}x {prev['name']})"
         limits = [storage, f"Receipts up to {format_size(receipt, 'down')} each"]
         plans.append({"key": key, "name": p["name"], "price": p["price"], "year": p["year"],
+                      "year_saving": max(p["price"] * 12 - p["year"], 0),
                       "package": p["package"],
                       "quota_bytes": quota, "receipt_bytes": receipt,
                       "includes": prev["name"] if prev else None,

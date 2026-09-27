@@ -250,8 +250,11 @@ class PlanFeatureTests(unittest.TestCase):
         self.assertNotIn("Accountant package", cards["Nomad+"])
         self.assertIn("Accountant package", cards["Pro"])
         self.assertNotIn("Accountant package", cards["Free"])
-        self.assertIn("$40 / year", cards["Pro"])
-        self.assertIn("$90 / year", cards["Nomad+"])
+        self.assertIn("<strong>$40 / year</strong>", cards["Pro"])
+        self.assertIn("<strong>$90 / year</strong>", cards["Nomad+"])
+        self.assertIn("Save $8 a year", cards["Pro"])
+        self.assertIn("Save $18 a year", cards["Nomad+"])
+        self.assertNotIn("Save $", cards["Free"])
         self.assertNotIn("/ year", cards["Free"])
 
 

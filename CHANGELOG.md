@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- Plans: Free (500 MB of receipts, 10 MB per receipt), Pro ($4 a month or $40 a year, 5 GB, 25 MB per receipt, accountant package) and Nomad+ ($9 a month or $90 a year, 25 GB, 50 MB per receipt, priority support). Each plan sets its own storage and receipt limits. Everyone starts on Free; online payment is not available yet. The accountant package is a Pro feature: on Free the dashboard card offers "Upgrade to Pro" instead of the download.
+- Plans: Free (500 MB of receipts, 10 MB per receipt), Pro ($4 a month or $40 a year, 5 GB, 25 MB per receipt, accountant package) and Nomad+ ($9 a month or $90 a year, 25 GB, 50 MB per receipt, priority support). Plan cards show the yearly price in bold and how much it saves ("Save $8 a year"). Each plan sets its own storage and receipt limits. Everyone starts on Free; online payment is not available yet. The accountant package is a Pro feature: on Free the dashboard card offers "Upgrade to Pro" instead of the download.
 - The header shows only your email with an arrow. It opens a menu with your plan (for example FREE, which opens the new plan page), Admin for admins, and Sign out. The Account page is in the footer.
 - "Upgrade" on the Receipt storage card opens the plan page, with your plan, its limits and usage, and the next plan with its price.
 - The landing page has a Plans section with every plan, its price and features, and a "Pricing" button at the top Prices are in US dollars, and each paid plan says "Everything in <previous plan>, plus:" and highlights what it adds.
