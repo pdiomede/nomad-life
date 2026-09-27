@@ -62,4 +62,3 @@ FLASK_DEBUG=1 .venv/bin/python app.py                     # debug mode (template
 - No em dashes or en dashes anywhere: code, UI text, markdown, commit messages.
 - Releases follow semantic versioning from 1.0.0 (stable): patch bumps for fixes. Update `APP_VERSION` in `app.py`, the "Current version" line in `README.md`, and add a `CHANGELOG.md` entry; then commit and push to `master`.
 - Document new settings in `config.env.example` and the README configuration table. `config.env`, `data/` and `uploads/` are git-ignored.
-- `PROMPT.md` is a ready-to-run bug hunt prompt with a project map; update its map when adding files or routes.

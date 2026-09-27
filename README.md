@@ -126,10 +126,6 @@ The 404 page is a standalone file, `static/404.html`. The app already serves it 
 
 The landing page is ready for search engines: keyword title and description, canonical URL, Open Graph and Twitter card tags, structured data (JSON-LD), `robots.txt` and `sitemap.xml`. Sign in and app pages are marked `noindex` so private pages stay out of search results. Set `APP_BASE_URL` to your public HTTPS address before going live, because the canonical URL, sitemap and previews are built from it.
 
-## Bug hunting
-
-`PROMPT.md` contains a ready to use prompt for a deep, file by file bug hunt with Claude Code.
-
 ## Disclaimer
 
 Day counts are an organizational aid, not tax advice. Residence rules differ by country, so check with a tax professional.

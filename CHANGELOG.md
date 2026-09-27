@@ -12,6 +12,10 @@ All notable changes to this project are documented in this file.
 - The landing page has a Plans section with every plan, its price and features, and a "Pricing" button at the top Prices are in US dollars, and each paid plan says "Everything in <previous plan>, plus:" and highlights what it adds.
 - The admin page shows each account's plan and can change it with a plan selector that shows each plan's monthly and yearly price. Admins can also change the monthly and yearly price of Pro and Nomad+ ("Plans and prices"); the landing page, the plan page, the saving badge and the search engine data follow at once. An account without a custom quota gets the quota of its plan.
 
+### Removed
+
+- `PROMPT.md`, the bug hunt prompt, is no longer part of the project.
+
 ### Fixed
 
 - Security: anyone could sign up again with an address still waiting for confirmation, replace its password, and take the account once the owner clicked the newest email. For an admin address this gave the admin page. A pending sign up is never replaced now: the mailbox receives a link to choose the password, and earlier confirmation links stop working.
