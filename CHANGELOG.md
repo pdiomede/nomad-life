@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.13] - 2026-09-27
+
+### Changed
+
+- Settings: the "Turn off two-factor sign in" button is red, and the two-factor card has space between its intro text and the form.
+- The footer's "Nomad Life" links to the home page.
+
+### Fixed
+
+- Email addresses in emails were split anywhere (for example "pdiomed" / "e@yahoo.com"); they now move to the next line whole and are only split when longer than a line.
+- setup_vps.md: the gunicorn service turns off the control socket (`--no-control-socket`). gunicorn 25.1 and newer create it in the service user's home folder, which the service hardening makes unreachable, so the log showed "Control server error: Permission denied".
+
 ## [1.2.12] - 2026-09-27
 
 ### Added

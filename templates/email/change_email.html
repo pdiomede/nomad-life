@@ -3,7 +3,7 @@
 {% block preheader %}Confirm {{ email }} as your new Nomad Life sign in address.{% endblock %}
 {% block heading %}Confirm your new email{% endblock %}
 {% block body %}
-<p class="nl-text" style="{{ p }}">You asked to use <strong style="word-break:break-all;">{{ email }}</strong> for your Nomad Life account instead of <strong style="word-break:break-all;">{{ old_email }}</strong>.</p>
+<p class="nl-text" style="{{ p }}">You asked to use <strong style="word-break:break-word; overflow-wrap:anywhere;">{{ email }}</strong> for your Nomad Life account instead of <strong style="word-break:break-word; overflow-wrap:anywhere;">{{ old_email }}</strong>.</p>
 <p class="nl-text" style="{{ p }}">Use the button below to confirm the new address. The link expires in <strong>{{ hours }} hour{{ "s" if hours != 1 }}</strong>. Until then you keep signing in with your current address.</p>
 {% endblock %}
 {% block button %}Confirm new email{% endblock %}

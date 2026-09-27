@@ -3,7 +3,7 @@
 {% block preheader %}Choose a new password for your Nomad Life account. The link expires in {{ hours }} hour{{ "s" if hours != 1 }}.{% endblock %}
 {% block heading %}Reset your password{% endblock %}
 {% block body %}
-<p class="nl-text" style="{{ p }}">We received a request to reset the password of the Nomad Life account for <strong style="word-break:break-all;">{{ email }}</strong>.</p>
+<p class="nl-text" style="{{ p }}">We received a request to reset the password of the Nomad Life account for <strong style="word-break:break-word; overflow-wrap:anywhere;">{{ email }}</strong>.</p>
 <p class="nl-text" style="{{ p }}">Use the button below to choose a new one. The link expires in <strong>{{ hours }} hour{{ "s" if hours != 1 }}</strong> and works only once.</p>
 {% endblock %}
 {% block button %}Choose a new password{% endblock %}

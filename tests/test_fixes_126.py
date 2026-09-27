@@ -67,9 +67,14 @@ class UiFixTests(AppTestCase):
         return open(os.path.join(appmod.BASE_DIR, *parts), encoding="utf-8").read()
 
     def test_email_addresses_can_wrap_on_phones(self):
-        for name in ("verify", "reset", "finish_signup", "change_email"):
+        # break-word, not break-all: the address moves to the next line whole and is only
+        # split when it is longer than a line (break-all split "pdiomed" / "e@yahoo.com").
+        for name in ("verify", "reset", "finish_signup", "change_email", "account_exists",
+                     "security_alert"):
             html = self.read("templates", "email", f"{name}.html")
-            self.assertIn('<strong style="word-break:break-all;">{{ email }}</strong>', html, name)
+            self.assertIn('<strong style="word-break:break-word; overflow-wrap:anywhere;">', html,
+                          name)
+            self.assertNotIn('<strong style="word-break:break-all;">', html, name)
 
     def test_zoom_limits_keep_the_focus_on_the_pressed_button(self):
         js = self.read("static", "js", "theme.js")

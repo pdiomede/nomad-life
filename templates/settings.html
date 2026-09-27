@@ -70,7 +70,7 @@
   <section class="card" id="two-factor" aria-labelledby="tfa-title">
     <div class="card-head"><h2 id="tfa-title">Two-factor sign in</h2>{% if row.totp_secret %}<span class="pill pill-ok">On</span>{% endif %}</div>
     {% if row.totp_secret %}
-    <p class="muted small">Signing in asks for a code from your authenticator app after your password.{% if current_user.is_admin %} The admin page needs it.{% endif %}</p>
+    <p class="muted small card-intro">Signing in asks for a code from your authenticator app after your password.{% if current_user.is_admin %} The admin page needs it.{% endif %}</p>
     <form method="post" class="stack">
       {{ ui.csrf() }}
       <input type="hidden" name="action" value="2fa_disable">
@@ -84,10 +84,10 @@
           <input id="tfa-off-code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required>
         </div>
       </div>
-      <div><button class="btn btn-ghost" type="submit">Turn off two-factor sign in</button></div>
+      <div><button class="btn btn-danger" type="submit">Turn off two-factor sign in</button></div>
     </form>
     {% else %}
-    <p class="muted small">Protect your account with a 6 digit code from an authenticator app, asked after your password. Google Authenticator works, and so do Microsoft Authenticator, 1Password, Bitwarden and other apps.{% if current_user.is_admin %} <strong>The admin page needs it.</strong>{% endif %}</p>
+    <p class="muted small card-intro">Protect your account with a 6 digit code from an authenticator app, asked after your password. Google Authenticator works, and so do Microsoft Authenticator, 1Password, Bitwarden and other apps.{% if current_user.is_admin %} <strong>The admin page needs it.</strong>{% endif %}</p>
     <div class="tfa-setup">
       <img class="tfa-qr" src="{{ totp.qr }}" width="185" height="185" alt="QR code to add Nomad Life to your authenticator app">
       <ol class="tfa-steps small">

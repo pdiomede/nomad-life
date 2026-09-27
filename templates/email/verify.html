@@ -3,7 +3,7 @@
 {% block preheader %}Confirm your email within {{ minutes }} minute{{ "s" if minutes != 1 }} to activate your account.{% endblock %}
 {% block heading %}Confirm your email{% endblock %}
 {% block body %}
-<p class="nl-text" style="{{ p }}">Thanks for signing up for Nomad Life. Please confirm that <strong style="word-break:break-all;">{{ email }}</strong> is your email address.</p>
+<p class="nl-text" style="{{ p }}">Thanks for signing up for Nomad Life. Please confirm that <strong style="word-break:break-word; overflow-wrap:anywhere;">{{ email }}</strong> is your email address.</p>
 <p class="nl-text" style="{{ p }}">The link works for <strong>{{ minutes }} minute{{ "s" if minutes != 1 }}</strong>. If you do not confirm in time, the account is removed and this address can be used to sign up again.</p>
 {% endblock %}
 {% block button %}Confirm my email{% endblock %}

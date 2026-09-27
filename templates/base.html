@@ -88,7 +88,7 @@
 
   <footer class="footer">
     <div class="container footer-inner">
-      <span>Nomad Life v{{ app_version }} <span class="muted hide-sm">&middot; Track your year. Keep your receipts.</span>{% if current_user.is_authenticated %} &middot; <a href="{{ url_for('settings') }}">Settings</a>{% if current_user.is_admin %} &middot; <a href="{{ url_for('admin') }}">Admin</a>{% endif %}{% endif %}</span>
+      <span><a href="{{ url_for('landing') }}">Nomad Life</a> v{{ app_version }} <span class="muted hide-sm">&middot; Track your year. Keep your receipts.</span>{% if current_user.is_authenticated %} &middot; <a href="{{ url_for('settings') }}">Settings</a>{% if current_user.is_admin %} &middot; <a href="{{ url_for('admin') }}">Admin</a>{% endif %}{% endif %}</span>
       <span class="muted">&copy; 2026 Built by <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a></span>
     </div>
   </footer>

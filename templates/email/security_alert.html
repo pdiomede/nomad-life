@@ -4,7 +4,7 @@
 {% block heading %}Security alert{% endblock %}
 {% block body %}
 <p class="nl-text" style="{{ p }}"><strong>{{ what }}</strong></p>
-<p class="nl-text" style="{{ p }}">Account: <strong style="word-break:break-all;">{{ account }}</strong><br>When: {{ when }}{% if ip %}<br>From network address: {{ ip }}{% endif %}</p>
+<p class="nl-text" style="{{ p }}">Account: <strong style="word-break:break-word; overflow-wrap:anywhere;">{{ account }}</strong><br>When: {{ when }}{% if ip %}<br>From network address: {{ ip }}{% endif %}</p>
 <p class="nl-text" style="{{ p }}">{{ advice }}</p>
 {% endblock %}
 {% block button %}{{ button }}{% endblock %}
