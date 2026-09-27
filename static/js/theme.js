@@ -367,18 +367,28 @@
     });
   });
 
-  // Map: pins of neighbouring countries (Portugal and Spain, the Benelux...) would cover each
-  // other's day counts, so overlapping pins are nudged apart in pixels, again on resize.
+  // Map: zoom (+, -, whole world) and pan by dragging or with the arrow keys. Only the land is
+  // scaled; pins are placed in screen pixels, keep their size and are nudged apart when they
+  // would cover each other's day counts. Without JavaScript the map stays a plain, whole map.
+  var ZOOMS = [1, 2, 4, 8];
   document.querySelectorAll(".map").forEach(function (map) {
-    var pins = [].slice.call(map.querySelectorAll(".map-pin"));
-    if (pins.length < 2) return;
-    var layout = function () {
+    var land = map.querySelector(".map-land");
+    var controls = map.querySelector(".map-zoom");
+    var status = map.querySelector("[data-map-status]");
+    var pins = [].slice.call(map.querySelectorAll(".map-pin")).map(function (pin) {
+      // The server gives each pin's place as a percentage of the whole map.
+      return { pin: pin, fx: parseFloat(pin.style.left) / 100, fy: parseFloat(pin.style.top) / 100 };
+    });
+    var z = 1, tx = 0, ty = 0;
+
+    var bounds = function () {  // the map always fills the view: no empty edges
       var w = map.clientWidth, h = map.clientHeight;
-      var items = pins.map(function (pin) {
-        return { pin: pin, x: parseFloat(pin.style.left) / 100 * w, y: parseFloat(pin.style.top) / 100 * h,
-                 dx: 0, dy: 0, rx: pin.offsetWidth / 2 + 1, ry: pin.offsetHeight / 2 + 1 };
-      });
-      // A pin moves at most about one pin away from its country and never leaves the map; on a
+      tx = Math.min(0, Math.max(w - w * z, tx));
+      ty = Math.min(0, Math.max(h - h * z, ty));
+    };
+
+    var nudge = function (items, w, h) {
+      // A pin moves at most about one pin away from its place and never leaves the view; on a
       // very small map a few pins may still touch rather than drift to the wrong place.
       var reach = Math.max(16, Math.min(56, w * 0.07));
       var clamp = function (it) {
@@ -407,14 +417,132 @@
         }
         if (!moved) break;
       }
-      items.forEach(function (it) {
+    };
+
+    var render = function () {
+      var w = map.clientWidth, h = map.clientHeight;
+      bounds();
+      land.style.transform = z === 1 ? "" : "translate(" + tx + "px, " + ty + "px) scale(" + z + ")";
+      map.classList.toggle("is-zoomed", z > 1);
+      var shown = [];
+      pins.forEach(function (p) {
+        var x = tx + p.fx * w * z, y = ty + p.fy * h * z;
+        var off = x < 0 || x > w || y < 0 || y > h;
+        // A pin outside the view is invisible but stays focusable (focus brings it into view);
+        // it is parked inside the map so it never widens the page.
+        p.pin.style.left = (off ? Math.min(Math.max(x, 0), w) : x).toFixed(1) + "px";
+        p.pin.style.top = (off ? Math.min(Math.max(y, 0), h) : y).toFixed(1) + "px";
+        p.pin.classList.toggle("is-off", off);
+        // Tooltips open away from the edge of the view they are next to.
+        p.pin.classList.toggle("tip-right", x < w * 0.18);
+        p.pin.classList.toggle("tip-left", x > w * 0.82);
+        p.pin.classList.toggle("tip-below", y < h * 0.22);
+        if (!off) shown.push({ pin: p.pin, x: x, y: y, dx: 0, dy: 0,
+                               rx: p.pin.offsetWidth / 2 + 1, ry: p.pin.offsetHeight / 2 + 1 });
+        else { p.pin.style.setProperty("--nudge-x", "0px"); p.pin.style.setProperty("--nudge-y", "0px"); }
+      });
+      nudge(shown, w, h);
+      shown.forEach(function (it) {
         it.pin.style.setProperty("--nudge-x", it.dx.toFixed(1) + "px");
         it.pin.style.setProperty("--nudge-y", it.dy.toFixed(1) + "px");
       });
+      if (controls) {
+        controls.querySelector('[data-map-zoom="in"]').disabled = z >= ZOOMS[ZOOMS.length - 1];
+        controls.querySelector('[data-map-zoom="out"]').disabled = z <= 1;
+        controls.querySelector('[data-map-zoom="reset"]').disabled = z <= 1;
+      }
     };
-    layout();
-    var timer = null;
-    window.addEventListener("resize", function () { clearTimeout(timer); timer = setTimeout(layout, 100); });
+
+    var zoomTo = function (next, cx, cy) {
+      // Keep the point under (cx, cy), the middle of the view by default, where it is.
+      var w = map.clientWidth, h = map.clientHeight;
+      cx = cx === undefined ? w / 2 : cx; cy = cy === undefined ? h / 2 : cy;
+      var wx = (cx - tx) / z, wy = (cy - ty) / z;
+      z = next; tx = cx - wx * z; ty = cy - wy * z;
+      render();
+      if (status) status.textContent = z === 1 ? "Whole world" : "Zoom " + z + "x";
+    };
+    var step = function (dir) {
+      var i = ZOOMS.indexOf(z) + dir;
+      if (i >= 0 && i < ZOOMS.length) zoomTo(ZOOMS[i]);
+    };
+
+    if (controls) {
+      controls.hidden = false;
+      controls.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-map-zoom]");
+        if (!btn || btn.disabled) return;
+        var what = btn.getAttribute("data-map-zoom");
+        if (what === "in") step(1); else if (what === "out") step(-1);
+        else { tx = 0; ty = 0; zoomTo(1); }
+        // A button that just became disabled drops focus; keep it on the controls.
+        if (btn.disabled) controls.querySelector("[data-map-zoom]:not(:disabled)").focus();
+      });
+    }
+
+    // Drag to pan while zoomed. A drag is not a tap: the pin under the pointer stays closed.
+    var drag = null, dragged = false;
+    map.addEventListener("pointerdown", function (e) {
+      if (z === 1 || e.button !== 0 || e.target.closest(".map-zoom")) return;
+      drag = { x: e.clientX, y: e.clientY, tx: tx, ty: ty, id: e.pointerId };
+      dragged = false;
+    });
+    map.addEventListener("pointermove", function (e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!dragged && Math.abs(dx) + Math.abs(dy) < 5) return;
+      if (!dragged) { dragged = true; map.setPointerCapture(e.pointerId); map.classList.add("is-dragging"); }
+      tx = drag.tx + dx; ty = drag.ty + dy;
+      render();
+    });
+    var endDrag = function () {
+      if (!drag) return;
+      drag = null;
+      map.classList.remove("is-dragging");
+    };
+    map.addEventListener("pointerup", endDrag);
+    map.addEventListener("pointercancel", endDrag);
+    map.addEventListener("click", function (e) {
+      if (dragged) { e.preventDefault(); e.stopPropagation(); dragged = false; if (document.activeElement) document.activeElement.blur(); }
+    }, true);
+
+    // Keyboard: arrows pan, + and - zoom, 0 shows the whole world, from any pin or button.
+    map.addEventListener("keydown", function (e) {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      var w = map.clientWidth, h = map.clientHeight, moved = true;
+      if (e.key === "+" || e.key === "=") step(1);
+      else if (e.key === "-" || e.key === "_") step(-1);
+      else if (e.key === "0") { tx = 0; ty = 0; zoomTo(1); }
+      else if (z > 1 && e.key === "ArrowLeft") { tx += w * 0.2; render(); }
+      else if (z > 1 && e.key === "ArrowRight") { tx -= w * 0.2; render(); }
+      else if (z > 1 && e.key === "ArrowUp") { ty += h * 0.2; render(); }
+      else if (z > 1 && e.key === "ArrowDown") { ty -= h * 0.2; render(); }
+      else moved = false;
+      if (moved) e.preventDefault();
+    });
+
+    // Tabbing to a pin outside the zoomed view brings it into view.
+    pins.forEach(function (p) {
+      p.pin.addEventListener("focus", function () {
+        if (!p.pin.classList.contains("is-off")) return;
+        var w = map.clientWidth, h = map.clientHeight;
+        tx = w / 2 - p.fx * w * z; ty = h / 2 - p.fy * h * z;
+        render();
+      });
+    });
+
+    render();
+    var timer = null, last = map.clientWidth;
+    window.addEventListener("resize", function () {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        // Keep the same middle of the view at the new size.
+        var w = map.clientWidth;
+        if (last && w !== last) { tx *= w / last; ty *= w / last; }
+        last = w;
+        render();
+      }, 100);
+    });
   });
 
   // Show the chosen file name next to custom file inputs, and reject files over the

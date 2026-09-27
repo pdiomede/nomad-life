@@ -37,3 +37,16 @@ class MapFixTests(AppTestCase):
         self.assertIn("var(--nudge-x, 0px)", css)
         js = open(os.path.join(appmod.BASE_DIR, "static", "js", "theme.js"), encoding="utf-8").read()
         self.assertIn('setProperty("--nudge-x"', js)
+
+
+class MapZoomTests(AppTestCase):
+    def test_zoom_controls_are_rendered_for_javascript(self):
+        self.signup()
+        self.new_year(2026)
+        html = self.client.get("/year/2026").data.decode()
+        self.assertIn('<div class="map-zoom" hidden>', html)
+        for label in ('aria-label="Zoom in"', 'aria-label="Zoom out"',
+                      'aria-label="Reset zoom to the whole world"'):
+            self.assertIn(label, html)
+        self.assertIn('aria-live="polite" data-map-status', html)
+        self.assertIn('<div class="map-viewport" aria-hidden="true">', html)
