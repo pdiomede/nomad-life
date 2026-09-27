@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.3**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.4**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -22,7 +22,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Admin page for the operator: accounts, storage, per account quotas, disable or delete accounts.
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
 - Plans: Free, Pro ($4 a month or $40 a year) and Nomad+ ($9 a month or $90 a year), each with its own storage and receipt limits. The menu under your email in the header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
-- A world map under the movements with a pin for each country of the year (the base in its own color); hovering or focusing a pin shows the flag, country and cities.
+- A world map under the movements with a pin for each country of the year (the base in its own color) showing its number of days; hovering or focusing a pin shows the flag, country, cities and days.
 - Days per country for the year, with a 183 day indicator. Days without a stay count toward the base country once they have passed; logged stays count in full, also future ones.
 - Light and dark mode, inspired by the Aave color palette.
 - Everything stored locally: SQLite database in `data/`, files in `uploads/`.
