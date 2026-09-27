@@ -28,6 +28,8 @@ class AppTestCase(unittest.TestCase):
             # Admin page tests of other features skip the two-factor requirement; the tests in
             # test_security_129.py turn it back on.
             "ADMIN_REQUIRE_2FA": False,
+            # Tests never call Have I Been Pwned; test_security_1210.py checks it with a fake.
+            "PWNED_CHECK": False,
         })
         self.client = self.app.test_client()
         self.outbox = []

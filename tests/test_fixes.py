@@ -147,8 +147,8 @@ class FileTests(AppTestCase):
         self.app.config["USER_QUOTA_BYTES"] = 30 * appmod.MB
         self.app.config["MAX_RECEIPT_BYTES"] = 20 * appmod.MB
         self.app.config["MAX_CONTENT_LENGTH"] = 21 * appmod.MB  # set from the limit at startup
-        self.upload("/year/2026/base", "a.pdf", b"%PDF" + b"x" * (15 * appmod.MB))
-        self.upload("/year/2026/base", "b.pdf", b"%PDF" + b"x" * (15 * appmod.MB - 45000))
+        self.upload("/year/2026/base", "a.pdf", b"%PDF-" + b"x" * (-1 + 15 * appmod.MB))
+        self.upload("/year/2026/base", "b.pdf", b"%PDF-" + b"x" * (-1 + 15 * appmod.MB - 45000))
         html = self.client.get("/year/2026").data.decode()
         self.assertIn("29.9 MB used of 30 MB", html)
 

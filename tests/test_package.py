@@ -27,8 +27,8 @@ class PackageContentsTests(AppTestCase):
         self.m2 = self.add_movement(2026, "Singapore", "SG", "2026-02-10", "2026-02-15")
         self.m3 = self.add_movement(2026, "Tokyo", "Japan", "2026-05-10", "2026-06-05")
         self.m4 = self.add_movement(2026, "Seoul", "south korea", "2026-06-05", "2026-06-12")
-        self.lease = os.urandom(3000)
-        self.ticket = os.urandom(5000)
+        self.lease = b"%PDF-1.7\n" + os.urandom(3000)
+        self.ticket = b"%PDF-1.7\n" + os.urandom(5000)
         self.upload("/year/2026/base", "Lease 2026.pdf", self.lease, "rental_contract")
         self.upload(f"/movements/{self.m1}", "Flight to Bali.pdf", self.ticket, "flight")
 
@@ -105,9 +105,9 @@ class PackageContentsTests(AppTestCase):
             self.assertEqual(manifest[name]["sha256"], hashlib.sha256(zf.read(name)).hexdigest())
 
     def test_receipts_grouped_by_stay(self):
-        self.upload(f"/movements/{self.m3}", "Tokyo hotel.pdf", b"%PDF a", "accommodation")
-        self.upload(f"/movements/{self.m1}", "Bali villa.pdf", b"%PDF b", "accommodation")
-        self.upload(f"/movements/{self.m3}", "Tokyo train.pdf", b"%PDF c", "other")
+        self.upload(f"/movements/{self.m3}", "Tokyo hotel.pdf", b"%PDF-a", "accommodation")
+        self.upload(f"/movements/{self.m1}", "Bali villa.pdf", b"%PDF-b", "accommodation")
+        self.upload(f"/movements/{self.m3}", "Tokyo train.pdf", b"%PDF-c", "other")
         _, zf = self.package(2026)
         folders = [r["path"].split("/")[2] for r in self.read_csv(zf, "manifest.csv")
                    if "/receipts/" in r["path"]]
@@ -231,7 +231,7 @@ class PackageSafetyTests(AppTestCase):
         movement = self.add_movement(2026, "Llanfairpwllgwyngyllgogerychwyrndrobwllllantysiliogogogoch",
                                      "South Georgia and the South Sandwich Islands", "2026-08-01", "2026-08-05")
         self.insert_document(self.year, "Booking confirmation for the guesthouse near the old "
-                             "train station and the harbour.pdf", b"%PDF x", movement_id=movement,
+                             "train station and the harbour.pdf", b"%PDF-x", movement_id=movement,
                              kind="accommodation")
         _, zf = self.package(2026)
         self.assertLessEqual(max(len(n) for n in zf.namelist()), 180)
@@ -240,7 +240,7 @@ class PackageSafetyTests(AppTestCase):
         # Entries written with a data descriptor must be deflated, or streaming readers such as
         # Java's ZipInputStream stop with "only DEFLATED entries can have EXT descriptor".
         self.insert_document(self.year, "photo.jpg", os.urandom(2048), movement_id=self.m1, ext="jpg")
-        self.insert_document(self.year, "scan.pdf", b"%PDF " + os.urandom(2048), movement_id=self.m1)
+        self.insert_document(self.year, "scan.pdf", b"%PDF-" + os.urandom(2048), movement_id=self.m1)
         _, zf = self.package(2026)
         for info in zf.infolist():
             if info.flag_bits & 0x08:

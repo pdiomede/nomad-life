@@ -92,6 +92,16 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(created_at);
 
+-- One row per signed in browser. Sign out deletes its row, so a copied session or remember
+-- cookie stops working at once. Rows unused for a while are pruned.
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
+
 CREATE INDEX IF NOT EXISTS idx_movements_year ON movements(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_year ON documents(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_movement ON documents(movement_id);

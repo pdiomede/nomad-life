@@ -119,7 +119,8 @@
     <form method="post" class="stack">
       {{ ui.csrf() }}
       <input type="hidden" name="action" value="sessions">
-      <p class="muted small">Signed in on a computer you no longer use, or think someone copied your session? Sign out every other browser and device. You stay signed in here.</p>
+      <p class="small">You are signed in on {{ devices }} browser{{ '' if devices == 1 else 's' }} or device{{ '' if devices == 1 else 's' }}, this one included.</p>
+      <p class="muted small">Signed in on a computer you no longer use, or think someone copied your session? Sign out every other browser and device. You stay signed in here. "Sign out" in the menu always ends the session of that browser for good.</p>
       <div><button class="btn btn-ghost" type="submit">Sign out everywhere else</button></div>
     </form>
   </section>

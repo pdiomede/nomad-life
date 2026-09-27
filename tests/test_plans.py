@@ -76,7 +76,7 @@ class PlanTests(AppTestCase):
 
     def test_quota_follows_the_plan(self):
         self.app.config["USER_QUOTA_BYTES"] = 1 * MB
-        body = b"%PDF" + b"x" * (2 * MB)
+        body = b"%PDF-" + b"x" * (-1 + 2 * MB)
         self.upload("/year/2026/base", "big.pdf", body)
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT count(*) FROM documents").fetchone()[0], 0)
@@ -86,7 +86,7 @@ class PlanTests(AppTestCase):
             self.assertEqual(conn.execute("SELECT count(*) FROM documents").fetchone()[0], 1)
 
     def test_receipt_limit_follows_the_plan(self):
-        body = b"%PDF" + b"x" * (MB * 21 // 2)  # 10.5 MB: over the Free limit, under its cap
+        body = b"%PDF-" + b"x" * (-1 + MB * 21 // 2)  # 10.5 MB: over the Free limit, under its cap
         self.upload("/year/2026/base", "big.pdf", body)
         html = self.page("/year/2026/base")
         self.assertIn("larger than the 10 MB limit per receipt", html)
@@ -142,7 +142,7 @@ class PlanBugTests(AppTestCase):
 
     def test_oversized_request_is_refused_before_reading_on_free(self):
         # The global cap fits the largest plan; a Free user's request keeps the Free cap.
-        resp = self.upload("/year/2026/base", "big.pdf", b"%PDF" + b"x" * (15 * MB))
+        resp = self.upload("/year/2026/base", "big.pdf", b"%PDF-" + b"x" * (-1 + 15 * MB))
         self.assertEqual(resp.status_code, 302)
         html = self.client.get(resp.headers["Location"], follow_redirects=True).get_data(as_text=True)
         self.assertIn("This form was too large to save. Receipts can be at most 10 MB each.", html)

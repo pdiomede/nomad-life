@@ -10,6 +10,7 @@ import secrets
 import struct
 import threading
 import time
+import urllib.request
 from urllib.parse import quote, urlencode
 import uuid
 from collections import OrderedDict
@@ -131,6 +132,24 @@ ADMIN_AUDIT_ROWS = 100
 # either way, and this long to type the code after the password.
 TOTP_STEP_SECONDS = 30
 TOTP_PENDING_SECONDS = 300
+# A signed in browser not seen for this long is forgotten (the cookies last 30 days).
+SESSION_IDLE_DAYS = 31
+# Passwords are checked against Have I Been Pwned's list of breached passwords. Only the
+# first 5 characters of the password's SHA-1 leave the server (k-anonymity), and the check is
+# skipped when the service does not answer in time.
+PWNED_URL = "https://api.pwnedpasswords.com/range/"
+PWNED_TIMEOUT_SECONDS = 3
+# First bytes of each allowed receipt type, so a renamed file (an HTML page saved as .pdf,
+# say) is refused. PDFs may start with a little junk before %PDF (allowed by the format).
+FILE_SIGNATURES = {
+    "png": lambda h: h.startswith(b"\x89PNG\r\n\x1a\n"),
+    "jpg": lambda h: h.startswith(b"\xff\xd8\xff"),
+    "jpeg": lambda h: h.startswith(b"\xff\xd8\xff"),
+    "webp": lambda h: h[:4] == b"RIFF" and h[8:12] == b"WEBP",
+    "heic": lambda h: h[4:8] == b"ftyp" and h[8:12] in (b"heic", b"heix", b"hevc", b"hevx",
+                                                        b"heim", b"heis", b"mif1", b"msf1"),
+    "pdf": lambda h: b"%PDF-" in h[:1024],
+}
 # Content-Security-Policy of every HTML page. Scripts only from static/js (no inline scripts or
 # on* attributes anywhere); inline style attributes stay allowed for the meters and map pins.
 CSP = ("default-src 'self'; script-src 'self'; "
@@ -177,8 +196,9 @@ def password_fingerprint(password_hash):
 
 
 class User(UserMixin):
-    def __init__(self, row):
+    def __init__(self, row, sid=None):
         self.id = row["id"]
+        self.sid = sid  # the user_sessions row of this browser
         self.email = row["email"]
         self.fingerprint = password_fingerprint(row["password_hash"])
         self.version = row["session_version"] if "session_version" in row.keys() else 0
@@ -194,7 +214,8 @@ class User(UserMixin):
         # version (only added once raised, so older sessions keep working) does the same when
         # an account is disabled.
         base = f"{self.id}:{self.fingerprint}"
-        return f"{base}:{self.version}" if self.version else base
+        base = f"{base}:{self.version}" if self.version else base
+        return f"{base}/{self.sid}" if self.sid else base
 
 
 def load_or_create_secret(path):
@@ -303,6 +324,9 @@ def create_app(overrides=None):
         REMEMBER_COOKIE_DURATION=timedelta(days=30),
         # The admin page needs two-factor sign in (tests of other features turn this off).
         ADMIN_REQUIRE_2FA=True,
+        # Refuse passwords found in data breaches (Have I Been Pwned). Set PWNED_CHECK=0 in
+        # config.env on a server that cannot reach api.pwnedpasswords.com.
+        PWNED_CHECK=os.getenv("PWNED_CHECK", "1").strip().lower() not in ("0", "false", "no", "off"),
         PERMANENT_SESSION_LIFETIME=timedelta(days=30),
         # Form tokens stay valid as long as the session, instead of expiring after an hour
         # (which made "Sign out" on a page left open fail while the user stayed signed in).
@@ -351,6 +375,7 @@ def create_app(overrides=None):
 
     @login_manager.user_loader
     def load_user(session_id):
+        session_id, _, sid = session_id.partition("/")
         uid, _, rest = session_id.partition(":")
         fingerprint, _, version = rest.partition(":")
         row = db.query("SELECT * FROM users WHERE id = ? AND verified_at IS NOT NULL", (uid,),
@@ -361,7 +386,16 @@ def create_app(overrides=None):
             return None
         if row["disabled"]:  # disabling an account ends its open sessions too
             return None
-        return User(row)
+        if sid:
+            # Signed out (here or with "Sign out everywhere else") or unused for too long.
+            if not db.query("SELECT 1 FROM user_sessions WHERE id = ? AND user_id = ?",
+                            (sid, row["id"]), one=True):
+                return None
+            db.execute("UPDATE user_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ? "
+                       "AND last_seen_at < datetime('now', '-1 hour')", (sid,))
+        # Sessions from before 1.2.10 carry no sid; they end with the password or a
+        # "Sign out everywhere else", as they always did.
+        return User(row, sid or None)
 
     # Unconfirmed accounts are removed once their time is up. The auth pages purge on every
     # request, so a late link or sign in never sees them; this hook cleans up in between.
@@ -384,6 +418,8 @@ def create_app(overrides=None):
             purge_unverified()
             db.execute("DELETE FROM audit_log WHERE created_at < datetime('now', ?)",
                        (f"-{AUDIT_DAYS} days",))
+            db.execute("DELETE FROM user_sessions WHERE last_seen_at < datetime('now', ?)",
+                       (f"-{SESSION_IDLE_DAYS} days",))
 
     @app.after_request
     def security_headers(resp):
@@ -438,7 +474,7 @@ def create_app(overrides=None):
     def csrf_error(_e):
         if request.endpoint == "logout":
             # Never leave someone signed in because the page they signed out from was stale.
-            logout_user()
+            sign_out()
             flash("You have been signed out.", "info")
             return redirect(url_for("login"))
         flash("Your session expired. Please try again.", "error")
@@ -636,6 +672,90 @@ def totp_qr(secret, email):
     """The setup QR code as a data URI (no inline SVG, so no markup built from user data)."""
     return segno.make(totp_uri(secret, email), error="m").svg_data_uri(
         scale=5, border=4, dark="#000000", light="#ffffff")
+
+
+# ---------- sessions and passwords ----------
+
+def sign_in_user(row, remember, keep_current=False):
+    """Sign this browser in with its own user_sessions row. keep_current reuses the row of the
+    current session (the password changed here, so only the other browsers must go)."""
+    sid = current_user.sid if keep_current and current_user.is_authenticated else None
+    if not sid:
+        sid = secrets.token_urlsafe(24)
+        db.execute("INSERT INTO user_sessions (id, user_id) VALUES (?, ?)", (sid, row["id"]))
+    login_user(User(row, sid), remember=remember)
+    return sid
+
+
+def end_other_sessions(user_id, keep_sid):
+    db.execute("DELETE FROM user_sessions WHERE user_id = ? AND id != ?", (user_id, keep_sid or ""))
+
+
+def stay_signed_in_here(user_id):
+    """After a change that ends the other sessions (new password, new session version): keep
+    this browser signed in, with the same session row, and forget every other one."""
+    remember = current_app.config["REMEMBER_COOKIE_NAME"] in request.cookies
+    row = db.query("SELECT * FROM users WHERE id = ?", (user_id,), one=True)
+    end_other_sessions(user_id, sign_in_user(row, remember, keep_current=True))
+
+
+def sign_out():
+    """End this browser's session for good (a copy of its cookies stops working too)."""
+    if current_user.is_authenticated and current_user.sid:
+        db.execute("DELETE FROM user_sessions WHERE id = ?", (current_user.sid,))
+    logout_user()
+
+
+def breach_count(password):
+    """How often the password appears in known data breaches, or 0 when it does not, when the
+    check is turned off, or when the service cannot be reached (sign up never waits on it)."""
+    if not current_app.config.get("PWNED_CHECK") or not password:
+        return 0
+    digest = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
+    req = urllib.request.Request(PWNED_URL + digest[:5],
+                                 headers={"Add-Padding": "true", "User-Agent": "Nomad-Life"})
+    try:
+        with urllib.request.urlopen(req, timeout=PWNED_TIMEOUT_SECONDS) as resp:
+            body = resp.read(4 * MB).decode("ascii", "replace")
+    except Exception as exc:  # noqa: BLE001 - offline, slow or changed service: do not block
+        current_app.logger.warning("Breached password check skipped: %s", exc)
+        return 0
+    for line in body.splitlines():
+        suffix, _, count = line.strip().partition(":")
+        if suffix == digest[5:]:
+            try:
+                return int(count)
+            except ValueError:
+                return 0
+    return 0
+
+
+def password_problem(password, confirm, breaches=True):
+    """The error for a new password, or None. breaches=False skips the (network) breach
+    check, for callers that run it after their rate limit."""
+    if len(password) < 8:
+        return "Password must be at least 8 characters."
+    if password != confirm:
+        return "Passwords do not match."
+    found = breach_count(password) if breaches else 0
+    if found:
+        return (f"This password appears {found:,} times in known data breaches, so attackers "
+                "try it early. Please choose another one.")
+    return None
+
+
+def content_problem(file, ext, name):
+    """None when the file starts like a real file of its extension."""
+    stream = file.stream
+    pos = stream.tell()
+    stream.seek(0)
+    head = stream.read(1024)
+    stream.seek(pos)
+    check = FILE_SIGNATURES.get(ext)
+    if check and not check(head):
+        return (f"{name} is not a real {ext.upper()} file (its content does not match its name). "
+                "Please upload the original file.")
+    return None
 
 
 # ---------- security history and alerts ----------
@@ -1004,6 +1124,9 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
     quota = user_quota(current_user.id)
     if size == 0:
         return "The file is empty. Please choose another file."
+    problem = content_problem(file, ext, name)
+    if problem:
+        return problem
     if size > limit:
         return (f"{name} is {format_size(size, 'up')}, larger than the "
                 f"{format_size(limit, 'down')} limit per receipt.")
@@ -1412,15 +1535,18 @@ def register_routes(app):
             confirm = request.form.get("confirm", "")
             if not valid_email(email):
                 flash("Please enter a valid email address.", "error")
-            elif len(password) < 8:
-                flash("Password must be at least 8 characters.", "error")
-            elif password != confirm:
-                flash("Passwords do not match.", "error")
+            elif problem := password_problem(password, confirm, breaches=False):
+                flash(problem, "error")
             else:
                 wait, scope, _attempt = take_attempt("signup")
                 if wait:
                     flash(too_many_message(wait, scope, "sign ups"), "error")
                     return render_template("auth/signup.html"), 429
+                # Checked for every address, known or not, so the answer reveals nothing.
+                problem = password_problem(password, confirm)
+                if problem:
+                    flash(problem, "error")
+                    return render_template("auth/signup.html")
                 # The same answer whether or not the address has an account, so sign up cannot
                 # be used to find out who uses Nomad Life. The mailbox learns the rest.
                 sent = (f"We sent an email to {email}. Open the link in it within "
@@ -1579,7 +1705,7 @@ def register_routes(app):
 
     def finish_sign_in(row, remember, next_url, detail=""):
         db.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?", (row["id"],))
-        login_user(User(row), remember=remember)
+        sign_in_user(row, remember)
         audit("sign_in", row["id"], row["email"], detail)
         return remember_device(redirect(next_url), row["email"])
 
@@ -1618,7 +1744,7 @@ def register_routes(app):
 
     @app.route("/logout", methods=["POST"])
     def logout():
-        logout_user()
+        sign_out()
         flash("You have been signed out.", "info")
         return redirect(url_for("login"))
 
@@ -1664,10 +1790,9 @@ def register_routes(app):
             return redirect(url_for("login"))
         if request.method == "POST":
             password = request.form.get("password", "")
-            if len(password) < 8:
-                flash("Password must be at least 8 characters.", "error")
-            elif password != request.form.get("confirm", ""):
-                flash("Passwords do not match.", "error")
+            problem = password_problem(password, request.form.get("confirm", ""))
+            if problem:
+                flash(problem, "error")
             else:
                 # The link came by email, so it also confirms an account still waiting for it.
                 db.execute("UPDATE users SET password_hash = ?, verified_at = COALESCE(verified_at, "
@@ -1676,6 +1801,8 @@ def register_routes(app):
                 # Proving the mailbox ends a lock from wrong guesses (by anyone) on this account.
                 db.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key = ?",
                            (f"email:{row['email']}",))
+                # The new password already ends every session; forget their rows too.
+                db.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
                 audit("password_reset", row["id"], row["email"])
                 security_alert(row["email"], "The password of your Nomad Life account was reset "
                                "with a link sent to this address.")
@@ -1932,9 +2059,7 @@ def register_routes(app):
             if action == "sessions":  # ending other sessions only takes access away
                 db.execute("UPDATE users SET session_version = session_version + 1 WHERE id = ?",
                            (row["id"],))
-                remember = app.config["REMEMBER_COOKIE_NAME"] in request.cookies
-                login_user(User(db.query("SELECT * FROM users WHERE id = ?", (row["id"],),
-                                         one=True)), remember=remember)
+                stay_signed_in_here(row["id"])
                 audit("sessions_revoked", row["id"], row["email"])
                 flash("Every other browser and device has been signed out.", "success")
                 return redirect(url_for("account"))
@@ -1943,20 +2068,19 @@ def register_routes(app):
                 password = request.form.get("password", "")
                 if err:
                     flash(err, "error")
-                elif len(password) < 8:
-                    flash("Password must be at least 8 characters.", "error")
-                elif password != request.form.get("confirm", ""):
-                    flash("Passwords do not match.", "error")
+                elif problem := password_problem(password, request.form.get("confirm", ""),
+                                                 breaches=False):
+                    flash(problem, "error")
                 elif password_matches(row["password_hash"], password):
                     flash("The new password is the same as the current one.", "error")
+                elif problem := password_problem(password, request.form.get("confirm", "")):
+                    flash(problem, "error")
                 else:
                     db.execute("UPDATE users SET password_hash = ? WHERE id = ?",
                                (hash_password(password), row["id"]))
                     # The new password changes the session fingerprint: stay signed in here,
                     # every other browser and remember cookie is signed out.
-                    remember = app.config["REMEMBER_COOKIE_NAME"] in request.cookies
-                    login_user(User(db.query("SELECT * FROM users WHERE id = ?", (row["id"],),
-                                             one=True)), remember=remember)
+                    stay_signed_in_here(row["id"])
                     audit("password_changed", row["id"], row["email"])
                     security_alert(row["email"], "The password of your Nomad Life account was "
                                    "changed.")
@@ -2015,9 +2139,7 @@ def register_routes(app):
                                "session_version = session_version + 1 WHERE id = ?",
                                (secret, step, row["id"]))
                     session.pop("totp_setup", None)
-                    remember = app.config["REMEMBER_COOKIE_NAME"] in request.cookies
-                    login_user(User(db.query("SELECT * FROM users WHERE id = ?", (row["id"],),
-                                             one=True)), remember=remember)
+                    stay_signed_in_here(row["id"])
                     audit("2fa_enabled", row["id"], row["email"])
                     security_alert(row["email"], "Two-factor sign in was turned on for your "
                                    "Nomad Life account.")
@@ -2068,8 +2190,10 @@ def register_routes(app):
                     "qr": totp_qr(session["totp_setup"], row["email"])}
         activity = audit_rows(db.query(
             "SELECT * FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 10", (row["id"],)))
+        devices = db.query("SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = ?",
+                           (row["id"],), one=True)["n"]
         return render_template("account.html", row=row, counts=counts, account_storage=storage,
-                               totp=totp, activity=activity)
+                               totp=totp, activity=activity, devices=max(devices, 1))
 
     @app.route("/account/email/<token>")
     def confirm_email(token):

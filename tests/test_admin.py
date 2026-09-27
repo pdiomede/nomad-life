@@ -55,7 +55,7 @@ class AdminTests(AppTestCase):
         html = self.act("quota", quota_mb="1").data.decode()
         self.assertIn("Storage quota for user@example.com set to 1 MB.", html)
         resp = self.user.post("/year/2026/base", data={"action": "upload", "kind": "other",
-                              "file": (io.BytesIO(b"%PDF" + b"x" * (2 * appmod.MB)), "big.pdf")},
+                              "file": (io.BytesIO(b"%PDF-" + b"x" * (-1 + 2 * appmod.MB)), "big.pdf")},
                               content_type="multipart/form-data", follow_redirects=True)
         self.assertIn(b"Not enough storage left", resp.data)
         self.assertIn(b"of 1 MB", self.user.get("/year/2026").data)
