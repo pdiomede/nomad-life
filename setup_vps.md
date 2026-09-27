@@ -98,7 +98,7 @@ Group=nomadlife
 WorkingDirectory=/srv/nomad-life/app
 UMask=0077
 ExecStart=/srv/nomad-life/app/.venv/bin/gunicorn --preload --workers 3 --threads 4 \
-          --bind 127.0.0.1:5050 --timeout 120 --access-logfile - app:app
+          --bind 127.0.0.1:5050 --timeout 120 --no-control-socket --access-logfile - app:app
 Restart=on-failure
 RestartSec=3
 # Hardening: the app only writes to its data and uploads folders.
@@ -121,6 +121,7 @@ curl -I http://127.0.0.1:5050/       # HTTP/1.1 200 OK
 
 - `--preload` creates the app once before the workers start, so the database is migrated and the secret key created only once.
 - `--timeout 120` leaves time to build the accountant package of a busy year.
+- `--no-control-socket` turns off the `gunicornc` control socket (gunicorn 25.1 and newer). It would be created in the service user's home folder, which the hardening below makes read-only or hidden, so without the flag the log shows `Control server error: Permission denied`. systemd already restarts and stops the app.
 - `UMask=0077` keeps the database and receipts readable by `nomadlife` only (like `umask 077` in `runWebApp.sh`).
 - Workers: about 2 x CPU cores + 1. Resizing a big photo can briefly use up to about 200 MB, and each worker resizes one photo at a time, so 3 workers need up to about 600 MB on top of the app itself: take 2 GB of RAM, or use `--workers 2` on a 1 GB server.
 

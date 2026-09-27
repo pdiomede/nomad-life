@@ -1,4 +1,5 @@
 config.env
+all-sites*.conf
 data/
 uploads/
 .venv/
