@@ -12,6 +12,10 @@ All notable changes to this project are documented in this file.
 - The landing page has a Plans section with every plan, its price and features, and a "Pricing" button at the top Prices are in US dollars, and each paid plan says "Everything in <previous plan>, plus:" and highlights what it adds.
 - The admin page shows each account's plan and can change it with a plan selector that shows each plan's monthly and yearly price. Admins can also change the monthly and yearly price of Pro and Nomad+ ("Plans and prices"); the landing page, the plan page, the saving badge and the search engine data follow at once. An account without a custom quota gets the quota of its plan.
 
+### Changed
+
+- The right column of the dashboard shows Days per country first, then Receipt storage, then the Accountant package.
+
 ### Removed
 
 - `PROMPT.md`, the bug hunt prompt, is no longer part of the project.
