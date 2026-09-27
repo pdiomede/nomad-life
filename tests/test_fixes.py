@@ -153,6 +153,7 @@ class FileTests(AppTestCase):
         self.assertIn("29.9 MB used of 30 MB", html)
 
     def test_package_with_very_long_names_downloads(self):
+        self.set_plan("pro")
         self.add_movement(2026, "Lorem ipsum " * 200, "Dolor sit amet " * 200,
                           "2026-03-01", "2026-03-03")
         resp, zf = self.package(2026)

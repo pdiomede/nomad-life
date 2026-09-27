@@ -20,6 +20,7 @@ class PackageContentsTests(AppTestCase):
     def setUp(self):
         super().setUp()
         self.signup()
+        self.set_plan("pro")  # the package is a Pro feature
         self.year = self.new_year(2026)
         # Nested side trip (Singapore inside Canggu) and a shared travel day (Tokyo -> Seoul).
         self.m1 = self.add_movement(2026, "Canggu", "Indonesia", "2026-02-01", "2026-03-31", "coworking")
@@ -187,6 +188,7 @@ class PackageSafetyTests(AppTestCase):
     def setUp(self):
         super().setUp()
         self.signup()
+        self.set_plan("pro")  # the package is a Pro feature
         self.year = self.new_year(2026)
         self.m1 = self.add_movement(2026, "Tokyo", "Japan", "2026-05-10", "2026-06-05")
 
@@ -273,11 +275,13 @@ class PackageAccessTests(AppTestCase):
     def setUp(self):
         super().setUp()
         self.signup()
+        self.set_plan("pro")  # the package is a Pro feature
         self.new_year(2026)
 
     def test_other_user_gets_404(self):
         other = self.app.test_client()
         self.signup("b@example.com", client=other)
+        self.set_plan("pro")
         self.assertEqual(other.get("/year/2026/package").status_code, 404)
 
     def test_anonymous_redirects_to_sign_in(self):
@@ -288,7 +292,7 @@ class PackageAccessTests(AppTestCase):
     def test_permission_hook(self):
         with mock.patch.object(appmod, "can_download_package", return_value=False):
             resp = self.client.get("/year/2026/package", follow_redirects=True)
-        self.assertIn(b"not available on your plan", resp.data)
+        self.assertIn(b"available from the Pro plan", resp.data)
         self.assertNotEqual(resp.mimetype, "application/zip")
 
 
@@ -296,6 +300,7 @@ class PackageSummaryTests(AppTestCase):
     def setUp(self):
         super().setUp()
         self.signup()
+        self.set_plan("pro")  # the package is a Pro feature
 
     def summary(self, year):
         with self.app.test_request_context():
@@ -347,6 +352,7 @@ class PackageSummaryTests(AppTestCase):
 class PackageMemoryTests(AppTestCase):
     def test_streaming_keeps_memory_bounded(self):
         self.signup()
+        self.set_plan("pro")  # the package is a Pro feature
         year = self.new_year(2026)
         movement = self.add_movement(2026, "Canggu", "Indonesia", "2026-02-01", "2026-03-31")
         for i in range(5):  # 50 MB of receipts

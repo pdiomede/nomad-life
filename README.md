@@ -15,13 +15,13 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - The movements list shows 10 per page, with numbered square page buttons and a choice of 10, 25 or 50 per page.
 - Searchable country picker with flags. Type a name, a common alternative (UK, USA, Holland) or a country code.
 - Edit or delete every entry: years, movements and documents. Deleting always asks twice.
-- Accountant package: one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.
+- Accountant package (Pro and Nomad+): one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.
 - Upload receipts per movement (hotel or home rent, flight tickets) and documents for the base (rental contract).
 - Account page: change your password or email, or delete your account with all its data.
 - Protection against password guessing: failed sign ins and reset requests are limited.
 - Admin page for the operator: accounts, storage, per account quotas, disable or delete accounts.
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
-- Plans: Free, Pro ($4 a month) and Nomad+ ($9 a month), each with its own storage and receipt limits. The menu under your email in the header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
+- Plans: Free, Pro ($4 a month or $40 a year) and Nomad+ ($9 a month or $90 a year), each with its own storage and receipt limits. The menu under your email in the header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
 - Days per country for the year, with a 183 day indicator. Days without a stay count toward the base country once they have passed; logged stays count in full, also future ones.
 - Light and dark mode, inspired by the Aave color palette.
 - Everything stored locally: SQLite database in `data/`, files in `uploads/`.
@@ -84,8 +84,8 @@ Admins cannot disable or delete their own account, and nobody can become an admi
 | Plan | Price | Receipt storage | Per receipt |
 | --- | --- | --- | --- |
 | Free | 0 | `USER_QUOTA_MB` (500 MB) | `MAX_RECEIPT_MB` (10 MB) |
-| Pro | $4 a month | 5 GB | 25 MB |
-| Nomad+ | $9 a month | 25 GB | 50 MB, plus priority support |
+| Pro | $4 a month ($40 a year) | 5 GB | 25 MB |
+| Nomad+ | $9 a month ($90 a year) | 25 GB | 50 MB, plus priority support |
 
 Paid plans never get less than Free, and a quota set on the admin page wins over the plan's. Plans are defined in `PLANS` in `app.py`. There is no payment yet, so an admin moves an account to another plan with the plan selector on the [admin page](#admin-page). Without an admin, change the database (`free`, `pro` or `plus`):
 
@@ -94,6 +94,8 @@ sqlite3 data/nomad.db "UPDATE users SET plan = 'pro' WHERE email = 'you@example.
 ```
 
 ## Accountant package
+
+Available on the Pro and Nomad+ plans.
 
 On each year's dashboard, "Download accountant package" builds one ZIP you can hand to your accountant:
 

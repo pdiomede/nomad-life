@@ -43,13 +43,13 @@ class PlanTests(AppTestCase):
     def test_plan_page_shows_current_and_next_tier(self):
         html = self.page("/plan")
         self.assertIn("Your plan", html)
-        self.assertIn("Upgrade to Pro, $4 / month", html)
+        self.assertIn("Upgrade to Pro, $4 / month ($40 / year)", html)
         self.assertIn("Online payment is coming soon.", html)
         self.assertIn("5 GB of receipt storage", html)
 
     def test_pro_sees_nomad_plus(self):
         self.set_plan("pro")
-        self.assertIn("Upgrade to Nomad+, $9 / month", self.page("/plan"))
+        self.assertIn("Upgrade to Nomad+, $9 / month ($90 / year)", self.page("/plan"))
 
     def test_top_plan(self):
         self.set_plan("plus")
@@ -247,3 +247,30 @@ class PlanFeatureTests(unittest.TestCase):
         self.assertIn("25 GB of receipt storage (5x Pro)", cards["Nomad+"])
         self.assertIn("Priority support", cards["Nomad+"])
         self.assertNotIn("Accountant package", cards["Nomad+"])
+        self.assertIn("Accountant package", cards["Pro"])
+        self.assertNotIn("Accountant package", cards["Free"])
+        self.assertIn("$40 / year", cards["Pro"])
+        self.assertIn("$90 / year", cards["Nomad+"])
+        self.assertNotIn("/ year", cards["Free"])
+
+
+class PackagePlanTests(AppTestCase):
+    def setUp(self):
+        super().setUp()
+        self.signup()
+        self.new_year(2026)
+
+    def test_free_cannot_download_the_package(self):
+        resp = self.client.get("/year/2026/package", follow_redirects=True)
+        self.assertNotEqual(resp.mimetype, "application/zip")
+        self.assertIn(b"available from the Pro plan", resp.data)
+        html = self.client.get("/year/2026").get_data(as_text=True)
+        self.assertNotIn('action="/year/2026/package"', html)
+        self.assertIn('href="/plan">Upgrade to Pro</a>', html)
+
+    def test_pro_and_nomad_plus_can(self):
+        for key in ("pro", "plus"):
+            self.set_plan(key)
+            self.assertEqual(self.client.get("/year/2026/package").mimetype, "application/zip")
+            self.assertIn('action="/year/2026/package"',
+                          self.client.get("/year/2026").get_data(as_text=True))

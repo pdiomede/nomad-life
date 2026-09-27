@@ -104,11 +104,16 @@
   <section class="card package-card" aria-labelledby="package-title">
     <div class="card-head"><h2 id="package-title">Accountant package</h2></div>
     <p class="muted small">One ZIP for {{ y.year }}: a PDF summary, your timeline and country totals as spreadsheets, and every receipt, ready to share with your accountant.</p>
+    {% if current_plan.package %}
     <form method="get" action="{{ url_for('year_package', year=y.year) }}" class="package-form" data-download>
       <label class="check"><input type="checkbox" name="notes" value="1"> Include my notes</label>
       <input type="hidden" name="dl" value="">
       <button class="btn btn-primary" type="submit">Download accountant package</button>
     </form>
+    {% else %}
+    <p class="small"><span class="tag">Pro</span> Available from the Pro plan.</p>
+    <a class="btn btn-primary" href="{{ url_for('plan') }}">Upgrade to Pro</a>
+    {% endif %}
   </section>
 
   <section class="card storage-card">

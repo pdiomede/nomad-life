@@ -64,16 +64,17 @@ RESIDENCE_THRESHOLD = 183
 # Plans, cheapest first. Free takes its limits from config.env (USER_QUOTA_MB, MAX_RECEIPT_MB);
 # a paid plan is never below Free. There is no payment yet: a plan changes in the database.
 PLANS = OrderedDict([
-    ("free", {"name": "Free", "price": 0, "quota_mb": None, "receipt_mb": None,
-              "extras": []}),
-    ("pro", {"name": "Pro", "price": 4, "quota_mb": 5 * 1024, "receipt_mb": 25,
-             "extras": []}),
-    ("plus", {"name": "Nomad+", "price": 9, "quota_mb": 25 * 1024, "receipt_mb": 50,
-              "extras": ["Priority support"]}),
+    # "year" is the price for a year paid at once (two months free); "package" is the
+    # accountant package, from Pro on.
+    ("free", {"name": "Free", "price": 0, "year": 0, "quota_mb": None, "receipt_mb": None,
+              "package": False, "extras": []}),
+    ("pro", {"name": "Pro", "price": 4, "year": 40, "quota_mb": 5 * 1024, "receipt_mb": 25,
+             "package": True, "extras": ["Accountant package (PDF, spreadsheets, receipts)"]}),
+    ("plus", {"name": "Nomad+", "price": 9, "year": 90, "quota_mb": 25 * 1024, "receipt_mb": 50,
+              "package": True, "extras": ["Priority support"]}),
 ])
 PLAN_CURRENCY, PLAN_SYMBOL = "USD", "$"
-PLAN_FEATURES = ["Unlimited years and stays", "Days per country with the 183 day line",
-                 "Accountant package (PDF, spreadsheets, receipts)"]
+PLAN_FEATURES = ["Unlimited years and stays", "Days per country with the 183 day line"]
 NOTES_MAX = 5000
 UPLOAD_GONE = "This stay or year no longer exists, so the file was not saved."
 MOVEMENTS_PER_PAGE = 10
@@ -660,7 +661,8 @@ def plan_catalog(config=None):
         if prev and quota // prev["quota_bytes"] >= 2:
             storage += f" ({quota // prev['quota_bytes']}x {prev['name']})"
         limits = [storage, f"Receipts up to {format_size(receipt, 'down')} each"]
-        plans.append({"key": key, "name": p["name"], "price": p["price"],
+        plans.append({"key": key, "name": p["name"], "price": p["price"], "year": p["year"],
+                      "package": p["package"],
                       "quota_bytes": quota, "receipt_bytes": receipt,
                       "includes": prev["name"] if prev else None,
                       "features": limits + p["extras"] if prev else limits + PLAN_FEATURES})
@@ -977,9 +979,8 @@ def back_to_movement(year_row, movement_id):
 
 
 def can_download_package(user):
-    """Who may download the annual accountant package. Everyone for now; a future Pro plan
-    only needs to change this function."""
-    return True
+    """Who may download the annual accountant package: plans from Pro on."""
+    return plan_named(user.plan)["package"]
 
 
 def build_package_data(year_row, include_notes):
@@ -1789,7 +1790,8 @@ def register_routes(app):
         never stored, so it does not count against the storage quota."""
         year_row = get_year_or_404(year)
         if not can_download_package(current_user):
-            flash("The accountant package is not available on your plan.", "error")
+            flash("The accountant package is available from the Pro plan. See Upgrade on "
+                  "your plan page.", "error")
             return redirect(url_for("dashboard", year=year))
         data = build_package_data(year_row, include_notes=request.args.get("notes") == "1")
         entries = package.prepare(data)

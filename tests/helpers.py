@@ -34,6 +34,13 @@ class AppTestCase(unittest.TestCase):
         self.outbox.append({"to": to, "subject": subject, "text": text, "html": html})
         return True
 
+    def set_plan(self, key, email=None):
+        with self.db() as conn:
+            if email:
+                conn.execute("UPDATE users SET plan = ? WHERE email = ?", (key, email))
+            else:
+                conn.execute("UPDATE users SET plan = ?", (key,))
+
     def age_emails(self, seconds=61):
         """Pretend the last emails went out long enough ago to send another one."""
         with self.db() as conn:
