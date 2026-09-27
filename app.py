@@ -27,9 +27,10 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
+from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -862,6 +863,33 @@ def country_flag(name):
     return flag_emoji(COUNTRY_CODES.get(normalize_country(name or "")))
 
 
+def map_pins(year_row, movements):
+    """Pins for the dashboard map: one per country (base first), with its cities. Places the
+    map cannot show (free text, or no point for the country) are returned apart."""
+    pins, missing = OrderedDict(), []
+    places = [(year_row["base_country"], year_row["base_city"], True)]
+    places += [(m["country"], m["city"], False) for m in movements]
+    for country, city, is_base in places:
+        name = normalize_country(country)
+        code = COUNTRY_CODES.get(name)
+        point = COUNTRY_POINTS.get(code)
+        if point is None:
+            if name not in missing:
+                missing.append(name)
+            continue
+        pin = pins.setdefault(code, {"country": name, "flag": flag_emoji(code), "cities": [],
+                                     "is_base": False, "left": point[0], "top": point[1]})
+        pin["is_base"] = pin["is_base"] or is_base
+        if city not in pin["cities"]:
+            pin["cities"].append(city)
+    for pin in pins.values():
+        # Keep the tooltip inside the map near its edges.
+        pin["side"] = "right" if pin["left"] < 18 else "left" if pin["left"] > 82 else ""
+        pin["below"] = pin["top"] < 22
+    # Stays on top of the base, so a trip is never hidden under the bigger base pin.
+    return sorted(pins.values(), key=lambda p: not p["is_base"]), missing
+
+
 def delete_confirmed():
     """Deletes must come from the two step confirmation dialog, which sets confirm_delete=2."""
     if request.form.get("confirm_delete") == "2":
@@ -1426,7 +1454,7 @@ def register_routes(app):
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
                                per_page_options=PER_PAGE_OPTIONS,
                                years=years, stats=compute_stats(year_row, movements),
-                               base_docs=base_docs,
+                               base_docs=base_docs, map=map_pins(year_row, movements),
                                today=date.today().isoformat())
 
     @app.route("/year/<int:year>/base", methods=["GET", "POST"])

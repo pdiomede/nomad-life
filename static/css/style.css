@@ -4,6 +4,9 @@
   --bg: #F1F1F3;
   --surface: #FFFFFF;
   --surface-2: #F7F7F9;
+  --map-land: #D5D8E1;
+  --map-pin: #1F8F99;
+  --map-pin-base: #B6509E;
   --text: #303549;
   --muted: #62677B;
   --border: #EAEBEF;
@@ -38,6 +41,9 @@
   --bg: #1B2030;
   --surface: #292E41;
   --surface-2: #2F3449;
+  --map-land: #3C4260;
+  --map-pin: #2EBAC6;
+  --map-pin-base: #E58FD1;
   --text: #F1F1F3;
   --muted: #A5A8B6;
   --border: #383D51;
@@ -65,6 +71,9 @@
     --bg: #1B2030;
     --surface: #292E41;
     --surface-2: #2F3449;
+    --map-land: #3C4260;
+    --map-pin: #2EBAC6;
+    --map-pin-base: #E58FD1;
     --text: #F1F1F3;
     --muted: #A5A8B6;
     --border: #383D51;
@@ -271,6 +280,46 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .empty-state { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 
 .side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.main-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.main-col > .card { margin-bottom: 0; min-width: 0; }
+
+/* Dashboard map: the land is world.svg used as a mask, so it takes the theme color. */
+.map { position: relative; aspect-ratio: 1000 / 394.4; margin-top: 4px; }
+.map-land {
+  position: absolute; inset: 0; background: var(--map-land);
+  -webkit-mask: var(--map-image) center / 100% 100% no-repeat; mask: var(--map-image) center / 100% 100% no-repeat;
+}
+.map-pin {
+  position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; padding: 0; border-radius: 50%;
+  background: var(--map-pin); border: 2px solid var(--surface); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); cursor: pointer;
+}
+.map-pin-base { width: 18px; height: 18px; margin: -9px 0 0 -9px; background: var(--map-pin-base); }
+.map-pin:hover, .map-pin:focus-visible { z-index: 3; }
+.map-pin:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.map-tip {
+  position: absolute; left: 50%; bottom: calc(100% + 10px); transform: translateX(-50%); z-index: 4;
+  display: none; flex-direction: column; gap: 2px; min-width: 140px; max-width: 240px; padding: 8px 10px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); font-size: 13px; text-align: left; white-space: normal; pointer-events: none;
+}
+.map-tip::after {
+  content: ""; position: absolute; left: 50%; top: 100%; margin-left: -6px;
+  border: 6px solid transparent; border-top-color: var(--surface);
+}
+.map-pin:hover .map-tip, .map-pin:focus-visible .map-tip { display: flex; }
+.map-tip-country { font-weight: 700; overflow-wrap: anywhere; }
+.map-tip-cities { color: var(--muted); overflow-wrap: anywhere; }
+.tip-right .map-tip { left: -8px; transform: none; }
+.tip-right .map-tip::after { left: 14px; }
+.tip-left .map-tip { left: auto; right: -8px; transform: none; }
+.tip-left .map-tip::after { left: auto; right: 8px; }
+.tip-below .map-tip { bottom: auto; top: calc(100% + 10px); }
+.tip-below .map-tip::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--surface); }
+.map-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 12px; }
+.map-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.map-credit { margin-left: auto; }
+.map-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--map-pin); }
+.map-dot-base { background: var(--map-pin-base); }
 .storage-card { display: flex; flex-direction: column; gap: 8px; }
 .storage-card .card-head { margin-bottom: 0; }
 .upload .full { flex-basis: 100%; }

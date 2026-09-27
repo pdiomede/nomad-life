@@ -51,6 +51,7 @@
 </section>
 
 <div class="grid-main">
+  <div class="main-col">
   <section class="card" id="movements" aria-labelledby="movements-title">
     <div class="card-head">
       <h2 id="movements-title">Movements</h2>
@@ -99,6 +100,34 @@
       </div>
     {% endif %}
   </section>
+
+  {% set pins, off_map = map %}
+  <section class="card map-card" aria-labelledby="map-title">
+    <div class="card-head">
+      <h2 id="map-title">Map</h2>
+      <span class="muted small">Your base and stays in {{ y.year }}</span>
+    </div>
+    <div class="map" role="group" aria-label="World map of your base and stays in {{ y.year }}">
+      <div class="map-land" aria-hidden="true" style="--map-image: url('{{ url_for('static', filename='img/world.svg', v=asset_version) }}')"></div>
+      {% for p in pins %}
+      <button type="button" class="map-pin{% if p.is_base %} map-pin-base{% endif %}{% if p.side %} tip-{{ p.side }}{% endif %}{% if p.below %} tip-below{% endif %}"
+              style="left: {{ p.left }}%; top: {{ p.top }}%"
+              aria-label="{{ p.country }}{% if p.is_base %} (base){% endif %}: {{ p.cities | join(', ') }}">
+        <span class="map-tip" aria-hidden="true">
+          <span class="map-tip-country">{% if p.flag %}<span class="flag">{{ p.flag }}</span> {% endif %}{{ p.country }}{% if p.is_base %} <span class="tag">Base</span>{% endif %}</span>
+          <span class="map-tip-cities">{{ p.cities | join(', ') }}</span>
+        </span>
+      </button>
+      {% endfor %}
+    </div>
+    <div class="map-legend small muted">
+      <span><i class="map-dot map-dot-base" aria-hidden="true"></i> Base</span>
+      <span><i class="map-dot" aria-hidden="true"></i> Stays</span>
+      <span class="map-credit">Map data: Natural Earth</span>
+    </div>
+    {% if off_map %}<p class="muted small">Not on the map: {{ off_map | join(', ') }}.</p>{% endif %}
+  </section>
+  </div>
 
   <div class="side">
   <section class="card">
