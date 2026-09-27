@@ -37,7 +37,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.10"
+APP_VERSION = "1.2.11"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -108,7 +108,7 @@ PURGE_EVERY_SECONDS = 60
 # At most one email per account in this time, so sign up, sign in or "forgot password" cannot
 # be used to flood someone's inbox (and get the Gmail account blocked for spam).
 EMAIL_COOLDOWN_SECONDS = 60
-# Password guessing limits: failed sign ins (or wrong current passwords on the account page)
+# Password guessing limits: failed sign ins (or wrong current passwords on the Settings page)
 # within LIMIT_WINDOW_MINUTES, per account and per IP address, and password reset requests
 # per IP address.
 LIMIT_WINDOW_MINUTES = 15
@@ -130,7 +130,7 @@ PLACE_MAX = 100
 # First and last name on the Settings page, each.
 NAME_MAX = 60
 MOVEMENTS_MAX = 1000
-# Security history kept on the admin and account pages.
+# Security history kept on the admin and Settings pages.
 AUDIT_DAYS = 365
 ADMIN_AUDIT_ROWS = 100
 # Two-factor sign in (TOTP, RFC 6238): 6 digits every 30 seconds, one step of clock drift
@@ -184,9 +184,20 @@ def clean_place(value):
     return " ".join(value.split())
 
 
+# Characters that draw nothing although they count as letters, so a "name" made of them would
+# look empty. Zero width joiners (U+200C, U+200D) are kept: Persian, Sinhala and emoji need them.
+BLANK_LETTERS = {"\u115f", "\u1160", "\u3164", "\uffa0", "\u2800"}
+JOINERS = {"\u200c", "\u200d"}
+
+
 def clean_name(value):
-    """A first or last name as typed: like a place, invisible characters removed."""
-    return clean_place(value)
+    """A first or last name as typed: control and format characters removed (U+202E and the
+    like) except the joiners, blank letters removed, spaces collapsed. "" when nothing
+    visible is left."""
+    kept = "".join(ch for ch in value or "" if ch not in BLANK_LETTERS
+                   and (unicodedata.category(ch)[0] != "C" or ch.isspace() or ch in JOINERS))
+    name = " ".join(kept.split())
+    return name if any(not ch.isspace() and ch not in JOINERS for ch in name) else ""
 
 
 def full_name(row):
@@ -343,7 +354,7 @@ def create_app(overrides=None):
         SESSION_COOKIE_SAMESITE="Lax",
         REMEMBER_COOKIE_SAMESITE="Lax",
         # "Remember me" lasts a month instead of Flask-Login's year, so a copied cookie does
-        # not stay useful for long; "Sign out everywhere" on the account page ends it at once.
+        # not stay useful for long; "Sign out everywhere" on the Settings page ends it at once.
         REMEMBER_COOKIE_DURATION=timedelta(days=30),
         # The admin page needs two-factor sign in (tests of other features turn this off).
         ADMIN_REQUIRE_2FA=True,
@@ -537,11 +548,11 @@ def create_app(overrides=None):
                            "by the person who runs the server.",
                            advice=("This is usually because you lost the phone with your "
                                    "authenticator app: sign in with your password and turn "
-                                   "two-factor sign in on again on the account page. If you did "
+                                   "two-factor sign in on again on the Settings page. If you did "
                                    "not ask for this, reset your password now with the link "
                                    "below and contact the person who runs the server."))
         click.echo(f"Two-factor sign in removed from {email}. They can sign in with the "
-                   "password alone and turn it on again on the account page.")
+                   "password alone and turn it on again on the Settings page.")
 
     return app
 
@@ -821,7 +832,7 @@ AUDIT_LABELS = {
     "sign_in": "Signed in",
     "sign_in_failed": "Wrong password at sign in",
     "sign_in_code_failed": "Wrong two-factor code at sign in",
-    "code_failed": "Wrong two-factor code on the account page",
+    "code_failed": "Wrong two-factor code on the Settings page",
     "email_reverted": "Email change undone from the old address",
     "account_confirmed": "Account confirmed",
     "password_changed": "Password changed",
@@ -857,8 +868,7 @@ def audit_rows(rows):
     return [dict(r, label=AUDIT_LABELS.get(r["event"], r["event"])) for r in rows]
 
 
-def security_alert(email, what, account=None, link=None, advice=None, button=None,
-                   first_name=None):
+def security_alert(email, what, account=None, link=None, advice=None, button=None):
     """Tell the account's mailbox that something important changed, with a way to act if it
     was not them. Sent every time (no cooldown): each change needs the password or a link.
     By default the way out is a password reset; callers may give another link and wording."""
@@ -872,7 +882,9 @@ def security_alert(email, what, account=None, link=None, advice=None, button=Non
                                                "link below. Resetting signs out every browser "
                                                "and device."),
                              button=button or "Reset my password",
-                             **({} if first_name is None else {"first_name": first_name}))
+                             # Never text the account holder typed: whoever took over an
+                             # account could otherwise write "ignore this alert" into it.
+                             first_name="")
     if not ok:
         current_app.logger.error("Could not send the security alert to %s", email)
     return ok
@@ -2124,7 +2136,7 @@ def register_routes(app):
     # --- account ---
 
     def check_current_password(row):
-        """Wrong current passwords count as failed sign ins, so the account page cannot be
+        """Wrong current passwords count as failed sign ins, so the Settings page cannot be
         used to guess a password either. Returns an error message or None."""
         device = device_for(row["email"])
         wait, scope, attempt = take_attempt("fail", row["email"], device)
@@ -2164,7 +2176,7 @@ def register_routes(app):
                           "success")
                 else:
                     flash("Nothing changed.", "info")
-                return redirect(url_for("settings") + "#profile")
+                return redirect(url_for("settings"))  # no anchor: the message stays in view
             if action == "cancel_email":  # stopping a change never needs the password
                 if row["pending_email"]:
                     db.execute("UPDATE users SET pending_email = NULL WHERE id = ?", (row["id"],))
@@ -2226,8 +2238,10 @@ def register_routes(app):
                     token = serializer("email-change").dumps(
                         {"uid": row["id"], "email": new, "old": row["email"],
                          "h": password_fingerprint(row["password_hash"])})
+                    # The new address can be anyone's until confirmed: no text typed by the
+                    # account holder goes to it.
                     if send_template_email(new, "Confirm your new Nomad Life email", "change_email",
-                                           first_name=row["first_name"],
+                                           first_name="",
                                            link=email_link("confirm_email", token=token),
                                            old_email=row["email"],
                                            hours=EMAIL_CHANGE_MAX_AGE // 3600):
@@ -2316,7 +2330,10 @@ def register_routes(app):
                     # Groups of 4, as authenticator apps show and accept a typed key.
                     "grouped": " ".join(secret[i:i + 4] for i in range(0, len(secret), 4))}
         activity = audit_rows(db.query(
-            "SELECT * FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 10", (row["id"],)))
+            # Name changes are not security events: they must not push a stranger's sign in
+            # off this short list.
+            "SELECT * FROM audit_log WHERE user_id = ? AND event != 'profile_changed' "
+            "ORDER BY id DESC LIMIT 10", (row["id"],)))
         devices = db.query("SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = ?",
                            (row["id"],), one=True)["n"]
         return render_template("settings.html", row=row, counts=counts, account_storage=storage,
@@ -2372,7 +2389,7 @@ def register_routes(app):
                                f"{EMAIL_REVERT_MAX_AGE // 86400} days: it puts this address "
                                "back, signs out every browser and device, and sends you a link "
                                "to choose a new password."),
-                       button="Undo this change", first_name=row["first_name"])
+                       button="Undo this change")
         if current_user.is_authenticated and current_user.id != row["id"]:
             flash(f"That link was for another account; its email address is now {new}.", "info")
             return redirect(url_for("settings"))
@@ -2428,7 +2445,7 @@ def register_routes(app):
         if app.config["ADMIN_REQUIRE_2FA"] and not db.query(
                 "SELECT totp_secret FROM users WHERE id = ?", (current_user.id,), one=True)[0]:
             flash("Turn on two-factor sign in to use the admin page.", "info")
-            abort(redirect(url_for("settings") + "#two-factor"))
+            abort(redirect(url_for("settings")))  # no anchor: the message stays in view
 
     def admin_url(page=1, q=""):
         # The activity filter stays while paging and after saving a user's settings.

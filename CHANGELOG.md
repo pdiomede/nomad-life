@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.11] - 2026-09-27
+
+### Added
+
+- Settings page (`/settings`), linked from the menu at the top and the footer. It replaces the Account page (old `/account` links still work) and has jump links to each part: Profile, Password, Two-factor, Email, Devices, Activity, Delete account.
+- Profile: optional first and last name (two new database columns, added automatically on start). The name shows in the menu at the top instead of the email, greets you in emails, is printed on the accountant package ("Prepared for: ...") and appears on the admin user list.
+- Two-factor setup explained step by step for Google Authenticator and similar apps; the setup key is shown in groups of 4 characters for typing.
+- Right to left names and places (Arabic, Hebrew) are drawn correctly in the accountant PDF (new dependency `uharfbuzz`, used only when such text is present).
+
+### Fixed
+
+- Security: the first name was placed at the top of the confirmation email sent to any address typed in the email change form, and of security alerts, so it could be used to send a misleading message ("Support here, call...", or "ignore this alert" after a takeover). These emails no longer include the name.
+- After saving the name, and when the admin page sent an admin to turn on two-factor sign in, the page scrolled down past the message, so it was not seen.
+- Changing the name (no password needed) recorded a security event each time, so ten saves pushed a stranger's sign in off "Recent security activity". Name changes are no longer listed there (the admin page still has them).
+- Names that need zero width joiners (Persian, Sinhala, emoji families) lost them, and names made only of invisible "blank" letters were accepted and left the menu and page title empty.
+- A right to left name in the menu at the top was cut at its beginning instead of its end.
+- A long first name made HTML emails wider than a phone screen.
+- Messages still spoke of "the account page" (the activity list, the reset-2fa command and its email).
+
 ## [1.2.10] - 2026-09-27
 
 ### Added

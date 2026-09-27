@@ -14,7 +14,7 @@ class UserMenuTests(AppTestCase):
         self.signup("user@example.com")
         menu = self.menu()
         self.assertIn('aria-label="Account menu for user@example.com"', menu)
-        self.assertIn('<span class="topnav-email">user@example.com</span>', menu)
+        self.assertIn('<span class="topnav-email" dir="auto">user@example.com</span>', menu)
         panel = menu[menu.index("user-menu-panel"):]
         self.assertLess(panel.index("plan-chip"), panel.index("Sign out"))
         self.assertIn('action="/logout"', panel)

@@ -66,13 +66,13 @@ class SettingsPageTests(AppTestCase):
     def test_name_is_shown_in_the_header_menu_and_escaped(self):
         self.save("<b>Ada</b>", "Lovelace")
         html = self.client.get("/settings").get_data(as_text=True)
-        self.assertIn('<span class="topnav-email">&lt;b&gt;Ada&lt;/b&gt; Lovelace</span>', html)
+        self.assertIn('<span class="topnav-email" dir="auto">&lt;b&gt;Ada&lt;/b&gt; Lovelace</span>', html)
         self.assertIn('title="a@example.com"', html)
         self.assertNotIn("<b>Ada</b>", html)
 
     def test_without_a_name_the_email_is_shown(self):
         html = self.client.get("/settings").get_data(as_text=True)
-        self.assertIn('<span class="topnav-email">a@example.com</span>', html)
+        self.assertIn('<span class="topnav-email" dir="auto">a@example.com</span>', html)
         self.assertIn("<h1>a@example.com</h1>", html)
 
 
@@ -100,14 +100,22 @@ class NameUsageTests(AppTestCase):
         self.assertNotIn("Hi ,", mail["text"])
         self.assertNotIn(">Hi", mail["html"])
 
-    def test_email_change_mails_use_the_name(self):
+    def test_mails_to_other_addresses_and_alerts_never_carry_the_name(self):
+        # The name is text the account holder typed: it must not reach an address typed in
+        # the email form, nor a security alert (a thief could write "ignore this" into it).
+        self.client.post("/settings", data={"action": "profile", "first_name": "Call support",
+                                            "last_name": "now"})
         self.client.post("/settings", data={"action": "email", "email": "new@example.com",
                                             "current_password": "password1"})
-        self.assertTrue(self.outbox[-1]["text"].startswith("Hi Ada,"))  # to the new address
+        mail = self.outbox[-1]
+        self.assertEqual(mail["to"], "new@example.com")
+        self.assertTrue(mail["text"].startswith("Hi,"))
+        self.assertNotIn("Call support", mail["text"] + mail["html"])
         self.client.get(self.last_link("new@example.com", kind="account/email"))
         alert = self.outbox[-1]
-        self.assertEqual(alert["to"], "a@example.com")  # the old address, no account any more
-        self.assertTrue(alert["text"].startswith("Hi Ada,"))
+        self.assertEqual(alert["to"], "a@example.com")
+        self.assertIn("Security alert", alert["subject"])
+        self.assertNotIn("Call support", alert["text"] + alert["html"])
 
     def test_admin_list_shows_the_name(self):
         self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})

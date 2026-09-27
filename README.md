@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.10**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.11**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -58,20 +58,21 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 
 To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, confirmation and reset links are printed in the terminal.
 
-## Account and sign in protection
+## Settings and sign in protection
 
-Click **Account** in the footer to:
+Open **Settings** from the menu under your name or email at the top (or the footer link) to:
 
+- Add your first and last name (optional). The name then shows in the menu at the top instead of your email, greets you in emails ("Hi Ada,"; security alerts and emails to a new address never include it), is printed on your accountant package ("Prepared for: ...", right to left names included) and appears next to your email on the admin page.
 - Change your password. You stay signed in on this device; every other device is signed out.
 - Change your email. A confirmation link goes to the new address, and the change happens when it is opened.
-- Turn on **two-factor sign in**: scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden...), then signing in also asks for its 6 digit code. Each code works only once.
+- Turn on **two-factor sign in**: scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden...) or type the setup key shown in groups of 4, then signing in also asks for its 6 digit code. Each code works only once. Turn it off with your password and a current code.
 - Sign out every other browser and device, and see how many were used in the last 31 days. "Sign out" in the menu ends that browser's session for good: a copied session or "Remember me" cookie stops working at once.
 - See your recent security activity (sign ins, password, email and two-factor changes) with the network address.
 - Delete your account with all years, movements and receipts. It asks for your password, asks twice and needs your email typed.
 
 Every change of password, email address or two-factor sign in sends a **security alert** to the account's address, with a link to reset the password if it was not you. For an email change the alert goes to the old address, with a link (valid 7 days) that **undoes the change**: it puts the old address back, signs out every device and sends a link to choose a new password.
 
-New passwords (sign up, account page, reset) are refused when they appear in known data breaches, checked with [Have I Been Pwned](https://haveibeenpwned.com/Passwords): only the first 5 characters of the password's SHA-1 hash leave the server, and if the service cannot be reached the password is accepted. Turn it off with `PWNED_CHECK=0`.
+New passwords (sign up, Settings page, reset) are refused when they appear in known data breaches, checked with [Have I Been Pwned](https://haveibeenpwned.com/Passwords): only the first 5 characters of the password's SHA-1 hash leave the server, and if the service cannot be reached the password is accepted. Turn it off with `PWNED_CHECK=0`.
 
 Receipts must really be what their name says: a PDF must contain a PDF header, an image must be a PNG, JPEG, WebP or HEIC image. An image saved under another image extension (a WebP downloaded as `.jpg`) is kept under its real type; anything else, such as a web page renamed to `.pdf`, is refused.
 
@@ -81,7 +82,7 @@ Lost the phone with the authenticator app? Whoever runs the server can remove tw
 .venv/bin/flask --app app reset-2fa someone@example.com
 ```
 
-Password guessing is slowed down. After 5 failed sign ins for one account, or 20 from one network, within 15 minutes, sign in waits until the oldest attempt is 15 minutes old. A browser that signed in to the account before has its own count, so strangers failing on purpose cannot lock the owner out. Wrong two-factor codes are counted separately (5 per account, 20 per network, per 15 minutes), and only a right code clears them. Wrong current passwords on the account page count the same way. Password reset requests are limited to 5 per network per 15 minutes, on top of one email per account per minute. Behind a reverse proxy, set `PROXY_COUNT=1`.
+Password guessing is slowed down. After 5 failed sign ins for one account, or 20 from one network, within 15 minutes, sign in waits until the oldest attempt is 15 minutes old. A browser that signed in to the account before has its own count, so strangers failing on purpose cannot lock the owner out. Wrong two-factor codes are counted separately (5 per account, 20 per network, per 15 minutes), and only a right code clears them. Wrong current passwords on the Settings page count the same way. Password reset requests are limited to 5 per network per 15 minutes, on top of one email per account per minute. Behind a reverse proxy, set `PROXY_COUNT=1`.
 
 ## Admin page
 
@@ -96,7 +97,7 @@ Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their
 - Delete an account with all its years, movements and receipts. It asks twice and needs the email typed.
 - Security activity: the last 100 events (sign ins, failed sign ins, password, email and two-factor changes, admin actions with the admin who made them), filterable by account email. Events are kept for 365 days.
 
-The admin page needs **two-factor sign in**: an admin without it is sent to the account page to turn it on first. Admins cannot disable or delete their own account or another admin's (remove it from `ADMIN_EMAILS` first), and nobody can become an admin from inside the app. Everyone else gets "Page not found" at `/admin`.
+The admin page needs **two-factor sign in**: an admin without it is sent to the Settings page to turn it on first. Admins cannot disable or delete their own account or another admin's (remove it from `ADMIN_EMAILS` first), and nobody can become an admin from inside the app. Everyone else gets "Page not found" at `/admin`.
 
 ## Plans
 

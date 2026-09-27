@@ -151,7 +151,7 @@ class AdminTwoFactorTests(AppTestCase):
     def test_admin_page_needs_two_factor(self):
         resp = self.client.get("/admin")
         self.assertEqual(resp.status_code, 302)
-        self.assertIn("/settings#two-factor", resp.headers["Location"])
+        self.assertEqual(resp.headers["Location"], "/settings")
         self.assertEqual(self.client.post("/admin/users/1", data={"action": "disable"})
                          .status_code, 302)
         with self.db() as conn:

@@ -392,6 +392,12 @@ def _needs_cjk(text):
     return any(ord(ch) not in latin for ch in text if ch != "\n")
 
 
+def _needs_shaping(text):
+    """Right to left scripts (Arabic, Hebrew...) must be shaped: joined letters, drawn right
+    to left. Only then is the (slower) HarfBuzz shaping turned on."""
+    return any(unicodedata.bidirectional(ch) in ("R", "AL") for ch in text)
+
+
 def pdf_safe(text, cjk=True):
     """Characters no bundled font can draw become "?" in the PDF (the exact names are always
     in the CSV and manifest files)."""
@@ -440,6 +446,11 @@ def render_pdf(data):
     if cjk:
         pdf.add_font("IPAGothic", "", FONT_CJK)
         pdf.set_fallback_fonts(["IPAGothic"], exact_match=False)
+    if _needs_shaping(summary_text(data)):
+        try:
+            pdf.set_text_shaping(True)
+        except Exception:  # noqa: BLE001 - without uharfbuzz the text stays unshaped
+            pass
     safe = lambda value: pdf_safe(value, cjk)
     pdf.set_margins(15, 15, 15)
     pdf.set_auto_page_break(True, margin=20)
