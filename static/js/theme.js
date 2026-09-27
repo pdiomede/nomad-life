@@ -391,6 +391,24 @@
     });
   });
 
+  // User menu in the header (a <details>, so it also works without JavaScript): close it on a
+  // click outside, on Escape (back to the email) and when focus moves out of it.
+  document.querySelectorAll("[data-user-menu]").forEach(function (menu) {
+    var trigger = menu.querySelector("summary");
+    document.addEventListener("click", function (e) {
+      if (menu.open && !menu.contains(e.target)) menu.open = false;
+    });
+    menu.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && menu.open) {
+        menu.open = false;
+        trigger.focus();
+      }
+    });
+    menu.addEventListener("focusout", function (e) {
+      if (menu.open && e.relatedTarget && !menu.contains(e.relatedTarget)) menu.open = false;
+    });
+  });
+
   // Flash messages: show the close button and remove the message when it is clicked.
   // Focus moves to the next message's button, or to the page content after the last one.
   document.querySelectorAll("[data-dismiss-flash]").forEach(function (close) {

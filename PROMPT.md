@@ -39,7 +39,7 @@ You are doing an extensive, file by file bug hunt on **Nomad Life**, a Flask + S
 | `templates/auth/*.html` | Sign in, sign up, forgot and reset password |
 | `templates/email/*` | Email layout (`_layout.html`, light and dark), confirmation and reset emails in HTML and plain text |
 | `static/css/style.css` | All styles, light and dark tokens, responsive rules |
-| `static/js/theme.js` | Theme toggle, flash message close buttons, delete confirmations, country combobox, file checks (size, quota), download busy state (`nl_download` cookie), copy link, native share |
+| `static/js/theme.js` | Theme toggle, header user menu (email opens plan, Admin, Sign out), flash message close buttons, delete confirmations, country combobox, file checks (size, quota), download busy state (`nl_download` cookie), copy link, native share |
 | `static/404.html` | Standalone 404 page (served by the app and usable by a web server) |
 | `static/fonts/*` | Flag font (Twemoji), DejaVu Sans and IPAGothic for the PDF, with license files |
 | `static/site.webmanifest`, `static/img/*` | Install metadata, logo, icons, social preview image |

@@ -53,13 +53,20 @@
       <nav class="topnav">
         {% block topnav %}
         {% if current_user.is_authenticated %}
-          <a class="plan-chip" href="{{ url_for('plan') }}" title="Your plan: {{ current_plan.name }}" aria-label="Your plan: {{ current_plan.name }}">{{ current_plan.name }}</a>
-          <a class="muted small hide-sm topnav-email" href="{{ url_for('account') }}" title="Account settings for {{ current_user.email }}">{{ current_user.email }}</a>
-          {% if current_user.is_admin %}<a class="btn btn-ghost btn-sm hide-sm" href="{{ url_for('admin') }}">Admin</a>{% endif %}
-          <form method="post" action="{{ url_for('logout') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="btn btn-ghost btn-sm" type="submit">Sign out</button>
-          </form>
+          <details class="user-menu" data-user-menu>
+            <summary class="user-menu-trigger" aria-label="Account menu for {{ current_user.email }}" title="{{ current_user.email }}">
+              <span class="topnav-email">{{ current_user.email }}</span>
+              <svg class="user-menu-arrow" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </summary>
+            <div class="user-menu-panel">
+              <a class="plan-chip" href="{{ url_for('plan') }}" title="Your plan: {{ current_plan.name }}" aria-label="Your plan: {{ current_plan.name }}">{{ current_plan.name }}</a>
+              {% if current_user.is_admin %}<a class="user-menu-item" href="{{ url_for('admin') }}">Admin</a>{% endif %}
+              <form method="post" action="{{ url_for('logout') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="user-menu-item" type="submit">Sign out</button>
+              </form>
+            </div>
+          </details>
         {% endif %}
         {% include "_theme_toggle.html" %}
         {% endblock %}

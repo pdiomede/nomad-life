@@ -21,7 +21,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Protection against password guessing: failed sign ins and reset requests are limited.
 - Admin page for the operator: accounts, storage, per account quotas, disable or delete accounts.
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
-- Plans: Free, Pro (EUR 4 a month) and Nomad+ (EUR 9 a month), each with its own storage and receipt limits. The header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
+- Plans: Free, Pro (EUR 4 a month) and Nomad+ (EUR 9 a month), each with its own storage and receipt limits. The menu under your email in the header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
 - Days per country for the year, with a 183 day indicator. Days without a stay count toward the base country once they have passed; logged stays count in full, also future ones.
 - Light and dark mode, inspired by the Aave color palette.
 - Everything stored locally: SQLite database in `data/`, files in `uploads/`.
@@ -58,7 +58,7 @@ To create a Gmail App Password, enable 2-Step Verification on your Google accoun
 
 ## Account and sign in protection
 
-Click your email in the header (or **Account** in the footer) to:
+Click **Account** in the footer to:
 
 - Change your password. You stay signed in on this device; every other device is signed out.
 - Change your email. A confirmation link goes to the new address, and the change happens when it is opened.
@@ -68,7 +68,7 @@ Password guessing is slowed down. After 5 failed sign ins for one account, or 20
 
 ## Admin page
 
-Accounts listed in `ADMIN_EMAILS` get an **Admin** link (header and footer) to `/admin`, which shows:
+Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their email, and in the footer) to `/admin`, which shows:
 
 - Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements.
 - Every account with its plan, sign up date, last sign in, number of years and storage used.

@@ -29,7 +29,8 @@ class PlanTests(AppTestCase):
     def test_new_users_are_on_free_and_see_the_chip(self):
         html = self.page("/year/2026")
         self.assertIn('aria-label="Your plan: Free"', html)
-        self.assertLess(html.index("plan-chip"), html.index("topnav-email"))
+        menu = html[html.index('class="user-menu-panel"'):html.index("</details>")]
+        self.assertIn('class="plan-chip"', menu)
 
     def test_chip_follows_the_plan(self):
         self.set_plan("pro")

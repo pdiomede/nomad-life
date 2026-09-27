@@ -7,7 +7,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - Plans: Free (500 MB of receipts, 10 MB per receipt), Pro (EUR 4 a month, 5 GB, 25 MB per receipt) and Nomad+ (EUR 9 a month, 25 GB, 50 MB per receipt, priority support). Each plan sets its own storage and receipt limits. Everyone starts on Free; online payment is not available yet.
-- The header shows a chip with your plan before your email. It opens the new plan page.
+- The header shows only your email with an arrow. It opens a menu with your plan (for example FREE, which opens the new plan page), Admin for admins, and Sign out. The Account page is in the footer.
 - "Upgrade" on the Receipt storage card opens the plan page, with your plan, its limits and usage, and the next plan with its price.
 - The landing page has a Plans section with every plan, its price and features, and a "Pricing" button at the top.
 - The admin page shows each account's plan and can change it with a plan selector. An account without a custom quota gets the quota of its plan.
