@@ -63,5 +63,21 @@ class EscapingTests(AppTestCase):
             self.assertIn("&lt;script&gt;alert(1)", html, path)
 
 
+class InvisibleCharacterTests(AppTestCase):
+    def test_addresses_with_control_or_format_characters_are_refused(self):
+        for email in ("\u202emoc.x@evil.com", "a\u200b@x.com", "a\x00b@x.com"):
+            self.assertFalse(appmod.valid_email(email), repr(email))
+        self.assertTrue(appmod.valid_email("o'brien+tag@example.com"))
+
+    def test_place_names_lose_invisible_characters(self):
+        self.signup()
+        self.new_year(2026, base_city="Lis\u202ebon")
+        self.add_movement(2026, "Ro\u200bme\u202e", "Ita\u202ely", "2026-03-01", "2026-03-02")
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT base_city FROM years").fetchone()[0], "Lisbon")
+            self.assertEqual(tuple(conn.execute("SELECT city, country FROM movements").fetchone()),
+                             ("Rome", "Italy"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.8] - 2026-09-27
+
+Script injection (XSS) review. Attack text was typed into every field a user controls (email addresses, cities, countries, notes, receipt names, admin fields, links and query parameters) and every page, email, download and accountant package that shows it was opened in a browser. No script ever ran: everything is shown as plain text.
+
+### Added
+
+- Content-Security-Policy on every page: the browser only runs the app's own script files, so even a future escaping mistake could not run injected code. The theme is now applied by a small script file instead of an inline script.
+
+### Fixed
+
+- Email addresses, cities and countries accepted invisible control characters, such as the one that shows text backwards. An address could look like a different one, for example in the admin list. Such addresses are now refused, and the characters are removed from place names.
+
 ## [1.2.7] - 2026-09-27
 
 Security release. A review of the whole app found no way for one user to see or change another user's data (every private page, download and form answers "not found" for someone else's years, stays and receipts). It did find the issues below, all fixed.

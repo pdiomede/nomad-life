@@ -31,7 +31,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.7"
+APP_VERSION = "1.2.8"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -138,12 +138,22 @@ def _abs(path):
     return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
 
 
+def clean_place(value):
+    """A city or country as typed, with spaces collapsed and control or invisible format
+    characters (such as U+202E, which reverses how text is shown) removed."""
+    value = "".join(ch for ch in value or "" if unicodedata.category(ch)[0] != "C" or ch.isspace())
+    return " ".join(value.split())
+
+
 def valid_email(email):
     """Pragmatic address check: one @, no spaces or brackets, a dotted domain with a real TLD."""
     if len(email) > 254 or email.count("@") != 1:
         return False
     local, domain = email.split("@")
-    if not local or any(ch.isspace() or ch in '<>()[],;:"' for ch in email):
+    # Control and invisible format characters (such as U+202E, which shows text reversed) are
+    # refused, so an address can never be displayed as a different one.
+    if not local or any(ch.isspace() or ch in '<>()[],;:"' or unicodedata.category(ch)[0] == "C"
+                        for ch in email):
         return False
     labels = domain.split(".")
     return len(labels) >= 2 and all(labels) and len(labels[-1]) >= 2
@@ -994,8 +1004,8 @@ def delete_confirmed():
 
 
 def validate_movement(form, year, current_notes=None):
-    city = " ".join(form.get("city", "").split())
-    country = normalize_country(form.get("country", ""))
+    city = clean_place(form.get("city", ""))
+    country = normalize_country(clean_place(form.get("country", "")))
     start = parse_date(form.get("start_date"))
     end = parse_date(form.get("end_date"))
     if not city or not country:
@@ -1543,8 +1553,8 @@ def register_routes(app):
                 year = int(request.form.get("year", ""))
             except ValueError:
                 year = 0
-            city = " ".join(request.form.get("base_city", "").split())
-            country = normalize_country(request.form.get("base_country", ""))
+            city = clean_place(request.form.get("base_city", ""))
+            country = normalize_country(clean_place(request.form.get("base_country", "")))
             if not 1970 <= year <= 2100:
                 flash("Please enter a valid year.", "error")
             elif not city or not country:
@@ -1590,8 +1600,8 @@ def register_routes(app):
         if request.method == "POST":
             action = request.form.get("action")
             if action == "update":
-                city = " ".join(request.form.get("base_city", "").split())
-                country = normalize_country(request.form.get("base_country", ""))
+                city = clean_place(request.form.get("base_city", ""))
+                country = normalize_country(clean_place(request.form.get("base_country", "")))
                 err = ("Base country and city are required." if not city or not country else
                        f"Base country and city can be at most {PLACE_MAX} characters."
                        if len(city) > PLACE_MAX or len(country) > PLACE_MAX else None)
