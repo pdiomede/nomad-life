@@ -14,6 +14,7 @@ Nomad Life is a Flask + SQLite web app that tracks the days a digital nomad spen
 .venv/bin/python -W ignore::ResourceWarning -m unittest   # quieter output
 FLASK_DEBUG=1 .venv/bin/python app.py                     # debug mode (templates reload)
 .venv/bin/python scripts/build_map.py                     # regenerate static/img/world.svg and countries_geo.py (downloads Natural Earth)
+.venv/bin/python scripts/backup.py --dest DIR --keep 14   # one tar.gz with nomad.db, .secret_key, uploads/ (paths from config.env)
 .venv/bin/flask --app app zip-receipts                    # convert pre 1.2.12 plain receipt files to ZIP
 .venv/bin/flask --app app reset-2fa <email>               # remove an account's two-factor secret
 .venv/bin/pip-audit -r requirements.txt                   # what CI runs (pip install pip-audit first)

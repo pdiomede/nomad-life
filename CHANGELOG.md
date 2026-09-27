@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.14] - 2026-09-27
+
+### Added
+
+- `scripts/backup.py --dest DIR --keep N`: one archive per run with the database, its secret key and every receipt, keeping the newest N. It reads the paths from config.env, is safe while the app runs and needs no `sqlite3` command. setup_vps.md uses it for the nightly backup and before upgrades.
+
 ## [1.2.13] - 2026-09-27
 
 ### Changed

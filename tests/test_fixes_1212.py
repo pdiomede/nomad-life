@@ -1,7 +1,6 @@
 """Regression tests for the bugs found in the 1.2.12 review of receipt compression."""
 import io
 import os
-import re
 import resource
 import threading
 import zipfile
@@ -223,9 +222,9 @@ class ZipCommandFixTests(AppTestCase):
 
 class GuideTests(AppTestCase):
     def test_backup_script_tolerates_changing_uploads(self):
+        # Since 1.2.14 the guide runs scripts/backup.py, which skips *.tmp files and receipts
+        # removed while it runs (tests/test_backup.py), instead of a tar pipeline.
         guide = open(os.path.join(appmod.BASE_DIR, "setup_vps.md"), encoding="utf-8").read()
-        tar = re.search(r"tar -C /srv/nomad-life.*?\n(.*?)\n", guide, re.S).group(0)
-        for flag in ("--exclude='*.tmp'", "--warning=no-file-changed",
-                     "--warning=no-file-removed", "|| [ $? -eq 1 ]"):
-            self.assertIn(flag, tar)
+        self.assertIn("scripts/backup.py --dest /var/backups/nomad-life", guide)
+        self.assertNotIn("tar -C /srv/nomad-life", guide)
         self.assertNotIn("150 MB", guide)

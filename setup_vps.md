@@ -10,7 +10,7 @@ Everything the app uses comes either with Python or as a Python package (a "whee
 |---|---|---|
 | Web app | Flask, Flask-Login, Flask-WTF | `pip install -r requirements.txt` |
 | Production server | gunicorn (pinned in requirements.txt) | same |
-| Database | SQLite, built into Python | nothing (the `sqlite3` command line tool is only for backups) |
+| Database | SQLite, built into Python | nothing (backups use `scripts/backup.py`; the `sqlite3` command line tool is optional, to look inside the database) |
 | Accountant package PDF | fpdf2; fonts are bundled in `static/fonts` (DejaVu, IPA Gothic for Japanese, Twemoji flags) | pip |
 | Right to left names in the PDF (Arabic, Hebrew) | uharfbuzz (HarfBuzz, bundled in its wheel) | pip |
 | ZIP files (stored receipts, accountant package) | Python's `zipfile` and `zlib` | nothing |
@@ -198,30 +198,18 @@ chronyc tracking     # "System time" should be a few milliseconds off at most
 
 The database and the receipts are everything. Back them up every night, keep copies off the server, encrypted, and try a restore once.
 
-`/usr/local/bin/nomad-life-backup`:
+`scripts/backup.py` writes one archive per run with the database, its secret key and every receipt, and keeps the newest `--keep` archives. It reads the paths from `config.env`, is safe while the app runs (SQLite's online backup, half written receipts skipped) and needs nothing beyond the app's own `.venv`. Run it as the app's user, which owns the data:
 
 ```bash
-#!/bin/sh
-set -eu
-umask 077
-day=$(date +%F)
-mkdir -p /var/backups/nomad-life
-# .backup is safe while the app is running (unlike copying the file).
-sqlite3 /srv/nomad-life/data/nomad.db ".backup /var/backups/nomad-life/nomad-$day.db"
-cp /srv/nomad-life/data/.secret_key /var/backups/nomad-life/secret_key
-# Receipts may be added while tar runs: skip half written files (*.tmp) and do not fail on
-# files that change or disappear meanwhile (GNU tar then exits with 1, which is fine here).
-tar -C /srv/nomad-life --exclude='*.tmp' --warning=no-file-changed --warning=no-file-removed \
-    -czf /var/backups/nomad-life/uploads-$day.tar.gz uploads || [ $? -eq 1 ]
-find /var/backups/nomad-life -type f -mtime +14 -delete
+sudo install -d -o nomadlife -g nomadlife -m 700 /var/backups/nomad-life
+cd /srv/nomad-life/app
+sudo -u nomadlife .venv/bin/python scripts/backup.py --dest /var/backups/nomad-life --keep 14
+echo "30 3 * * * nomadlife /srv/nomad-life/app/.venv/bin/python /srv/nomad-life/app/scripts/backup.py --dest /var/backups/nomad-life --keep 14" | sudo tee /etc/cron.d/nomad-life-backup
 ```
 
-```bash
-sudo chmod 700 /usr/local/bin/nomad-life-backup
-echo "30 3 * * * root /usr/local/bin/nomad-life-backup" | sudo tee /etc/cron.d/nomad-life-backup
-```
+Each run prints the archive it wrote, for example `/var/backups/nomad-life/nomadlife-2026-09-27_033000.tar.gz`, readable by `nomadlife` only (mode 600).
 
-Then copy `/var/backups/nomad-life` elsewhere every night, encrypted: for example with `restic` or `borg` to another server or to object storage. To restore: stop the service, put back `nomad.db`, `.secret_key` and the `uploads` folder (owned by `nomadlife`, mode 700), start the service.
+Then copy `/var/backups/nomad-life` elsewhere every night, encrypted: for example with `restic` or `borg` to another server or to object storage. To restore: stop the service, unpack an archive (`tar -xzf nomadlife-....tar.gz`), put `nomad.db` and `.secret_key` back in `/srv/nomad-life/data` and `uploads/` in `/srv/nomad-life/uploads` (owned by `nomadlife`, mode 700), start the service.
 
 ## 12. The first admin
 
@@ -234,7 +222,7 @@ Then copy `/var/backups/nomad-life` elsewhere every night, encrypted: for exampl
 
 ```bash
 cd /srv/nomad-life/app
-sudo /usr/local/bin/nomad-life-backup                  # a fresh backup first
+sudo -u nomadlife .venv/bin/python scripts/backup.py --dest /var/backups/nomad-life --keep 14   # a fresh backup first
 sudo -u nomadlife git pull
 sudo -u nomadlife .venv/bin/pip install -r requirements.txt
 sudo systemctl restart nomad-life
