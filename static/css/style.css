@@ -5,8 +5,9 @@
   --surface: #FFFFFF;
   --surface-2: #F7F7F9;
   --map-land: #D5D8E1;
-  --map-pin: #1F8F99;
-  --map-pin-base: #B6509E;
+  --map-pin: #177B84;
+  --map-pin-base: #A13A8C;
+  --map-pin-text: #FFFFFF;
   --text: #303549;
   --muted: #62677B;
   --border: #EAEBEF;
@@ -44,6 +45,7 @@
   --map-land: #3C4260;
   --map-pin: #2EBAC6;
   --map-pin-base: #E58FD1;
+  --map-pin-text: #1B2030;
   --text: #F1F1F3;
   --muted: #A5A8B6;
   --border: #383D51;
@@ -74,6 +76,7 @@
     --map-land: #3C4260;
     --map-pin: #2EBAC6;
     --map-pin-base: #E58FD1;
+    --map-pin-text: #1B2030;
     --text: #F1F1F3;
     --muted: #A5A8B6;
     --border: #383D51;
@@ -289,11 +292,15 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
   position: absolute; inset: 0; background: var(--map-land);
   -webkit-mask: var(--map-image) center / 100% 100% no-repeat; mask: var(--map-image) center / 100% 100% no-repeat;
 }
+/* Pins carry the country's days: a round badge that widens for 3 digits, centered on the point. */
 .map-pin {
-  position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; padding: 0; border-radius: 50%;
+  position: absolute; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; transform: translate(-50%, -50%);
+  display: flex; align-items: center; justify-content: center;
   background: var(--map-pin); border: 2px solid var(--surface); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); cursor: pointer;
+  color: var(--map-pin-text); font: 700 11px/1 Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums;
 }
-.map-pin-base { width: 18px; height: 18px; margin: -9px 0 0 -9px; background: var(--map-pin-base); }
+.map-pin-base { min-width: 26px; height: 26px; border-radius: 13px; font-size: 12px; background: var(--map-pin-base); }
+.map-pin-days { pointer-events: none; }
 .map-pin:hover, .map-pin:focus-visible { z-index: 3; }
 .map-pin:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .map-tip {
@@ -309,6 +316,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .map-pin:hover .map-tip, .map-pin:focus-visible .map-tip { display: flex; }
 .map-tip-country { font-weight: 700; overflow-wrap: anywhere; }
 .map-tip-cities { color: var(--muted); overflow-wrap: anywhere; }
+.map-tip-days { font-weight: 600; }
 .tip-right .map-tip { left: -8px; transform: none; }
 .tip-right .map-tip::after { left: 14px; }
 .tip-left .map-tip { left: auto; right: -8px; transform: none; }

@@ -112,10 +112,12 @@
       {% for p in pins %}
       <button type="button" class="map-pin{% if p.is_base %} map-pin-base{% endif %}{% if p.side %} tip-{{ p.side }}{% endif %}{% if p.below %} tip-below{% endif %}"
               style="left: {{ p.left }}%; top: {{ p.top }}%"
-              aria-label="{{ p.country }}{% if p.is_base %} (base){% endif %}: {{ p.cities | join(', ') }}">
+              aria-label="{{ p.country }}{% if p.is_base %} (base){% endif %}, {{ p.days }} day{{ '' if p.days == 1 else 's' }}: {{ p.cities | join(', ') }}">
+        <span class="map-pin-days" aria-hidden="true">{{ p.days }}</span>
         <span class="map-tip" aria-hidden="true">
           <span class="map-tip-country">{% if p.flag %}<span class="flag">{{ p.flag }}</span> {% endif %}{{ p.country }}{% if p.is_base %} <span class="tag">Base</span>{% endif %}</span>
           <span class="map-tip-cities">{{ p.cities | join(', ') }}</span>
+          <span class="map-tip-days">{{ p.days }} day{{ '' if p.days == 1 else 's' }}</span>
         </span>
       </button>
       {% endfor %}

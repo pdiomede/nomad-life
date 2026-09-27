@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- Map on each year's dashboard, under Movements: a world map with a pin for every country of the year's base and stays. The base has its own color and a bigger pin. Hovering a pin, or reaching it with the keyboard, shows a tooltip with the flag, the country and its cities (two stays in Italy make one Italy pin listing both). Places the map cannot show, such as a country typed as free text, are listed under it. Everything is bundled; the map loads nothing from the internet.
+- Map on each year's dashboard, under Movements: a world map with a pin for every country of the year's base and stays. The base has its own color and a bigger pin. Hovering a pin, or reaching it with the keyboard, shows a tooltip with the flag, the country and its cities (two stays in Italy make one Italy pin listing both). Each pin shows the country's days (the same number as in Days per country), and the tooltip says it too, for example "15 days". Places the map cannot show, such as a country typed as free text, are listed under it. Everything is bundled; the map loads nothing from the internet.
 - `scripts/build_map.py` rebuilds the map data (`static/img/world.svg` and `countries_geo.py`) from Natural Earth, which is public domain.
 
 ## [1.2.2] - 2026-09-26

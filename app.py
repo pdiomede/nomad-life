@@ -863,9 +863,12 @@ def country_flag(name):
     return flag_emoji(COUNTRY_CODES.get(normalize_country(name or "")))
 
 
-def map_pins(year_row, movements):
-    """Pins for the dashboard map: one per country (base first), with its cities. Places the
-    map cannot show (free text, or no point for the country) are returned apart."""
+def map_pins(year_row, movements, stats=None):
+    """Pins for the dashboard map: one per country (base first), with its cities and its days
+    from compute_stats (the same numbers as "Days per country"). Places the map cannot show
+    (free text, or no point for the country) are returned apart."""
+    stats = stats or compute_stats(year_row, movements)
+    days = {fold(r["country"]): r["days"] for r in stats["rows"]}
     pins, missing = OrderedDict(), []
     places = [(year_row["base_country"], year_row["base_city"], True)]
     places += [(m["country"], m["city"], False) for m in movements]
@@ -878,6 +881,7 @@ def map_pins(year_row, movements):
                 missing.append(name)
             continue
         pin = pins.setdefault(code, {"country": name, "flag": flag_emoji(code), "cities": [],
+                                     "days": days.get(fold(name), 0),
                                      "is_base": False, "left": point[0], "top": point[1]})
         pin["is_base"] = pin["is_base"] or is_base
         if city not in pin["cities"]:
@@ -1451,10 +1455,11 @@ def register_routes(app):
         # Stats always use every movement; only the table is paginated.
         pager = paginate(movements, request.args.get("page"), page_size(),
                          lambda n, size: dashboard_url(year, n, size))
+        stats = compute_stats(year_row, movements)
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
                                per_page_options=PER_PAGE_OPTIONS,
-                               years=years, stats=compute_stats(year_row, movements),
-                               base_docs=base_docs, map=map_pins(year_row, movements),
+                               years=years, stats=stats,
+                               base_docs=base_docs, map=map_pins(year_row, movements, stats),
                                today=date.today().isoformat())
 
     @app.route("/year/<int:year>/base", methods=["GET", "POST"])

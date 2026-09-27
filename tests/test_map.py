@@ -25,9 +25,10 @@ class MapTests(AppTestCase):
 
     def test_base_pin_without_movements(self):
         _, card = self.map_html()
-        self.assertEqual(card.count('class="map-pin'), 1)
+        self.assertEqual(card.count('type="button" class="map-pin'), 1)
         self.assertIn("map-pin map-pin-base", card)
-        self.assertIn('aria-label="Bulgaria (base): Sofia"', card)
+        self.assertIn('Bulgaria (base), ', card)
+        self.assertIn(': Sofia"', card)
         self.assertIn("\U0001F1E7\U0001F1EC", card)  # Bulgarian flag in the tooltip
 
     def test_one_pin_per_country_with_its_cities(self):
@@ -35,9 +36,10 @@ class MapTests(AppTestCase):
         self.add_movement(2026, "Milan", "italy", "2026-04-01", "2026-04-05")
         self.add_movement(2026, "Plovdiv", "Bulgaria", "2026-05-01", "2026-05-03")
         _, card = self.map_html()
-        self.assertEqual(card.count('class="map-pin'), 2)
-        self.assertIn('aria-label="Italy: Rome, Milan"', card)
-        self.assertIn('aria-label="Bulgaria (base): Sofia, Plovdiv"', card)
+        self.assertEqual(card.count('type="button" class="map-pin'), 2)
+        self.assertIn('aria-label="Italy, 10 days: Rome, Milan"', card)
+        self.assertIn('Bulgaria (base), ', card)
+        self.assertIn(': Sofia, Plovdiv"', card)
 
     def test_free_text_country_is_listed_off_the_map(self):
         self.add_movement(2026, "Somewhere", "Atlantis", "2026-03-01", "2026-03-02")
@@ -69,3 +71,18 @@ class CountryPointTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MapDaysTests(AppTestCase):
+    def test_pins_show_the_days_per_country(self):
+        self.signup()
+        self.new_year(2027, "Sofia", "Bulgaria")  # a future year: base days are 0 so far
+        self.add_movement(2027, "Rome", "Italy", "2027-01-01", "2027-01-10")
+        self.add_movement(2027, "Milan", "Italy", "2027-02-01", "2027-02-01")
+        html = self.client.get("/year/2027").get_data(as_text=True)
+        card = html[html.index('<section class="card map-card"'):]
+        card = card[:card.index("</section>")]
+        self.assertIn('aria-label="Italy, 11 days: Rome, Milan"', card)
+        self.assertIn('<span class="map-pin-days" aria-hidden="true">11</span>', card)
+        self.assertIn('<span class="map-tip-days">11 days</span>', card)
+        self.assertIn('aria-label="Bulgaria (base), 0 days: Sofia"', card)
