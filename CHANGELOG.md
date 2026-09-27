@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.12] - 2026-09-27
+
+### Added
+
+- `setup_vps.md`: how to run Nomad Life on a server (Ubuntu 24.04, gunicorn, nginx, HTTPS with certbot, firewall, clock sync for two-factor codes, backups, first admin, upgrades), with what each feature needs installed.
+- `flask --app app zip-receipts [--no-shrink]` converts receipts uploaded before this version to ZIP files (and resizes their big photos). Run it once after upgrading.
+- gunicorn is pinned in requirements.txt as the production server.
+
+### Changed
+
+- Receipts are stored as ZIP files, one per receipt in each account's folder, compressed when that helps. Downloads are always a ZIP holding the receipt (no preview in the browser any more).
+- Big photos (over 4 megapixels or 1 MB) are resized to about 4 megapixels and saved as JPEG without metadata (location included) when that is smaller; the original is not kept. The storage quota counts the space really used on disk.
+- The accountant package holds the receipts taken out of their ZIP files, as stored.
+
+### Fixed
+
+- Several server processes starting at once could each create a different secret key, signing people out at random; an empty key file (after a full disk) is now replaced instead of stopping the app.
+- Found in the review of the new storage, before release:
+  - Two renames of the same receipt at the same time could corrupt its ZIP or leave the name inside different from the name shown.
+  - 16 bit grey images came out almost white after resizing.
+  - A tiny image file with huge dimensions made the server use over 400 MB of memory; images over 24 megapixels are no longer decoded and each server process resizes one photo at a time.
+  - Long receipt screenshots were shrunk to 260 px wide and became unreadable; photos are now limited by area and never made narrower than 1000 px.
+  - PNG images with a transparent colour were not put on white.
+  - `zip-receipts` running while people used the app could undo a rename or stop halfway, leaving a stray file.
+  - A damaged receipt stopped the accountant package download halfway; it is now listed as missing.
+  - The backup script in setup_vps.md failed when receipts changed while it ran.
+  - A receipt named like ".pdf" downloaded as ".zip", and names with characters such as ":" or "?" could not be extracted on Windows.
+
 ## [1.2.11] - 2026-09-27
 
 ### Added

@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.11**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.12**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -84,6 +84,20 @@ Lost the phone with the authenticator app? Whoever runs the server can remove tw
 
 Password guessing is slowed down. After 5 failed sign ins for one account, or 20 from one network, within 15 minutes, sign in waits until the oldest attempt is 15 minutes old. A browser that signed in to the account before has its own count, so strangers failing on purpose cannot lock the owner out. Wrong two-factor codes are counted separately (5 per account, 20 per network, per 15 minutes), and only a right code clears them. Wrong current passwords on the Settings page count the same way. Password reset requests are limited to 5 per network per 15 minutes, on top of one email per account per minute. Behind a reverse proxy, set `PROXY_COUNT=1`.
 
+## Receipts and storage
+
+Receipts are stored on the server in one folder per account (`UPLOAD_DIR/<account id>/`), each under a random name, as a **ZIP file** holding the receipt itself: compressed when that makes it smaller (invoice PDFs, screenshots), stored as is otherwise (photos and scans barely compress). Downloading a receipt always gives that ZIP; renaming a receipt also renames the file inside.
+
+Big photos (JPEG, PNG, WebP over 4 megapixels or 1 MB) are resized when uploaded to about 4 megapixels (never narrower than 1000 px, so long receipt screenshots stay readable) and saved as JPEG, only when that is smaller. The original is not kept, and photo metadata such as the location is removed. HEIC photos are zipped but not resized. The storage quota counts the space really used on disk, so a big photo that shrinks can fit where its original would not.
+
+Receipts uploaded before version 1.2.12 keep working (they are zipped when downloaded). To store them as ZIP files and resize their big photos, run once:
+
+```bash
+.venv/bin/flask --app app zip-receipts            # or add --no-shrink to keep photos as they are
+```
+
+To run Nomad Life on a server (Ubuntu, gunicorn, nginx, HTTPS, backups), follow [setup_vps.md](setup_vps.md).
+
 ## Admin page
 
 Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their email, and in the footer) to `/admin`, which shows:
@@ -123,7 +137,7 @@ On each year's dashboard, "Download accountant package" builds one ZIP you can h
 
 - `summary.pdf`: base, days in the base country and the 183 day line, days abroad, days per country, travel timeline, the counting rules and a receipt index. For the current year it shows numbers so far and for the full year with the trips already planned.
 - `timeline.csv` and `country-totals.csv`: the same numbers for Excel or LibreOffice (UTF-8, with protection against spreadsheet formulas).
-- `receipts/`: the original files, byte for byte, in one folder per stay plus `receipts/base`.
+- `receipts/`: the receipts as stored (big photos resized at upload, everything else byte for byte), taken out of their ZIP files, in one folder per stay plus `receipts/base`.
 - `manifest.csv`: every file with its size and SHA-256 checksum. Receipts missing on the server are listed as missing.
 - `README.txt`: what each file is.
 

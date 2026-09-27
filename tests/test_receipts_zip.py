@@ -81,12 +81,12 @@ class ZipStorageTests(AppTestCase):
             data = zf.read("Dinner.jpg")
         with Image.open(io.BytesIO(data)) as img:
             self.assertEqual(img.format, "JPEG")
-            self.assertEqual(img.size, (1500, 2000))  # upright, longest side 2000
+            self.assertEqual(img.size, (1732, 2309))  # upright, at most 4 megapixels
             self.assertNotIn(0x8825, img.getexif())
             self.assertNotIn(0x0112, img.getexif())
 
     def test_big_png_with_transparency_becomes_a_white_jpeg(self):
-        img = Image.new("RGBA", (3000, 1000), (0, 0, 0, 0))
+        img = Image.new("RGBA", (4000, 2000), (0, 0, 0, 0))
         out = io.BytesIO()
         img.save(out, "PNG")
         self.upload("/year/2026/base", "logo.png", out.getvalue())
@@ -94,7 +94,7 @@ class ZipStorageTests(AppTestCase):
         self.assertEqual(row["original_name"], "logo.jpg")
         with zipfile.ZipFile(self.stored(row)) as zf, \
                 Image.open(io.BytesIO(zf.read("logo.jpg"))) as shrunk:
-            self.assertEqual(shrunk.size, (2000, 667))
+            self.assertEqual(shrunk.size, (2828, 1414))
             self.assertGreater(shrunk.convert("L").getpixel((10, 10)), 240)
 
     def test_small_photos_are_kept_as_they_are(self):

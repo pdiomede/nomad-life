@@ -1,6 +1,6 @@
 # Running Nomad Life on a VPS
 
-A step by step guide for a small virtual server (1 vCPU and 1 GB RAM are enough for a few hundred users; 2 GB is more comfortable when many people upload photos at once). It uses **Ubuntu 24.04 LTS**, **gunicorn** as the application server and **nginx + certbot** for HTTPS. Replace `nomad.example.com` with your domain and `admin@example.com` with your address everywhere below.
+A step by step guide for a small virtual server (1 vCPU and 1 GB RAM are enough for a few hundred users with 2 workers; take 2 GB when many people upload photos at once). It uses **Ubuntu 24.04 LTS**, **gunicorn** as the application server and **nginx + certbot** for HTTPS. Replace `nomad.example.com` with your domain and `admin@example.com` with your address everywhere below.
 
 ## 1. What the app needs, and why
 
@@ -122,7 +122,7 @@ curl -I http://127.0.0.1:5050/       # HTTP/1.1 200 OK
 - `--preload` creates the app once before the workers start, so the database is migrated and the secret key created only once.
 - `--timeout 120` leaves time to build the accountant package of a busy year.
 - `UMask=0077` keeps the database and receipts readable by `nomadlife` only (like `umask 077` in `runWebApp.sh`).
-- Workers: about 2 x CPU cores + 1. Each photo upload can briefly use around 150 MB while it is resized, and at most 2 are resized at once per worker.
+- Workers: about 2 x CPU cores + 1. Resizing a big photo can briefly use up to about 200 MB, and each worker resizes one photo at a time, so 3 workers need up to about 600 MB on top of the app itself: take 2 GB of RAM, or use `--workers 2` on a 1 GB server.
 
 ## 7. nginx
 
@@ -208,7 +208,10 @@ mkdir -p /var/backups/nomad-life
 # .backup is safe while the app is running (unlike copying the file).
 sqlite3 /srv/nomad-life/data/nomad.db ".backup /var/backups/nomad-life/nomad-$day.db"
 cp /srv/nomad-life/data/.secret_key /var/backups/nomad-life/secret_key
-tar -C /srv/nomad-life -czf /var/backups/nomad-life/uploads-$day.tar.gz uploads
+# Receipts may be added while tar runs: skip half written files (*.tmp) and do not fail on
+# files that change or disappear meanwhile (GNU tar then exits with 1, which is fine here).
+tar -C /srv/nomad-life --exclude='*.tmp' --warning=no-file-changed --warning=no-file-removed \
+    -czf /var/backups/nomad-life/uploads-$day.tar.gz uploads || [ $? -eq 1 ]
 find /var/backups/nomad-life -type f -mtime +14 -delete
 ```
 

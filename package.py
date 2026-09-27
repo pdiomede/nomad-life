@@ -12,6 +12,7 @@ import posixpath
 import re
 import unicodedata
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -576,6 +577,10 @@ def open_receipt(path):
     archive = zipfile.ZipFile(path)
     try:
         info = archive.infolist()[0]
+        # Check the whole file first: a damaged receipt is listed as missing instead of
+        # breaking the package halfway through the download.
+        if archive.testzip() is not None:
+            raise zipfile.BadZipFile(f"damaged receipt {path}")
         member = archive.open(info)
     except BaseException:
         archive.close()
@@ -668,7 +673,7 @@ def stream(data, entries):
             digest, written = hashlib.sha256(), 0
             try:
                 fh, size = open_receipt(source.path)
-            except (OSError, zipfile.BadZipFile, IndexError):
+            except (OSError, zipfile.BadZipFile, zlib.error, IndexError):
                 source.exists = False
                 continue
             with fh, zf.open(_info(arcname, when, size, fast), "w") as dest:

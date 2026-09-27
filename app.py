@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import struct
+import tempfile
 import threading
 import time
 import urllib.request
@@ -17,6 +18,7 @@ import uuid
 from collections import OrderedDict
 import unicodedata
 import zipfile
+import zlib
 from datetime import date, datetime, timedelta, timezone
 
 import click
@@ -39,7 +41,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.11"
+APP_VERSION = "1.2.12"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -263,22 +265,27 @@ def load_or_create_secret(path):
             return key
     except FileNotFoundError:
         pass
-    key = secrets.token_hex(32)
+    # Written to a temporary file first, then linked into place: the key file never exists
+    # half written, and when several server processes start at once only one link succeeds,
+    # so they all sign sessions with the same secret.
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
     try:
-        # O_EXCL: when several server processes start at once, only one creates the key and
-        # the others read it, so they all sign sessions with the same secret.
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        for _ in range(50):  # the winner may still be writing it
+        with os.fdopen(fd, "w") as fh:
+            fh.write(secrets.token_hex(32))
+        os.chmod(tmp, 0o600)
+        try:
+            os.link(tmp, path)
+        except FileExistsError:
             with open(path) as fh:
                 existing = fh.read().strip()
             if existing:
                 return existing
-            time.sleep(0.02)
-        raise
-    with os.fdopen(fd, "w") as fh:
-        fh.write(key)
-    return key
+            os.replace(tmp, path)  # an empty key file (a full disk once): replace it
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    with open(path) as fh:
+        return fh.read().strip()
 
 
 MB = 1024 * 1024
@@ -546,7 +553,7 @@ def create_app(overrides=None):
     def zip_receipts(no_shrink):
         """Store receipts uploaded before 1.2.12 as ZIP files (and shrink big photos)."""
         rows = db.query("SELECT * FROM documents WHERE stored_name NOT LIKE '%.zip' ORDER BY id")
-        done = missing = failed = 0
+        done = missing = failed = skipped = 0
         before = after = 0
         for doc in rows:
             folder = os.path.join(app.config["UPLOAD_DIR"], str(doc["user_id"]))
@@ -570,22 +577,36 @@ def create_app(overrides=None):
                 continue
             try:
                 # The row points to the ZIP before the old file goes, so an interruption
-                # never leaves a document without its file.
-                db.execute("UPDATE documents SET stored_name = ?, size = ?, format = ?, "
-                           "file_size = ?, original_name = ?, mime = ? WHERE id = ? AND "
-                           "stored_name = ?", (stored, size, ext, len(data), name,
-                                               MIME_TYPES[ext], doc["id"], doc["stored_name"]))
+                # never leaves a document without its file. The row must still be as read:
+                # a rename or delete while the app runs wins, and this one is tried again
+                # on the next run.
+                with db.transaction() as conn:
+                    changed = conn.execute(
+                        "UPDATE documents SET stored_name = ?, size = ?, format = ?, "
+                        "file_size = ?, original_name = ?, mime = ? WHERE id = ? AND "
+                        "stored_name = ? AND original_name = ?",
+                        (stored, size, ext, len(data), name, MIME_TYPES[ext], doc["id"],
+                         doc["stored_name"], doc["original_name"])).rowcount
             except BaseException:
                 os.remove(new_path)
                 raise
-            os.remove(old_path)
+            if not changed:
+                os.remove(new_path)
+                skipped += 1
+                continue
+            try:
+                os.remove(old_path)
+            except FileNotFoundError:
+                pass
             done += 1
             before += doc["size"]
             after += size
         click.echo(f"Converted {done} receipt{'' if done == 1 else 's'} to ZIP: "
                    f"{format_size(before, 'up')} before, {format_size(after, 'up')} after."
                    + (f" {missing} file{'' if missing == 1 else 's'} missing on disk." if missing
-                      else "") + (f" {failed} failed." if failed else ""))
+                      else "") + (f" {failed} failed." if failed else "")
+                   + (f" {skipped} changed meanwhile, run the command again." if skipped
+                      else ""))
 
     @app.cli.command("reset-2fa")
     @click.argument("email")
@@ -1329,12 +1350,23 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
 
 # Photos over either limit are resized to PHOTO_MAX_SIDE and re-saved as JPEG; the original
 # is not kept. Larger images than PHOTO_MAX_PIXELS are never decoded (decompression bombs).
-PHOTO_MAX_SIDE = 2000
+PHOTO_MAX_AREA = 4_000_000   # pixels kept at most (about 2300 x 1730): receipts stay legible
+PHOTO_MIN_SIDE = 1000        # never narrower than this, so long screenshots keep their text
 PHOTO_SHRINK_BYTES = 1024 * 1024
-PHOTO_MAX_PIXELS = 50_000_000
+PHOTO_MAX_PIXELS = 24_000_000  # bigger images are never decoded (memory, decompression bombs)
 PHOTO_QUALITY = 85
 SHRINKABLE = ("jpg", "jpeg", "png", "webp")
-IMAGE_SLOTS = threading.BoundedSemaphore(2)  # decoding a photo can take ~150 MB
+# Decoding a 24 megapixel image with transparency takes up to about 200 MB, so one at a time
+# per server process.
+IMAGE_SLOTS = threading.BoundedSemaphore(1)
+
+
+def photo_target(width, height):
+    """(width, height) a photo is resized to: at most PHOTO_MAX_AREA pixels, but never with
+    its shorter side under PHOTO_MIN_SIDE (a long receipt screenshot stays readable)."""
+    scale = min(1.0, (PHOTO_MAX_AREA / (width * height)) ** 0.5)
+    scale = max(scale, min(1.0, PHOTO_MIN_SIDE / min(width, height)))
+    return max(1, round(width * scale)), max(1, round(height * scale))
 
 
 def shrink_photo(data, ext):
@@ -1349,19 +1381,31 @@ def shrink_photo(data, ext):
                 width, height = img.size
                 if width * height > PHOTO_MAX_PIXELS:
                     return None
-                if max(width, height) <= PHOTO_MAX_SIDE and len(data) <= PHOTO_SHRINK_BYTES:
+                if width * height <= PHOTO_MAX_AREA and len(data) <= PHOTO_SHRINK_BYTES:
                     return None
+                target = photo_target(width, height)
                 if img.format == "JPEG":
-                    img.draft("RGB", (PHOTO_MAX_SIDE, PHOTO_MAX_SIDE))  # decode at reduced size
+                    img.draft("RGB", target)  # decode at a reduced size, much less memory
+                if img.getexif().get(0x0112) in (5, 6, 7, 8):  # shown turned by 90 degrees
+                    target = target[::-1]
                 img = ImageOps.exif_transpose(img)  # the photo stays upright without its EXIF
-                if img.mode in ("RGBA", "LA", "P", "PA"):
+                transparent = (img.mode in ("RGBA", "LA", "P", "PA")
+                               or "transparency" in img.info)
+                if img.mode.startswith("I"):
+                    # 16 bit grey: scale to 8 bits (a plain RGB conversion clips it to white).
+                    img = img.convert("I").point(lambda v: v / 256).convert("L")
+                elif transparent:
                     img = img.convert("RGBA")
+                elif img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
+                # Resize first, then flatten and convert the small image: less memory.
+                img.thumbnail(target, Image.LANCZOS)
+                if transparent and img.mode == "RGBA":
                     background = Image.new("RGB", img.size, "white")
                     background.paste(img, mask=img.getchannel("A"))
                     img = background
                 elif img.mode != "RGB":
                     img = img.convert("RGB")
-                img.thumbnail((PHOTO_MAX_SIDE, PHOTO_MAX_SIDE), Image.LANCZOS)
                 out = io.BytesIO()
                 # No EXIF or other metadata is written, so the location of the photo is gone.
                 img.save(out, "JPEG", quality=PHOTO_QUALITY, optimize=True, progressive=True)
@@ -1372,18 +1416,24 @@ def shrink_photo(data, ext):
     return smaller if len(smaller) < len(data) else None
 
 
+# Characters Windows cannot have in a file name: the receipt must extract everywhere.
+UNSAFE_NAME_CHARS = str.maketrans({c: "-" for c in '/\\:*?"<>|'})
+
+
 def zip_member_name(name, ext):
     """The file name inside a receipt ZIP: the receipt's name, never a path."""
-    name = name.replace("/", "-").replace("\\", "-").strip()
+    name = name.translate(UNSAFE_NAME_CHARS).strip()
     if name in ("", ".", "..") or name.startswith("."):
         name = f"receipt.{ext}"
     return name
 
 
 def write_receipt_zip(path, member, data):
-    """Write a one file ZIP to path through a temporary file, so a crash never leaves a half
-    written receipt. Deflate is used when it makes the file smaller, else the file is stored."""
-    tmp = f"{path}.tmp"
+    """Write a one file ZIP to path through a temporary file of its own, so a crash, or two
+    requests writing the same receipt, never leave a half written one. Deflate is used when it
+    makes the file smaller, else the file is stored."""
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    os.close(fd)
     info = zipfile.ZipInfo(member, date_time=time.localtime()[:6])
     info.external_attr = 0o600 << 16
     try:
@@ -1409,6 +1459,19 @@ def read_receipt(path):
             return info.filename, zf.read(info)
     with open(path, "rb") as fh:
         return os.path.basename(path), fh.read()
+
+
+def receipt_readable(path):
+    """The stored receipt is there and, for a ZIP, not damaged (every CRC checked)."""
+    if not os.path.isfile(path):
+        return False
+    if not path.endswith(".zip"):
+        return True
+    try:
+        with zipfile.ZipFile(path) as zf:
+            return bool(zf.infolist()) and zf.testzip() is None
+    except (OSError, zipfile.BadZipFile, zlib.error):
+        return False
 
 
 def doc_format(doc):
@@ -1690,7 +1753,7 @@ def build_package_data(year_row, include_notes):
         if stay:
             stay.receipts += 1
         path = os.path.join(folder, d["stored_name"])
-        exists = os.path.isfile(path)
+        exists = receipt_readable(path)
         receipts.append(package.Receipt(
             stay_number=stay.number if stay else 0,
             kind=DOCUMENT_KINDS.get(d["kind"], "Other"), name=d["original_name"],
@@ -2807,7 +2870,7 @@ def register_routes(app):
     def document(doc_id):
         doc = get_document_or_404(doc_id)
         folder = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id))
-        download_name = f"{stem(doc['original_name'])}.zip"
+        download_name = f"{stem(zip_member_name(doc['original_name'], doc_format(doc)))}.zip"
         if doc["stored_name"].endswith(".zip"):
             resp = send_from_directory(folder, doc["stored_name"], mimetype="application/zip",
                                        as_attachment=True, download_name=download_name)
@@ -2854,20 +2917,25 @@ def register_routes(app):
         else:
             if file_ext(name) != ext:
                 name = f"{name}.{ext}"  # keep the real extension so downloads still open
-            if name != doc["original_name"] and doc["stored_name"].endswith(".zip"):
-                # The file inside the ZIP carries the name too: rewrite it.
-                path = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id),
-                                    doc["stored_name"])
-                try:
-                    _member, data = read_receipt(path)
-                    size = write_receipt_zip(path, zip_member_name(name, ext), data)
-                except (OSError, zipfile.BadZipFile, IndexError) as exc:
-                    app.logger.error("Could not rename the file in %s: %s", path, exc)
-                    size = None
-                if size is not None:
-                    db.execute("UPDATE documents SET size = ? WHERE id = ?", (size, doc_id))
-            db.execute("UPDATE documents SET original_name = ?, kind = ? WHERE id = ?",
-                       (name, kind, doc_id))
+            # One write lock around the file and the row, so two renames at once (a double
+            # click, two tabs) leave the ZIP and the database agreeing on the same name.
+            with db.transaction() as conn:
+                current = conn.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?",
+                                       (doc_id, current_user.id)).fetchone()
+                size = current["size"] if current else None
+                if (current and name != current["original_name"]
+                        and current["stored_name"].endswith(".zip")):
+                    # The file inside the ZIP carries the name too: rewrite it.
+                    path = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id),
+                                        current["stored_name"])
+                    try:
+                        _member, data = read_receipt(path)
+                        size = write_receipt_zip(path, zip_member_name(name, ext), data)
+                    except (OSError, zipfile.BadZipFile, zlib.error, IndexError) as exc:
+                        app.logger.error("Could not rename the file in %s: %s", path, exc)
+                if current:
+                    conn.execute("UPDATE documents SET original_name = ?, kind = ?, size = ? "
+                                 "WHERE id = ?", (name, kind, size, doc_id))
             flash("Document updated.", "success")
         return redirect(request.referrer or url_for("index"))
 
