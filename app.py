@@ -119,6 +119,12 @@ HASH_SLOTS = threading.BoundedSemaphore(4)
 # disk or make its dashboard slow for everyone.
 PLACE_MAX = 100
 MOVEMENTS_MAX = 1000
+# Content-Security-Policy of every HTML page. Scripts only from static/js (no inline scripts or
+# on* attributes anywhere); inline style attributes stay allowed for the meters and map pins.
+CSP = ("default-src 'self'; script-src 'self'; "
+       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+       "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
+       "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 EMAIL_CHANGE_MAX_AGE = 3600
 
 # config.env is the source of truth, as the README says: it overrides variables that happen to
@@ -358,7 +364,11 @@ def create_app(overrides=None):
         # No page may be framed (clickjacking), sniffed into another type, or leak its path to
         # other sites. Signed in pages hold private data: never keep them in a cache.
         resp.headers.setdefault("X-Frame-Options", "DENY")
-        resp.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+        # Pages may only run the app's own script files: even if some text ever escaped the
+        # template escaping, an injected <script> or onerror= would not run. Receipts (PDFs
+        # and images) only get frame-ancestors, as a full policy breaks Chrome's PDF viewer.
+        resp.headers.setdefault("Content-Security-Policy", CSP if resp.mimetype == "text/html"
+                                else "frame-ancestors 'none'")
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
         if current_user.is_authenticated and request.endpoint != "static":
@@ -368,7 +378,7 @@ def create_app(overrides=None):
     # CSS and JS are cached for a week, so their URLs change whenever their content does,
     # also between releases.
     digest = hashlib.sha256()
-    for name in ("css/style.css", "js/theme.js"):
+    for name in ("css/style.css", "js/theme.js", "js/theme-init.js"):
         with open(os.path.join(app.static_folder, name), "rb") as fh:
             digest.update(fh.read())
     asset_version = digest.hexdigest()[:10]

@@ -146,7 +146,7 @@ class HeaderTests(AppTestCase):
     def test_pages_cannot_be_framed_or_sniffed(self):
         resp = self.app.test_client().get("/")
         self.assertEqual(resp.headers["X-Frame-Options"], "DENY")
-        self.assertEqual(resp.headers["Content-Security-Policy"], "frame-ancestors 'none'")
+        self.assertIn("frame-ancestors 'none'", resp.headers["Content-Security-Policy"])
         self.assertEqual(resp.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(resp.headers["Referrer-Policy"], "same-origin")
 
