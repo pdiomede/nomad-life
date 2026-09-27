@@ -100,7 +100,7 @@ class SignupConfirmationTests(AppTestCase):
         self.age_emails()
         html = self.client.post("/signup", data={"email": EMAIL, "password": "password2",
                                 "confirm": "password2"}, follow_redirects=True).get_data(as_text=True)
-        self.assertIn("already waiting for confirmation", html)
+        self.assertIn(f"We sent an email to {EMAIL}.", html)  # same answer as a new address
         self.assertEqual(self.user()["id"], first_id)
         link = self.last_link(EMAIL, kind="reset")
         self.client.post(link, data={"password": "password3", "confirm": "password3"})
@@ -113,8 +113,15 @@ class SignupConfirmationTests(AppTestCase):
     def test_confirmed_email_cannot_sign_up_again(self):
         self.signup(EMAIL)
         self.client.post("/logout")
-        html = self.post_signup().get_data(as_text=True)
-        self.assertIn("An account with this email already exists", html)
+        self.age_emails()
+        sent = len(self.outbox)
+        html = self.post_signup(password="password9").get_data(as_text=True)
+        # Same answer as for a new address; the owner is told by email instead.
+        self.assertNotIn("already exists", html)
+        self.assertEqual(len(self.outbox), sent + 1)
+        self.assertEqual(self.outbox[-1]["to"], EMAIL)
+        self.assertIn("already has an account", self.outbox[-1]["text"])
+        self.assertEqual(self.login(password="password9").status_code, 200)  # nothing changed
 
     def test_reset_and_confirmation_tokens_are_not_interchangeable(self):
         self.post_signup()

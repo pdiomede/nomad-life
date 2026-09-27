@@ -1,0 +1,14 @@
+Hi,
+
+Someone tried to sign up for Nomad Life with {{ email }}, but this address already has an account. If it was you, just sign in:
+
+{{ link }}
+
+Forgot your password? You can choose a new one here:
+
+{{ forgot_link }}
+
+If it was not you, you can ignore this email. Nothing has changed on your account.
+
+Nomad Life
+{{ site_url }}

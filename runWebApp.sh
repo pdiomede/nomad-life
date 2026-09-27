@@ -123,6 +123,10 @@ else
 fi
 
 # 5. Start
+# The database, the secret key and receipts are private: other accounts on this machine must
+# not read them, also for files made by older versions.
+umask 077
 mkdir -p data uploads
+chmod -R go-rwx data uploads config.env 2>/dev/null || true
 info "Starting Nomad Life on http://localhost:$PORT (press Ctrl+C to stop)"
 exec "$VENV_PY" app.py

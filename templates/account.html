@@ -67,6 +67,16 @@
     </form>
   </section>
 
+  <section class="card" aria-labelledby="sessions-title">
+    <div class="card-head"><h2 id="sessions-title">Signed in devices</h2></div>
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="sessions">
+      <p class="muted small">Signed in on a computer you no longer use, or think someone copied your session? Sign out every other browser and device. You stay signed in here.</p>
+      <div><button class="btn btn-ghost" type="submit">Sign out everywhere else</button></div>
+    </form>
+  </section>
+
   <section class="card danger-zone" aria-labelledby="delete-title">
     <h2 id="delete-title">Delete my account</h2>
     <p class="muted small">Permanently removes your account, every year, movement and receipt. You will confirm twice and type your email.</p>

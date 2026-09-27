@@ -1,0 +1,10 @@
+{% extends "email/_layout.html" %}
+{% set p = "margin:0 0 14px; font-size:15px; line-height:1.6; color:#303549;" %}
+{% block preheader %}This address already has a Nomad Life account. Sign in, or reset your password.{% endblock %}
+{% block heading %}You already have an account{% endblock %}
+{% block body %}
+<p class="nl-text" style="{{ p }}">Someone tried to sign up for Nomad Life with <strong style="word-break:break-all;">{{ email }}</strong>, but this address already has an account.</p>
+<p class="nl-text" style="{{ p }}">If it was you, just sign in. Forgot your password? <a class="nl-link" href="{{ forgot_link }}" style="color:#A13A8C;">Choose a new one</a>.</p>
+{% endblock %}
+{% block button %}Sign in{% endblock %}
+{% block note %}If it was not you, you can ignore this email. Nothing has changed on your account.{% endblock %}

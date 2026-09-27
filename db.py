@@ -98,6 +98,12 @@ def init_db(path):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     conn = sqlite3.connect(path)
     try:
+        # Password hashes and emails: readable by the account running the app only. SQLite
+        # gives its journal files the same permissions.
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
         conn.executescript(SCHEMA)
         conn.commit()
         migrate(conn)

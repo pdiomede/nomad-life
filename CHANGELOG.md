@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.7] - 2026-09-27
+
+Security release. A review of the whole app found no way for one user to see or change another user's data (every private page, download and form answers "not found" for someone else's years, stays and receipts). It did find the issues below, all fixed.
+
+### Added
+
+- Account page: "Sign out everywhere else" signs out every other browser and device at once, including "Remember me" ones.
+
+### Security
+
+- Sign up had no limit: anyone could create accounts and send emails without end, and many sign ups at once could use up the server's memory (each password hash takes about 32 MB). Sign ups are now limited to 10 per network every 15 minutes, a password is only hashed for a new account, and at most 4 password checks run at the same time.
+- Sign up and the email change form said when an address already had an account, which let anyone check who uses Nomad Life. Both now give the same answer either way; the owner of the address gets an email saying they already have an account.
+- Signing in answered faster for an unknown email than for a real one, which also revealed who has an account. Both now take the same time.
+- Anyone could keep an account (an admin's too) locked out of sign in by failing 5 times on purpose every 15 minutes. A browser that signed in to the account before now has its own limit, so the owner can still sign in there; new browsers stay limited as before.
+- The dashboard map slowed down sharply with many stays (tens of seconds for a few thousand), long enough to slow the app for everyone. It is now fast, and a year can hold at most 1,000 stays.
+- City and country names had no length limit, so one account could fill the server's disk without using its storage quota. They are now limited to 100 characters.
+- Signed in pages (dashboard, stays, account, plan, admin) could be kept by the browser or a shared cache and shown again after signing out. They are now marked private and never stored.
+- Pages could be shown inside another site's frame (clickjacking), and the browser could guess content types. Every response now forbids framing, turns off type guessing and keeps page addresses from being sent to other sites.
+- "Remember me" lasted a year, so a copied cookie stayed useful for that long even after signing out. It now lasts 30 days.
+- The database and receipts were readable by every account on the server's machine. `runWebApp.sh` and the app now create them readable by the account that runs the app only, and fix the permissions of existing files.
+
 ## [1.2.6] - 2026-09-27
 
 ### Added

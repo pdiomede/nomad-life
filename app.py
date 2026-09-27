@@ -5,6 +5,7 @@ import mimetypes
 import os
 import re
 import secrets
+import threading
 import time
 from urllib.parse import quote, urlencode
 import uuid
@@ -13,8 +14,8 @@ import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
 from dotenv import load_dotenv
-from flask import (Flask, Response, abort, flash, redirect, render_template, request,
-                   send_from_directory, session, url_for)
+from flask import (Flask, Response, abort, current_app, flash, redirect, render_template,
+                   request, send_from_directory, session, url_for)
 from markupsafe import escape
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_url, login_user, logout_user)
@@ -30,7 +31,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.6"
+APP_VERSION = "1.2.7"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -105,7 +106,19 @@ EMAIL_COOLDOWN_SECONDS = 60
 # within LIMIT_WINDOW_MINUTES, per account and per IP address, and password reset requests
 # per IP address.
 LIMIT_WINDOW_MINUTES = 15
-LIMITS = {("fail", "email"): 5, ("fail", "ip"): 20, ("forgot", "ip"): 5}
+# A browser that signed in before carries a device cookie: its failures count per device
+# instead of per account, so strangers failing on purpose cannot lock the owner out.
+LIMITS = {("fail", "email"): 5, ("fail", "device"): 5, ("fail", "ip"): 20,
+          ("forgot", "ip"): 5, ("signup", "ip"): 10}
+DEVICE_COOKIE = "nomadlife_device"
+DEVICE_MAX_AGE = 365 * 24 * 3600
+# Sign up and sign in hash passwords with scrypt (about 32 MB of memory each), so only a few
+# may run at once.
+HASH_SLOTS = threading.BoundedSemaphore(4)
+# Place names and the number of stays per year are capped so one account cannot fill the
+# disk or make its dashboard slow for everyone.
+PLACE_MAX = 100
+MOVEMENTS_MAX = 1000
 EMAIL_CHANGE_MAX_AGE = 3600
 
 # config.env is the source of truth, as the README says: it overrides variables that happen to
@@ -257,6 +270,10 @@ def create_app(overrides=None):
         REMEMBER_COOKIE_NAME="nomadlife_remember",
         SESSION_COOKIE_SAMESITE="Lax",
         REMEMBER_COOKIE_SAMESITE="Lax",
+        # "Remember me" lasts a month instead of Flask-Login's year, so a copied cookie does
+        # not stay useful for long; "Sign out everywhere" on the account page ends it at once.
+        REMEMBER_COOKIE_DURATION=timedelta(days=30),
+        PERMANENT_SESSION_LIFETIME=timedelta(days=30),
         # Form tokens stay valid as long as the session, instead of expiring after an hour
         # (which made "Sign out" on a page left open fail while the user stayed signed in).
         WTF_CSRF_TIME_LIMIT=None,
@@ -335,6 +352,18 @@ def create_app(overrides=None):
         if time.monotonic() - last_purge[0] >= PURGE_EVERY_SECONDS:
             last_purge[0] = time.monotonic()
             purge_unverified()
+
+    @app.after_request
+    def security_headers(resp):
+        # No page may be framed (clickjacking), sniffed into another type, or leak its path to
+        # other sites. Signed in pages hold private data: never keep them in a cache.
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "same-origin")
+        if current_user.is_authenticated and request.endpoint != "static":
+            resp.headers["Cache-Control"] = "private, no-store"
+        return resp
 
     # CSS and JS are cached for a week, so their URLs change whenever their content does,
     # also between releases.
@@ -424,19 +453,21 @@ def client_ip():
     return request.remote_addr or "unknown"
 
 
-def limit_keys(kind, email=None):
+def limit_keys(kind, email=None, device=None):
     keys = [("ip", f"ip:{client_ip()}")]
-    if email:
+    if device:
+        keys.append(("device", f"device:{device}"))
+    elif email:
         keys.append(("email", f"email:{email}"))
     return [(scope, key) for scope, key in keys if (kind, scope) in LIMITS]
 
 
-def take_attempt(kind, email=None):
+def take_attempt(kind, email=None, device=None):
     """Count this attempt against the limits, or refuse it. Returns (minutes to wait, scope
     that hit its limit, ids of the rows recorded). Checking and recording happen under one
     write lock, so requests sent in parallel cannot all pass the check before any is counted."""
     window = f"-{LIMIT_WINDOW_MINUTES} minutes"
-    keys = limit_keys(kind, email)
+    keys = limit_keys(kind, email, device)
     with db.transaction() as conn:
         conn.execute("DELETE FROM auth_events WHERE created_at <= datetime('now', ?)", (window,))
         wait, hit = 0, None
@@ -460,15 +491,57 @@ def take_attempt(kind, email=None):
     return 0, None, ids
 
 
-def forgive(ids, email):
-    """A right password: drop this attempt and the account's earlier failures."""
+def forgive(ids, email, device=None):
+    """A right password: drop this attempt and the account's (or device's) earlier failures."""
     if ids:
         db.execute(f"DELETE FROM auth_events WHERE id IN ({','.join('?' * len(ids))})", ids)
-    db.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key = ?", (f"email:{email}",))
+    db.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key IN (?, ?)",
+               (f"email:{email}", f"device:{device}"))
+
+
+_dummy_hash = []
+
+
+def hash_password(password):
+    with HASH_SLOTS:
+        return generate_password_hash(password)
+
+
+def password_matches(pw_hash, password):
+    """Check a password. Without a stored hash (an unknown email), check against a dummy hash
+    anyway, so the answer takes as long as for a real account and does not reveal it."""
+    if not pw_hash:
+        if not _dummy_hash:
+            _dummy_hash.append(hash_password(secrets.token_hex(16)))
+        pw_hash = _dummy_hash[0]
+        with HASH_SLOTS:
+            check_password_hash(pw_hash, password)
+        return False
+    with HASH_SLOTS:
+        return check_password_hash(pw_hash, password)
+
+
+def device_for(email):
+    """The device id of this browser, if its device cookie was issued for this email."""
+    raw = request.cookies.get(DEVICE_COOKIE)
+    if not raw or not email:
+        return None
+    try:
+        data = serializer("device").loads(raw, max_age=DEVICE_MAX_AGE)
+    except BadSignature:
+        return None
+    return data.get("d") if data.get("e") == email else None
+
+
+def remember_device(resp, email):
+    token = serializer("device").dumps({"e": email, "d": device_for(email) or uuid.uuid4().hex})
+    resp.set_cookie(DEVICE_COOKIE, token, max_age=DEVICE_MAX_AGE, httponly=True,
+                    samesite="Lax", secure=current_app.config.get("SESSION_COOKIE_SECURE", False))
+    return resp
 
 
 def too_many_message(wait, scope, what):
-    who = "from this network" if scope == "ip" else "for this account"
+    who = {"ip": "from this network", "device": "on this device"}.get(scope, "for this account")
     return f"Too many {what} {who}. Please wait {plural(wait, 'minute')} and try again."
 
 
@@ -789,7 +862,7 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
         return quota_message(name, size, left, quota)
 
     user_dir = os.path.join(current_app.config["UPLOAD_DIR"], str(current_user.id))
-    os.makedirs(user_dir, exist_ok=True)
+    os.makedirs(user_dir, mode=0o700, exist_ok=True)
     stored = f"{uuid.uuid4().hex}.{ext}"
     path = os.path.join(user_dir, stored)
     try:
@@ -874,7 +947,7 @@ def map_pins(year_row, movements, stats=None):
     (free text, or no point for the country) are returned apart."""
     stats = stats or compute_stats(year_row, movements)
     days = {fold(r["country"]): r["days"] for r in stats["rows"]}
-    pins, missing = OrderedDict(), []
+    pins, missing, seen = OrderedDict(), [], set()
     places = [(year_row["base_country"], year_row["base_city"], True)]
     places += [(m["country"], m["city"], False) for m in movements]
     for country, city, is_base in places:
@@ -883,14 +956,16 @@ def map_pins(year_row, movements, stats=None):
         point = COUNTRY_POINTS.get(code)
         if point is None:
             # Spellings that Days per country counts as one place are listed once.
-            if all(fold(name) != fold(m) for m in missing):
+            if ("missing", fold(name)) not in seen:
+                seen.add(("missing", fold(name)))
                 missing.append(name)
             continue
         pin = pins.setdefault(code, {"country": name, "flag": flag_emoji(code), "cities": [],
                                      "days": days.get(fold(name), 0),
                                      "is_base": False, "left": point[0], "top": point[1]})
         pin["is_base"] = pin["is_base"] or is_base
-        if all(fold(city) != fold(c) for c in pin["cities"]):  # "Lisbon" and "lisbon" are one
+        if (code, fold(city)) not in seen:  # "Lisbon" and "lisbon" are one
+            seen.add((code, fold(city)))
             pin["cities"].append(city)
     for pin in pins.values():
         # Keep the tooltip inside the map near its edges.
@@ -915,6 +990,8 @@ def validate_movement(form, year, current_notes=None):
     end = parse_date(form.get("end_date"))
     if not city or not country:
         return None, "Country and city are required."
+    if len(city) > PLACE_MAX or len(country) > PLACE_MAX:
+        return None, f"Country and city can be at most {PLACE_MAX} characters."
     if not start or not end:
         return None, "Please provide valid start and end dates."
     if end < start:
@@ -1190,24 +1267,40 @@ def register_routes(app):
             elif password != confirm:
                 flash("Passwords do not match.", "error")
             else:
-                pw_hash = generate_password_hash(password)
-                with db.transaction() as conn:
-                    old = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-                    if not old:
-                        uid = conn.execute("INSERT INTO users (email, password_hash, email_sent_at) "
-                                           "VALUES (?, ?, CURRENT_TIMESTAMP)",
-                                           (email, pw_hash)).lastrowid
+                wait, scope, _attempt = take_attempt("signup")
+                if wait:
+                    flash(too_many_message(wait, scope, "sign ups"), "error")
+                    return render_template("auth/signup.html"), 429
+                # The same answer whether or not the address has an account, so sign up cannot
+                # be used to find out who uses Nomad Life. The mailbox learns the rest.
+                sent = (f"We sent an email to {email}. Open the link in it within "
+                        f"{VERIFY_MINUTES} minutes to continue.")
+                old = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
+                if not old:
+                    pw_hash = hash_password(password)  # only for a new account: it is costly
+                    with db.transaction() as conn:
+                        old = conn.execute("SELECT * FROM users WHERE email = ?",
+                                           (email,)).fetchone()
+                        if not old:
+                            uid = conn.execute(
+                                "INSERT INTO users (email, password_hash, email_sent_at) "
+                                "VALUES (?, ?, CURRENT_TIMESTAMP)", (email, pw_hash)).lastrowid
                 if old and (old["verified_at"] is not None or old["disabled"]):
-                    flash("An account with this email already exists.", "error")
-                    return render_template("auth/signup.html")
+                    if not old["disabled"] and email_allowed(old["id"]):
+                        if not send_template_email(email, "You already have a Nomad Life account",
+                                                   "account_exists", email=email,
+                                                   link=email_link("login"),
+                                                   forgot_link=email_link("forgot")):
+                            release_email_wait(old["id"])
+                    flash(sent, "info")
+                    return redirect(url_for("login"))
                 if old:
                     # A sign up for this address is already waiting. Never replace it: whoever
                     # signs up again could be a stranger choosing the password. Instead the
                     # mailbox gets a link to choose the password, which also confirms.
                     if not email_allowed(old["id"]):
-                        flash(f"We just sent an email to {email}. Please check your inbox, or wait "
-                              "a minute and try again.", "info")
-                        return render_template("auth/signup.html")
+                        flash(sent, "info")
+                        return redirect(url_for("login"))
                     # Earlier confirmation links stop working: only the mailbox owner, through
                     # the link below, decides the password now.
                     db.execute("UPDATE users SET session_version = session_version + 1 WHERE id = ?",
@@ -1218,8 +1311,7 @@ def register_routes(app):
                         flash("We could not send the email. Please try again in a few minutes.",
                               "error")
                         return render_template("auth/signup.html")
-                    flash(f"This email is already waiting for confirmation. We sent {email} a link "
-                          "to choose a password and activate the account.", "info")
+                    flash(sent, "info")
                     return redirect(url_for("login"))
                 row = db.query("SELECT * FROM users WHERE id = ?", (uid,), one=True)
                 if not send_verification(row):
@@ -1227,8 +1319,7 @@ def register_routes(app):
                     flash("We could not send the confirmation email. Please try again in a few "
                           "minutes.", "error")
                     return render_template("auth/signup.html")
-                flash(f"We sent a confirmation link to {email}. Open it within {VERIFY_MINUTES} "
-                      "minutes to activate your account.", "info")
+                flash(sent, "info")
                 return redirect(url_for("login"))
         return render_template("auth/signup.html")
 
@@ -1289,14 +1380,16 @@ def register_routes(app):
         if request.method == "POST":
             purge_unverified()
             email = request.form.get("email", "").strip().lower()
-            wait, scope, attempt = take_attempt("fail", email)
+            device = device_for(email)
+            wait, scope, attempt = take_attempt("fail", email, device)
             if wait:
                 flash(too_many_message(wait, scope, "failed sign in attempts")
                       + ("" if scope == "ip" else " You can also reset your password."), "error")
                 return render_template("auth/login.html"), 429
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
-            if row and check_password_hash(row["password_hash"], request.form.get("password", "")):
-                forgive(attempt, email)
+            if password_matches(row["password_hash"] if row else None,
+                                request.form.get("password", "")):
+                forgive(attempt, email, device)
                 if row["disabled"]:
                     flash("This account is disabled. Please contact the administrator.", "error")
                     return render_template("auth/login.html")
@@ -1321,7 +1414,8 @@ def register_routes(app):
                 db.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
                            (row["id"],))
                 login_user(User(row), remember=bool(request.form.get("remember")))
-                return redirect(safe_next(request.args.get("next", "")) or url_for("index"))
+                return remember_device(
+                    redirect(safe_next(request.args.get("next", "")) or url_for("index")), email)
             flash("Invalid email or password.", "error")
         return render_template("auth/login.html")
 
@@ -1381,7 +1475,7 @@ def register_routes(app):
                 # The link came by email, so it also confirms an account still waiting for it.
                 db.execute("UPDATE users SET password_hash = ?, verified_at = COALESCE(verified_at, "
                            "CURRENT_TIMESTAMP) WHERE id = ?",
-                           (generate_password_hash(password), row["id"]))
+                           (hash_password(password), row["id"]))
                 # Proving the mailbox ends a lock from wrong guesses (by anyone) on this account.
                 db.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key = ?",
                            (f"email:{row['email']}",))
@@ -1445,6 +1539,8 @@ def register_routes(app):
                 flash("Please enter a valid year.", "error")
             elif not city or not country:
                 flash("Base country and city are required.", "error")
+            elif len(city) > PLACE_MAX or len(country) > PLACE_MAX:
+                flash(f"Base country and city can be at most {PLACE_MAX} characters.", "error")
             else:
                 try:
                     db.execute("INSERT INTO years (user_id, year, base_city, base_country) "
@@ -1486,8 +1582,11 @@ def register_routes(app):
             if action == "update":
                 city = " ".join(request.form.get("base_city", "").split())
                 country = normalize_country(request.form.get("base_country", ""))
-                if not city or not country:
-                    flash("Base country and city are required.", "error")
+                err = ("Base country and city are required." if not city or not country else
+                       f"Base country and city can be at most {PLACE_MAX} characters."
+                       if len(city) > PLACE_MAX or len(country) > PLACE_MAX else None)
+                if err:
+                    flash(err, "error")
                     return render_template("base_location.html", y=year_row, form=request.form,
                                            docs=documents_for(year_row["id"]))
                 else:
@@ -1525,6 +1624,10 @@ def register_routes(app):
         form = request.form if request.method == "POST" else {}
         if request.method == "POST":
             data, err = validate_movement(request.form, year)
+            count = db.query("SELECT COUNT(*) AS n FROM movements WHERE year_id = ?",
+                             (year_row["id"],), one=True)["n"]
+            if not err and count >= MOVEMENTS_MAX:
+                err = f"A year can hold at most {MOVEMENTS_MAX} movements."
             if err:
                 flash(err, "error")
             else:
@@ -1605,12 +1708,13 @@ def register_routes(app):
     def check_current_password(row):
         """Wrong current passwords count as failed sign ins, so the account page cannot be
         used to guess a password either. Returns an error message or None."""
-        wait, scope, attempt = take_attempt("fail", row["email"])
+        device = device_for(row["email"])
+        wait, scope, attempt = take_attempt("fail", row["email"], device)
         if wait:
             return too_many_message(wait, scope, "wrong passwords")
-        if not check_password_hash(row["password_hash"], request.form.get("current_password", "")):
+        if not password_matches(row["password_hash"], request.form.get("current_password", "")):
             return "Your current password is not correct."
-        forgive(attempt, row["email"])
+        forgive(attempt, row["email"], device)
         return None
 
     @app.route("/account", methods=["GET", "POST"])
@@ -1625,6 +1729,14 @@ def register_routes(app):
                     flash(f"The change to {row['pending_email']} was cancelled. The link we sent "
                           "no longer works.", "success")
                 return redirect(url_for("account"))
+            if action == "sessions":  # ending other sessions only takes access away
+                db.execute("UPDATE users SET session_version = session_version + 1 WHERE id = ?",
+                           (row["id"],))
+                remember = app.config["REMEMBER_COOKIE_NAME"] in request.cookies
+                login_user(User(db.query("SELECT * FROM users WHERE id = ?", (row["id"],),
+                                         one=True)), remember=remember)
+                flash("Every other browser and device has been signed out.", "success")
+                return redirect(url_for("account"))
             err = check_current_password(row)
             if action == "password":
                 password = request.form.get("password", "")
@@ -1634,11 +1746,11 @@ def register_routes(app):
                     flash("Password must be at least 8 characters.", "error")
                 elif password != request.form.get("confirm", ""):
                     flash("Passwords do not match.", "error")
-                elif check_password_hash(row["password_hash"], password):
+                elif password_matches(row["password_hash"], password):
                     flash("The new password is the same as the current one.", "error")
                 else:
                     db.execute("UPDATE users SET password_hash = ? WHERE id = ?",
-                               (generate_password_hash(password), row["id"]))
+                               (hash_password(password), row["id"]))
                     # The new password changes the session fingerprint: stay signed in here,
                     # every other browser and remember cookie is signed out.
                     remember = app.config["REMEMBER_COOKIE_NAME"] in request.cookies
@@ -1659,9 +1771,8 @@ def register_routes(app):
                               "longer works.", "success")
                     else:
                         flash("That is already your email address.", "error")
-                elif db.query("SELECT 1 FROM users WHERE email = ? AND verified_at IS NOT NULL",
-                              (new,), one=True):
-                    flash("Another account already uses this email address.", "error")
+                # An address used by another account gets the link too (confirming it then
+                # explains the problem), so this form cannot tell who has an account.
                 elif not email_allowed(row["id"]):
                     flash("We just sent you an email. Please wait a minute and try again.", "info")
                 else:
@@ -1968,5 +2079,6 @@ def register_routes(app):
 app = create_app()
 
 if __name__ == "__main__":
+    os.umask(0o077)  # the database and receipts are private to the account running the app
     app.run(host="127.0.0.1", port=app.config["APP_PORT"],
             debug=os.getenv("FLASK_DEBUG") == "1")

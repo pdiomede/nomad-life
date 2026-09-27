@@ -64,8 +64,7 @@ class AccountTests(AppTestCase):
         self.signup("b@example.com", client=self.app.test_client())
         self.age_emails()
         for email, message in [("not-an-email", "Please enter a valid email address."),
-                               ("a@example.com", "That is already your email address."),
-                               ("b@example.com", "Another account already uses this email")]:
+                               ("a@example.com", "That is already your email address.")]:
             html = self.post(action="email", email=email, current_password="password1").data.decode()
             self.assertIn(message, html)
 
@@ -137,7 +136,7 @@ class LimitTests(AppTestCase):
         html = self.client.post("/account", data={
             "action": "password", "current_password": "password1", "password": "newpass123",
             "confirm": "newpass123"}, follow_redirects=True).data.decode()
-        self.assertIn("Too many wrong passwords for this account.", html)
+        self.assertIn("Too many wrong passwords on this device.", html)
 
     def test_reset_requests_are_limited_per_address(self):
         for i in range(5):

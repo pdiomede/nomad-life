@@ -95,7 +95,8 @@ class LimitMessageTests(AppTestCase):
 
         def spy(h, p):
             with self.db() as conn:
-                calls.append(conn.execute("SELECT COUNT(*) FROM auth_events").fetchone()[0])
+                calls.append(conn.execute("SELECT COUNT(*) FROM auth_events "
+                                          "WHERE kind = 'fail'").fetchone()[0])
             return real(h, p)
 
         with mock.patch.object(appmod, "check_password_hash", spy):
