@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.5] - 2026-09-27
+
+### Fixed
+
+- Map: pins of neighbouring countries covered each other, so their day counts could not be read, and the base could show a misleading "1" for 348 days when a trip next door sat on top of it. Overlapping pins are now moved slightly apart (and a bit smaller on phones), staying close to their country and inside the map.
+- Map: tapping a pin on a phone did not open its tooltip. It opens on tap now, as on hover or keyboard focus.
+- Map: the cities in a tooltip could repeat with different capitals ("Lisbon, lisbon").
+- Map: "Not on the map" listed one place twice when it was typed two ways ("Transnístria, Transnistria"), although Days per country counts them as one.
+
 ## [1.2.4] - 2026-09-27
 
 ### Changed

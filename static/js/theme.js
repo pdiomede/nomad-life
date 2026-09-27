@@ -367,6 +367,56 @@
     });
   });
 
+  // Map: pins of neighbouring countries (Portugal and Spain, the Benelux...) would cover each
+  // other's day counts, so overlapping pins are nudged apart in pixels, again on resize.
+  document.querySelectorAll(".map").forEach(function (map) {
+    var pins = [].slice.call(map.querySelectorAll(".map-pin"));
+    if (pins.length < 2) return;
+    var layout = function () {
+      var w = map.clientWidth, h = map.clientHeight;
+      var items = pins.map(function (pin) {
+        return { pin: pin, x: parseFloat(pin.style.left) / 100 * w, y: parseFloat(pin.style.top) / 100 * h,
+                 dx: 0, dy: 0, rx: pin.offsetWidth / 2 + 1, ry: pin.offsetHeight / 2 + 1 };
+      });
+      // A pin moves at most about one pin away from its country and never leaves the map; on a
+      // very small map a few pins may still touch rather than drift to the wrong place.
+      var reach = Math.max(16, Math.min(56, w * 0.07));
+      var clamp = function (it) {
+        it.dx = Math.max(-reach, Math.min(reach, it.dx));
+        it.dy = Math.max(-reach, Math.min(reach, it.dy));
+        it.dx = Math.min(Math.max(it.x + it.dx, it.rx), w - it.rx) - it.x;
+        it.dy = Math.min(Math.max(it.y + it.dy, it.ry), h - it.ry) - it.y;
+      };
+      items.forEach(clamp);
+      for (var round = 0; round < 400; round++) {
+        var moved = false;
+        for (var i = 0; i < items.length; i++) {
+          for (var j = i + 1; j < items.length; j++) {
+            var a = items[i], b = items[j];
+            var ox = (a.rx + b.rx) - Math.abs((b.x + b.dx) - (a.x + a.dx));
+            var oy = (a.ry + b.ry) - Math.abs((b.y + b.dy) - (a.y + a.dy));
+            if (ox <= 0 || oy <= 0) continue;
+            moved = true;
+            // Separate along the shorter overlap; identical points split sideways.
+            var sx = Math.sign((b.x + b.dx) - (a.x + a.dx)) || (j % 2 ? 1 : -1);
+            var sy = Math.sign((b.y + b.dy) - (a.y + a.dy)) || (j % 2 ? 1 : -1);
+            if (ox < oy) { a.dx -= sx * ox / 2; b.dx += sx * ox / 2; }
+            else { a.dy -= sy * oy / 2; b.dy += sy * oy / 2; }
+            clamp(a); clamp(b);
+          }
+        }
+        if (!moved) break;
+      }
+      items.forEach(function (it) {
+        it.pin.style.setProperty("--nudge-x", it.dx.toFixed(1) + "px");
+        it.pin.style.setProperty("--nudge-y", it.dy.toFixed(1) + "px");
+      });
+    };
+    layout();
+    var timer = null;
+    window.addEventListener("resize", function () { clearTimeout(timer); timer = setTimeout(layout, 100); });
+  });
+
   // Show the chosen file name next to custom file inputs, and reject files over the
   // upload limit before submitting (the server would drop the whole form).
   document.querySelectorAll("input[type=file][data-label]").forEach(function (input) {

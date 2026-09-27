@@ -30,7 +30,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.4"
+APP_VERSION = "1.2.5"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -877,14 +877,15 @@ def map_pins(year_row, movements, stats=None):
         code = COUNTRY_CODES.get(name)
         point = COUNTRY_POINTS.get(code)
         if point is None:
-            if name not in missing:
+            # Spellings that Days per country counts as one place are listed once.
+            if all(fold(name) != fold(m) for m in missing):
                 missing.append(name)
             continue
         pin = pins.setdefault(code, {"country": name, "flag": flag_emoji(code), "cities": [],
                                      "days": days.get(fold(name), 0),
                                      "is_base": False, "left": point[0], "top": point[1]})
         pin["is_base"] = pin["is_base"] or is_base
-        if city not in pin["cities"]:
+        if all(fold(city) != fold(c) for c in pin["cities"]):  # "Lisbon" and "lisbon" are one
             pin["cities"].append(city)
     for pin in pins.values():
         # Keep the tooltip inside the map near its edges.
