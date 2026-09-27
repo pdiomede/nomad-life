@@ -43,13 +43,13 @@ class PlanTests(AppTestCase):
     def test_plan_page_shows_current_and_next_tier(self):
         html = self.page("/plan")
         self.assertIn("Your plan", html)
-        self.assertIn("Upgrade to Pro, &euro;4 / month", html)
+        self.assertIn("Upgrade to Pro, $4 / month", html)
         self.assertIn("Online payment is coming soon.", html)
         self.assertIn("5 GB of receipt storage", html)
 
     def test_pro_sees_nomad_plus(self):
         self.set_plan("pro")
-        self.assertIn("Upgrade to Nomad+, &euro;9 / month", self.page("/plan"))
+        self.assertIn("Upgrade to Nomad+, $9 / month", self.page("/plan"))
 
     def test_top_plan(self):
         self.set_plan("plus")
@@ -70,7 +70,7 @@ class PlanTests(AppTestCase):
     def test_landing_lists_every_tier(self):
         self.client.post("/logout")
         html = self.page("/")
-        for text in ('id="pricing"', ">Free<", ">Pro<", ">Nomad+<", "&euro;4", "&euro;9",
+        for text in ('id="pricing"', ">Free<", ">Pro<", ">Nomad+<", "$4", "$9",
                      "25 GB of receipt storage", "Priority support"):
             self.assertIn(text, html)
 
@@ -147,15 +147,15 @@ class PlanBugTests(AppTestCase):
         html = self.client.get(resp.headers["Location"], follow_redirects=True).get_data(as_text=True)
         self.assertIn("This form was too large to save. Receipts can be at most 10 MB each.", html)
 
-    def test_structured_data_lists_every_plan_in_euro(self):
+    def test_structured_data_lists_every_plan_in_dollars(self):
         self.client.post("/logout")
         html = self.client.get("/").get_data(as_text=True)
         data = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>',
                                     html, re.S).group(1))
         app_node = next(n for n in data["@graph"] if n["@type"] == "WebApplication")
         offers = {o["name"]: (o["price"], o["priceCurrency"]) for o in app_node["offers"]}
-        self.assertEqual(offers, {"Free": ("0", "EUR"), "Pro": ("4", "EUR"),
-                                  "Nomad+": ("9", "EUR")})
+        self.assertEqual(offers, {"Free": ("0", "USD"), "Pro": ("4", "USD"),
+                                  "Nomad+": ("9", "USD")})
 
 
 class AdminPlanTests(AppTestCase):
@@ -215,3 +215,35 @@ class AdminPlanSelectorTests(AppTestCase):
         resp = self.user.post(f"/admin/users/{self.uid}", data={"action": "plan", "plan": "plus"})
         self.assertEqual(resp.status_code, 404)
         self.assertEqual(self.plan(), "free")
+
+
+class PlanFeatureTests(unittest.TestCase):
+    def cards(self):
+        a = appmod.create_app({"TESTING": True, "SECRET_KEY": "k", "DATABASE_PATH": self.db,
+                               "UPLOAD_DIR": self.up, "GMAIL_USER": "", "GMAIL_APP_PASSWORD": "",
+                               "USER_QUOTA_BYTES": 500 * MB, "MAX_RECEIPT_BYTES": 10 * MB})
+        html = a.test_client().get("/").get_data(as_text=True)
+        section = html[html.index('id="pricing"'):html.index("Prices in US dollars")]
+        return dict(zip(("Free", "Pro", "Nomad+"), section.split('class="card plan-card')[1:]))
+
+    def setUp(self):
+        tmp = tempfile.mkdtemp(prefix="nomadlife-test-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        self.db, self.up = os.path.join(tmp, "t.db"), os.path.join(tmp, "u")
+
+    def test_free_lists_everything(self):
+        free = self.cards()["Free"]
+        self.assertNotIn("Everything in", free)
+        self.assertIn("Unlimited years and stays", free)
+        self.assertIn("500 MB of receipt storage", free)
+
+    def test_paid_plans_list_what_they_add(self):
+        cards = self.cards()
+        self.assertIn("Everything in Free, plus:", cards["Pro"])
+        self.assertIn("5 GB of receipt storage (10x Free)", cards["Pro"])
+        self.assertIn("Receipts up to 25 MB each", cards["Pro"])
+        self.assertNotIn("Unlimited years and stays", cards["Pro"])
+        self.assertIn("Everything in Pro, plus:", cards["Nomad+"])
+        self.assertIn("25 GB of receipt storage (5x Pro)", cards["Nomad+"])
+        self.assertIn("Priority support", cards["Nomad+"])
+        self.assertNotIn("Accountant package", cards["Nomad+"])

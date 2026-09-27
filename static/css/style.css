@@ -451,7 +451,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .plan-price .muted { font-size: 15px; font-weight: 500; }
 .plan-features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .plan-features li { padding-left: 22px; position: relative; overflow-wrap: anywhere; }
+.plan-includes { margin: 0 0 -4px; font-size: 14px; font-weight: 700; }
+.plan-features-plus li { font-weight: 600; }
 .plan-features li::before { content: ""; position: absolute; left: 2px; top: 0.35em; width: 10px; height: 5px; border-left: 2px solid var(--success-text); border-bottom: 2px solid var(--success-text); transform: rotate(-45deg); }
+.plan-features-plus li::before { border-color: var(--link); }
 .plan-highlight { border-color: var(--link); box-shadow: 0 0 0 1px var(--link); }
 .plan-current { border-color: var(--border); }
 .pricing { margin: 0 0 48px; }

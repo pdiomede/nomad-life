@@ -6,10 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- Plans: Free (500 MB of receipts, 10 MB per receipt), Pro (EUR 4 a month, 5 GB, 25 MB per receipt) and Nomad+ (EUR 9 a month, 25 GB, 50 MB per receipt, priority support). Each plan sets its own storage and receipt limits. Everyone starts on Free; online payment is not available yet.
+- Plans: Free (500 MB of receipts, 10 MB per receipt), Pro ($4 a month, 5 GB, 25 MB per receipt) and Nomad+ ($9 a month, 25 GB, 50 MB per receipt, priority support). Each plan sets its own storage and receipt limits. Everyone starts on Free; online payment is not available yet.
 - The header shows only your email with an arrow. It opens a menu with your plan (for example FREE, which opens the new plan page), Admin for admins, and Sign out. The Account page is in the footer.
 - "Upgrade" on the Receipt storage card opens the plan page, with your plan, its limits and usage, and the next plan with its price.
-- The landing page has a Plans section with every plan, its price and features, and a "Pricing" button at the top.
+- The landing page has a Plans section with every plan, its price and features, and a "Pricing" button at the top Prices are in US dollars, and each paid plan says "Everything in <previous plan>, plus:" and highlights what it adds.
 - The admin page shows each account's plan and can change it with a plan selector. An account without a custom quota gets the quota of its plan.
 
 ### Fixed
@@ -29,7 +29,7 @@ All notable changes to this project are documented in this file.
 - Sizes of 1024 MB and more were shown in MB (for example "5120 MB"). They now show in GB.
 - On phones about 300 px wide the header ran past the right margin once it showed the plan chip.
 - Uploads over a Free plan's receipt limit were read in full before being refused, once paid plans raised the overall limit. Each request is limited to its user's plan again, so oversized files are refused before they are read.
-- Search engine data for the landing page still said the app was only free, priced in US dollars. It now lists every plan in euro.
+- Search engine data for the landing page still said the app was only free. It now lists every plan with its price.
 
 ## [1.2.1] - 2026-09-26
 

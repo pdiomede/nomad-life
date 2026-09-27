@@ -16,7 +16,7 @@
   {% endcall %}
   {% if upgrade %}
     {% call ui.plan_card(upgrade, highlight=True, heading="h2") %}
-      <button class="btn btn-primary btn-block" type="button" disabled aria-describedby="payment-note">Upgrade to {{ upgrade.name }}, &euro;{{ upgrade.price }} / month</button>
+      <button class="btn btn-primary btn-block" type="button" disabled aria-describedby="payment-note">Upgrade to {{ upgrade.name }}, ${{ upgrade.price }} / month</button>
       <p class="muted small" id="payment-note">Online payment is coming soon.</p>
     {% endcall %}
   {% else %}

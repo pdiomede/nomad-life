@@ -71,6 +71,7 @@ PLANS = OrderedDict([
     ("plus", {"name": "Nomad+", "price": 9, "quota_mb": 25 * 1024, "receipt_mb": 50,
               "extras": ["Priority support"]}),
 ])
+PLAN_CURRENCY, PLAN_SYMBOL = "USD", "$"
 PLAN_FEATURES = ["Unlimited years and stays", "Days per country with the 183 day line",
                  "Accountant package (PDF, spreadsheets, receipts)"]
 NOTES_MAX = 5000
@@ -623,7 +624,7 @@ def site_meta():
              "browserRequirements": "Requires a modern web browser",
              "isAccessibleForFree": True,
              "offers": [{"@type": "Offer", "name": p["name"], "price": str(p["price"]),
-                         "priceCurrency": "EUR", "url": url + "#pricing"}
+                         "priceCurrency": PLAN_CURRENCY, "url": url + "#pricing"}
                         for p in PLANS.values()],
              "featureList": ["Days per country for each solar year",
                              "183 day indicator for your base country",
@@ -645,7 +646,8 @@ def storage_used(user_id):
 
 
 def plan_catalog(config=None):
-    """Every plan with its limits in bytes and the feature list shown to people."""
+    """Every plan with its limits in bytes and the feature list shown to people. Free lists
+    everything; a paid plan lists only what it adds to the plan before it ("includes")."""
     from flask import current_app
     config = config or current_app.config
     free_quota, free_receipt = config["USER_QUOTA_BYTES"], config["MAX_RECEIPT_BYTES"]
@@ -653,11 +655,15 @@ def plan_catalog(config=None):
     for key, p in PLANS.items():
         quota = max(p["quota_mb"] * MB, free_quota) if p["quota_mb"] else free_quota
         receipt = max(p["receipt_mb"] * MB, free_receipt) if p["receipt_mb"] else free_receipt
+        prev = plans[-1] if plans else None
+        storage = f"{format_size(quota, 'down')} of receipt storage"
+        if prev and quota // prev["quota_bytes"] >= 2:
+            storage += f" ({quota // prev['quota_bytes']}x {prev['name']})"
+        limits = [storage, f"Receipts up to {format_size(receipt, 'down')} each"]
         plans.append({"key": key, "name": p["name"], "price": p["price"],
                       "quota_bytes": quota, "receipt_bytes": receipt,
-                      "features": [f"{format_size(quota, 'down')} of receipt storage",
-                                   f"Receipts up to {format_size(receipt, 'down')} each"]
-                                  + PLAN_FEATURES + p["extras"]})
+                      "includes": prev["name"] if prev else None,
+                      "features": limits + p["extras"] if prev else limits + PLAN_FEATURES})
     return plans
 
 
