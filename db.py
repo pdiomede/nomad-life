@@ -66,6 +66,14 @@ CREATE TABLE IF NOT EXISTS auth_events (
 );
 CREATE INDEX IF NOT EXISTS idx_auth_events ON auth_events(kind, key, created_at);
 
+-- Prices set on the admin page, in cents. A plan without a row uses PLANS in app.py.
+CREATE TABLE IF NOT EXISTS plan_prices (
+    plan TEXT PRIMARY KEY,
+    month_cents INTEGER NOT NULL,
+    year_cents INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_movements_year ON movements(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_year ON documents(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_movement ON documents(movement_id);

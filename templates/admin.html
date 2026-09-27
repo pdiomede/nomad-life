@@ -10,6 +10,31 @@
   </div>
 </div>
 
+<section class="card admin-plans" id="plans" aria-labelledby="plans-title">
+  <div class="card-head">
+    <h2 id="plans-title">Plans and prices</h2>
+    <span class="muted small">In US dollars. Leave both fields empty to go back to the default.</span>
+  </div>
+  <ul class="admin-list">
+    {% for p in plans if p.key != 'free' %}
+    <li class="admin-user">
+      <div class="admin-user-main">
+        <p class="admin-email"><strong>{{ p.name }}</strong> {% if p.custom_price %}<span class="tag">Custom price</span>{% endif %}</p>
+        <p class="muted small">${{ p.price }} / month, ${{ p.year }} / year{% if p.year_saving %} (saves ${{ p.year_saving }}){% endif %}. Default: ${{ p.default_price }} / month, ${{ p.default_year }} / year.</p>
+      </div>
+      <form method="post" action="{{ url_for('admin_plan_price', key=p.key) }}" class="admin-actions admin-price">
+        {{ ui.csrf() }}
+        <label for="month-{{ p.key }}" class="small">Monthly $</label>
+        <input id="month-{{ p.key }}" name="month" inputmode="decimal" value="{{ p.price if p.custom_price else '' }}" placeholder="{{ p.default_price }}">
+        <label for="year-{{ p.key }}" class="small">Yearly $</label>
+        <input id="year-{{ p.key }}" name="year" inputmode="decimal" value="{{ p.year if p.custom_price else '' }}" placeholder="{{ p.default_year }}">
+        <button class="btn btn-ghost btn-sm" type="submit" aria-label="Save prices of {{ p.name }}">Save</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
 <section class="stats admin-stats" aria-label="Totals">
   <div class="card stat">
     <p class="stat-label">Accounts</p>
@@ -66,7 +91,7 @@
           <label for="plan-{{ u.id }}" class="small">Plan</label>
           <select id="plan-{{ u.id }}" name="plan">
             {% for p in plans %}
-              <option value="{{ p.key }}"{% if p.key == u.plan_key %} selected{% endif %}>{{ p.name }} ({% if p.price %}${{ p.price }} / month, ${{ p.year }} / year{% else %}free{% endif %})</option>
+              <option value="{{ p.key }}"{% if p.key == u.plan_key %} selected{% endif %}>{{ p.name }} ({% if p.price_cents %}${{ p.price }} / month, ${{ p.year }} / year{% else %}free{% endif %})</option>
             {% endfor %}
           </select>
           <button class="btn btn-ghost btn-sm" type="submit" aria-label="Save plan for {{ u.email }}">Save</button>

@@ -115,7 +115,7 @@
     <{{ heading }} class="plan-name">{{ p.name }}</{{ heading }}>
     {% if current %}<span class="pill pill-ok">Your plan</span>{% endif %}
   </div>
-  <p class="plan-price">{% if p.price %}${{ p.price }} <span class="muted">/ month</span>{% if p.year %} <span class="plan-year">(<strong>${{ p.year }} / year</strong>)</span>{% endif %}{% else %}Free <span class="muted">forever</span>{% endif %}</p>
+  <p class="plan-price">{% if p.price_cents %}${{ p.price }} <span class="muted">/ month</span>{% if p.year_cents %} <span class="plan-year">(<strong>${{ p.year }} / year</strong>)</span>{% endif %}{% else %}Free <span class="muted">forever</span>{% endif %}</p>
   {% if p.year_saving %}<p class="plan-saving"><span class="pill pill-ok">Save ${{ p.year_saving }} a year</span> <span class="muted small">when you pay yearly</span></p>{% endif %}
   {% if p.includes %}<p class="plan-includes">Everything in {{ p.includes }}, plus:</p>{% endif %}
   <ul class="plan-features{% if p.includes %} plan-features-plus{% endif %}">

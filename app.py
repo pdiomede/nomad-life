@@ -74,6 +74,7 @@ PLANS = OrderedDict([
               "package": True, "extras": ["Priority support"]}),
 ])
 PLAN_CURRENCY, PLAN_SYMBOL = "USD", "$"
+MAX_PRICE_CENTS = 1_000_000  # $10,000, a sanity cap for prices typed on the admin page
 PLAN_FEATURES = ["Unlimited years and stays", "Days per country with the 183 day line"]
 NOTES_MAX = 5000
 UPLOAD_GONE = "This stay or year no longer exists, so the file was not saved."
@@ -624,9 +625,9 @@ def site_meta():
              "applicationCategory": "TravelApplication", "operatingSystem": "Any",
              "browserRequirements": "Requires a modern web browser",
              "isAccessibleForFree": True,
-             "offers": [{"@type": "Offer", "name": p["name"], "price": str(p["price"]),
+             "offers": [{"@type": "Offer", "name": p["name"], "price": p["price"],
                          "priceCurrency": PLAN_CURRENCY, "url": url + "#pricing"}
-                        for p in PLANS.values()],
+                        for p in plan_catalog()],
              "featureList": ["Days per country for each solar year",
                              "183 day indicator for your base country",
                              "Receipt storage for rental contracts, hotel bills and flight tickets",
@@ -646,10 +647,37 @@ def storage_used(user_id):
     return row["used"]
 
 
+def money(cents):
+    """Price for people: 400 -> "4", 450 -> "4.50"."""
+    return str(cents // 100) if cents % 100 == 0 else f"{cents / 100:.2f}"
+
+
+def parse_price(raw):
+    """Cents from what an admin typed ("4", "4.5", "$4.50"), or None when it is not a price."""
+    raw = raw.strip().removeprefix(PLAN_SYMBOL).strip().replace(",", ".")
+    if not re.fullmatch(r"\d{1,6}(\.\d{1,2})?", raw):
+        return None
+    whole, _, frac = raw.partition(".")
+    return int(whole) * 100 + int((frac + "00")[:2])
+
+
+def price_overrides():
+    """Prices set on the admin page, {plan: (month_cents, year_cents)}, read once a request."""
+    from flask import g, has_app_context
+    if not has_app_context():
+        return {}
+    if "plan_prices" not in g:
+        g.plan_prices = {r["plan"]: (r["month_cents"], r["year_cents"])
+                         for r in db.query("SELECT * FROM plan_prices")}
+    return g.plan_prices
+
+
 def plan_catalog(config=None):
     """Every plan with its limits in bytes and the feature list shown to people. Free lists
     everything; a paid plan lists only what it adds to the plan before it ("includes")."""
     from flask import current_app
+    # With a config passed (app startup) only the limits matter: no database yet.
+    overrides = {} if config else price_overrides()
     config = config or current_app.config
     free_quota, free_receipt = config["USER_QUOTA_BYTES"], config["MAX_RECEIPT_BYTES"]
     plans = []
@@ -661,8 +689,14 @@ def plan_catalog(config=None):
         if prev and quota // prev["quota_bytes"] >= 2:
             storage += f" ({quota // prev['quota_bytes']}x {prev['name']})"
         limits = [storage, f"Receipts up to {format_size(receipt, 'down')} each"]
-        plans.append({"key": key, "name": p["name"], "price": p["price"], "year": p["year"],
-                      "year_saving": max(p["price"] * 12 - p["year"], 0),
+        month_cents, year_cents = (p["price"] * 100, p["year"] * 100) if key == "free" else \
+            overrides.get(key, (p["price"] * 100, p["year"] * 100))
+        saving = max(month_cents * 12 - year_cents, 0)
+        plans.append({"key": key, "name": p["name"], "price_cents": month_cents,
+                      "year_cents": year_cents, "price": money(month_cents),
+                      "year": money(year_cents), "year_saving": money(saving) if saving else "",
+                      "default_price": money(p["price"] * 100), "default_year": money(p["year"] * 100),
+                      "custom_price": key in overrides,
                       "package": p["package"],
                       "quota_bytes": quota, "receipt_bytes": receipt,
                       "includes": prev["name"] if prev else None,
@@ -1705,6 +1739,37 @@ def register_routes(app):
                          lambda n, _size: admin_url(n))
         return render_template("admin.html", pager=pager, totals=totals,
                                default_quota=default_quota, plans=list(plans.values()))
+
+    @app.route("/admin/plans/<key>", methods=["POST"])
+    @login_required
+    def admin_plan_price(key):
+        """Monthly and yearly price of a paid plan. Both empty: back to the prices in PLANS."""
+        require_admin()
+        if key not in PLANS or key == "free":
+            abort(404)
+        name = PLANS[key]["name"]
+        back = url_for("admin") + "#plans"
+        raw_month, raw_year = request.form.get("month", "").strip(), request.form.get("year", "").strip()
+        if not raw_month and not raw_year:
+            db.execute("DELETE FROM plan_prices WHERE plan = ?", (key,))
+            p = PLANS[key]
+            flash(f"{name} is back to its default prices (${p['price']} / month, "
+                  f"${p['year']} / year).", "success")
+            return redirect(back)
+        month, year = parse_price(raw_month), parse_price(raw_year)
+        if not month or not year or month > MAX_PRICE_CENTS or year > MAX_PRICE_CENTS:
+            flash(f"Enter both prices for {name} as amounts in dollars, for example 4 or 4.50 "
+                  "(up to 10000), or leave both empty for the default.", "error")
+            return redirect(back)
+        db.execute("INSERT INTO plan_prices (plan, month_cents, year_cents) VALUES (?, ?, ?) "
+                   "ON CONFLICT(plan) DO UPDATE SET month_cents = excluded.month_cents, "
+                   "year_cents = excluded.year_cents, updated_at = CURRENT_TIMESTAMP",
+                   (key, month, year))
+        note = (" The yearly price is not below 12 months, so no saving is shown."
+                if year >= month * 12 else "")
+        flash(f"{name} now costs ${money(month)} / month and ${money(year)} / year.{note}",
+              "success")
+        return redirect(back)
 
     @app.route("/admin/users/<int:user_id>", methods=["POST"])
     @login_required

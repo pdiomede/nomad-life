@@ -278,3 +278,77 @@ class PackagePlanTests(AppTestCase):
             self.assertEqual(self.client.get("/year/2026/package").mimetype, "application/zip")
             self.assertIn('action="/year/2026/package"',
                           self.client.get("/year/2026").get_data(as_text=True))
+
+
+class AdminPriceTests(AppTestCase):
+    def setUp(self):
+        super().setUp()
+        self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
+        self.signup("admin@example.com")
+
+    def price(self, key, month, year, client=None):
+        return (client or self.client).post(f"/admin/plans/{key}", data={"month": month, "year": year},
+                                            follow_redirects=True)
+
+    def test_admin_page_lists_paid_plans_with_prices(self):
+        html = self.client.get("/admin").get_data(as_text=True)
+        self.assertIn('id="plans"', html)
+        self.assertIn('id="month-pro"', html)
+        self.assertIn('id="year-plus"', html)
+        self.assertNotIn('id="month-free"', html)
+
+    def test_new_prices_show_everywhere(self):
+        html = self.price("pro", "5", "49.99").get_data(as_text=True)
+        self.assertIn("Pro now costs $5 / month and $49.99 / year.", html)
+        landing = self.app.test_client().get("/").get_data(as_text=True)
+        self.assertIn("$5 <span", landing)
+        self.assertIn("<strong>$49.99 / year</strong>", landing)
+        self.assertIn("Save $10.01 a year", landing)
+        self.assertIn('"price": "5"', landing)
+        self.assertIn("Upgrade to Pro, $5 / month ($49.99 / year)",
+                      self.client.get("/plan").get_data(as_text=True))
+        self.assertIn("Pro ($5 / month, $49.99 / year)",
+                      self.client.get("/admin").get_data(as_text=True))
+
+    def test_empty_fields_restore_the_default(self):
+        self.price("plus", "12", "100")
+        html = self.price("plus", "", "").get_data(as_text=True)
+        self.assertIn("Nomad+ is back to its default prices ($9 / month, $90 / year).", html)
+        self.assertIn("$9 <span", self.app.test_client().get("/").get_data(as_text=True))
+
+    def test_bad_prices_are_refused(self):
+        for month, year in (("abc", "40"), ("4", ""), ("0", "40"), ("-4", "40"), ("4.555", "40"),
+                            ("20000", "40")):
+            html = self.price("pro", month, year).get_data(as_text=True)
+            self.assertIn("Enter both prices for Pro", html, (month, year))
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM plan_prices").fetchone()[0], 0)
+
+    def test_no_saving_badge_when_yearly_is_not_cheaper(self):
+        html = self.price("pro", "4", "48").get_data(as_text=True)
+        self.assertIn("no saving is shown", html)
+        cards = self.app.test_client().get("/").get_data(as_text=True)
+        pro = cards[cards.index(">Pro<"):cards.index(">Nomad+<")]
+        self.assertNotIn("Save $", pro)
+
+    def test_free_and_unknown_plans_cannot_be_priced(self):
+        self.assertEqual(self.client.post("/admin/plans/free", data={"month": "1", "year": "10"}).status_code, 404)
+        self.assertEqual(self.client.post("/admin/plans/gold", data={"month": "1", "year": "10"}).status_code, 404)
+
+    def test_only_admins(self):
+        user = self.app.test_client()
+        self.signup("user@example.com", client=user)
+        self.assertEqual(self.price("pro", "1", "10", client=user).status_code, 404)
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM plan_prices").fetchone()[0], 0)
+
+
+class ParsePriceTests(unittest.TestCase):
+    def test_parse(self):
+        self.assertEqual(appmod.parse_price("4"), 400)
+        self.assertEqual(appmod.parse_price("4.5"), 450)
+        self.assertEqual(appmod.parse_price(" $4,50 "), 450)
+        self.assertIsNone(appmod.parse_price("4.555"))
+        self.assertIsNone(appmod.parse_price("1e3"))
+        self.assertEqual(appmod.money(450), "4.50")
+        self.assertEqual(appmod.money(400), "4")
