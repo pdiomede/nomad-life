@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.8**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.2.9**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -63,7 +63,18 @@ Click **Account** in the footer to:
 
 - Change your password. You stay signed in on this device; every other device is signed out.
 - Change your email. A confirmation link goes to the new address, and the change happens when it is opened.
+- Turn on **two-factor sign in**: scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden...), then signing in also asks for its 6 digit code. Each code works only once.
+- Sign out every other browser and device.
+- See your recent security activity (sign ins, password, email and two-factor changes) with the network address.
 - Delete your account with all years, movements and receipts. It asks for your password, asks twice and needs your email typed.
+
+Every change of password, email address or two-factor sign in sends a **security alert** to the account's address (for an email change, to the old address), with a link to reset the password if it was not you.
+
+Lost the phone with the authenticator app? Whoever runs the server can remove two-factor sign in from the account:
+
+```bash
+.venv/bin/flask --app app reset-2fa someone@example.com
+```
 
 Password guessing is slowed down. After 5 failed sign ins for one account, or 20 from one network, within 15 minutes, sign in waits until the oldest attempt is 15 minutes old. Wrong current passwords on the account page count the same way. Password reset requests are limited to 5 per network per 15 minutes, on top of one email per account per minute. Behind a reverse proxy, set `PROXY_COUNT=1`.
 
@@ -78,8 +89,9 @@ Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their
 - The monthly and yearly price of Pro and Nomad+ ("Plans and prices"). Leave both fields empty to go back to the default prices in `PLANS`.
 - Disable or enable an account. Disabling signs it out everywhere and blocks sign in.
 - Delete an account with all its years, movements and receipts. It asks twice and needs the email typed.
+- Security activity: the last 100 events (sign ins, failed sign ins, password, email and two-factor changes, admin actions with the admin who made them), filterable by account email. Events are kept for 365 days.
 
-Admins cannot disable or delete their own account, and nobody can become an admin from inside the app. Everyone else gets "Page not found" at `/admin`.
+The admin page needs **two-factor sign in**: an admin without it is sent to the account page to turn it on first. Admins cannot disable or delete their own account or another admin's (remove it from `ADMIN_EMAILS` first), and nobody can become an admin from inside the app. Everyone else gets "Page not found" at `/admin`.
 
 ## Plans
 
@@ -116,6 +128,8 @@ Your notes are left out unless you tick "Include my notes". The package is built
 ```bash
 .venv/bin/python -m unittest
 ```
+
+Dependencies in `requirements.txt` are pinned to exact versions. The GitHub Action in `.github/workflows/security.yml` runs the tests and `pip-audit` (known vulnerabilities) on every push and every Monday. To check locally: `.venv/bin/pip install pip-audit && .venv/bin/pip-audit -r requirements.txt`.
 
 ## Link previews and 404 page
 

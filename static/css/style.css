@@ -623,3 +623,15 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .admin-plans { margin-bottom: 20px; }
 .pending-email { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 16px; padding: 10px 14px; border-radius: 6px; background: var(--info-bg); overflow-wrap: anywhere; }
 .pending-email form { margin: 0; }
+
+/* Account page: two-factor setup and recent activity. The QR code keeps a white frame in dark
+   mode too, so every authenticator app can read it. */
+.tfa-setup { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-bottom: 16px; }
+.tfa-qr { display: block; width: 185px; height: 185px; border-radius: 6px; background: #FFFFFF; flex: none; }
+.tfa-setup .stack { flex: 1 1 220px; min-width: 0; }
+.tfa-key { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; overflow-wrap: anywhere; word-break: break-all; }
+.activity-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.activity-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.activity-list li:last-child { border-bottom: 0; }
+#activity .activity-list li > span { min-width: 0; overflow-wrap: anywhere; }
+#activity form { margin-bottom: 8px; }

@@ -1,0 +1,11 @@
+{% extends "email/_layout.html" %}
+{% set p = "margin:0 0 14px; font-size:15px; line-height:1.6; color:#303549;" %}
+{% block preheader %}{{ what }} If this was not you, reset your password now.{% endblock %}
+{% block heading %}Security alert{% endblock %}
+{% block body %}
+<p class="nl-text" style="{{ p }}"><strong>{{ what }}</strong></p>
+<p class="nl-text" style="{{ p }}">Account: <strong style="word-break:break-all;">{{ email }}</strong><br>When: {{ when }}{% if ip %}<br>From network address: {{ ip }}{% endif %}</p>
+<p class="nl-text" style="{{ p }}">If this was you, there is nothing to do. If it was not you, reset your password now with the button below. Resetting signs out every browser and device.</p>
+{% endblock %}
+{% block button %}Reset my password{% endblock %}
+{% block note %}You get this email for every change to your password, email address or two-factor sign in.{% endblock %}

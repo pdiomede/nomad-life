@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.9] - 2026-09-27
+
+### Added
+
+- Security alerts: changing the password, resetting it, changing the email address (the alert goes to the old address) and turning two-factor sign in on or off now email the account, with the time, the network address and a link to reset the password if it was not you.
+- Two-factor sign in with an authenticator app (QR code or key, 6 digit codes, each usable once), on the account page for everyone. The admin page now requires it. Turning it on signs out other devices. Whoever runs the server can remove it from an account whose phone was lost: `flask --app app reset-2fa <email>`.
+- Security history: sign ins, failed sign ins, password, email and two-factor changes, and every admin action (with the admin who made it) are recorded for 365 days. Admins see the last 100 events on the admin page, filterable by email; everyone sees their own recent activity on the account page.
+- A GitHub Action runs the tests and checks the dependencies for known vulnerabilities (pip-audit) on every push and every week.
+
+### Changed
+
+- Dependencies are pinned to exact versions, so every install runs the tested code.
+
+### Security
+
+- An admin could disable or delete another admin's account, so one taken over admin account could lock out the others. Admin accounts can now only be removed from `ADMIN_EMAILS` in config.env.
+
 ## [1.2.8] - 2026-09-27
 
 Script injection (XSS) review. Attack text was typed into every field a user controls (email addresses, cities, countries, notes, receipt names, admin fields, links and query parameters) and every page, email, download and accountant package that shows it was opened in a browser. No script ever ran: everything is shown as plain text.

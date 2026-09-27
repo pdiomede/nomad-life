@@ -67,6 +67,53 @@
     </form>
   </section>
 
+  <section class="card" id="two-factor" aria-labelledby="tfa-title">
+    <div class="card-head"><h2 id="tfa-title">Two-factor sign in</h2>{% if row.totp_secret %}<span class="pill pill-ok">On</span>{% endif %}</div>
+    {% if row.totp_secret %}
+    <p class="muted small">Signing in asks for a code from your authenticator app after your password.{% if current_user.is_admin %} The admin page needs it.{% endif %}</p>
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="2fa_disable">
+      <div class="grid-2">
+        <div class="field">
+          <label for="tfa-off-current">Current password</label>
+          <input id="tfa-off-current" name="current_password" type="password" autocomplete="current-password" required>
+        </div>
+        <div class="field">
+          <label for="tfa-off-code">Code from the app</label>
+          <input id="tfa-off-code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required>
+        </div>
+      </div>
+      <div><button class="btn btn-ghost" type="submit">Turn off two-factor sign in</button></div>
+    </form>
+    {% else %}
+    <p class="muted small">Protect your account with a code from an authenticator app (such as Google Authenticator, Microsoft Authenticator, 1Password or Bitwarden), asked after your password.{% if current_user.is_admin %} <strong>The admin page needs it.</strong>{% endif %}</p>
+    <div class="tfa-setup">
+      <img class="tfa-qr" src="{{ totp.qr }}" width="185" height="185" alt="QR code to add Nomad Life to your authenticator app">
+      <div class="stack">
+        <p class="small">1. Scan the QR code with your authenticator app, or type this key: <code class="tfa-key">{{ totp.secret }}</code></p>
+        <p class="small">2. Type the 6 digit code the app shows, with your password.</p>
+      </div>
+    </div>
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="2fa_enable">
+      <div class="grid-2">
+        <div class="field">
+          <label for="tfa-on-code">Code from the app</label>
+          <input id="tfa-on-code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required>
+        </div>
+        <div class="field">
+          <label for="tfa-on-current">Current password</label>
+          <input id="tfa-on-current" name="current_password" type="password" autocomplete="current-password" required>
+        </div>
+      </div>
+      <p class="muted small">Other devices are signed out when you turn it on.</p>
+      <div><button class="btn btn-primary" type="submit">Turn on two-factor sign in</button></div>
+    </form>
+    {% endif %}
+  </section>
+
   <section class="card" aria-labelledby="sessions-title">
     <div class="card-head"><h2 id="sessions-title">Signed in devices</h2></div>
     <form method="post" class="stack">
@@ -75,6 +122,20 @@
       <p class="muted small">Signed in on a computer you no longer use, or think someone copied your session? Sign out every other browser and device. You stay signed in here.</p>
       <div><button class="btn btn-ghost" type="submit">Sign out everywhere else</button></div>
     </form>
+  </section>
+
+  <section class="card" aria-labelledby="activity-title">
+    <div class="card-head"><h2 id="activity-title">Recent security activity</h2></div>
+    {% if activity %}
+    <ul class="activity-list">
+      {% for e in activity %}
+      <li><span>{{ e.label }}</span> <span class="muted small">{{ e.created_at }} UTC{% if e.ip %} &middot; {{ e.ip }}{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    <p class="muted small">Something you do not recognize? Change your password and use "Sign out everywhere else".</p>
+    {% else %}
+    <p class="muted small">No activity recorded yet.</p>
+    {% endif %}
   </section>
 
   <section class="card danger-zone" aria-labelledby="delete-title">

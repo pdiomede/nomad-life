@@ -1,10 +1,13 @@
 """Nomad Life: track your yearly movements and keep your receipts in one place."""
+import base64
 import hashlib
+import hmac
 import math
 import mimetypes
 import os
 import re
 import secrets
+import struct
 import threading
 import time
 from urllib.parse import quote, urlencode
@@ -13,9 +16,11 @@ from collections import OrderedDict
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
+import click
+import segno
 from dotenv import load_dotenv
-from flask import (Flask, Response, abort, current_app, flash, redirect, render_template,
-                   request, send_from_directory, session, url_for)
+from flask import (Flask, Response, abort, current_app, flash, has_request_context, redirect,
+                   render_template, request, send_from_directory, session, url_for)
 from markupsafe import escape
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_url, login_user, logout_user)
@@ -31,7 +36,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.8"
+APP_VERSION = "1.2.9"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -119,6 +124,13 @@ HASH_SLOTS = threading.BoundedSemaphore(4)
 # disk or make its dashboard slow for everyone.
 PLACE_MAX = 100
 MOVEMENTS_MAX = 1000
+# Security history kept on the admin and account pages.
+AUDIT_DAYS = 365
+ADMIN_AUDIT_ROWS = 100
+# Two-factor sign in (TOTP, RFC 6238): 6 digits every 30 seconds, one step of clock drift
+# either way, and this long to type the code after the password.
+TOTP_STEP_SECONDS = 30
+TOTP_PENDING_SECONDS = 300
 # Content-Security-Policy of every HTML page. Scripts only from static/js (no inline scripts or
 # on* attributes anywhere); inline style attributes stay allowed for the meters and map pins.
 CSP = ("default-src 'self'; script-src 'self'; "
@@ -289,6 +301,8 @@ def create_app(overrides=None):
         # "Remember me" lasts a month instead of Flask-Login's year, so a copied cookie does
         # not stay useful for long; "Sign out everywhere" on the account page ends it at once.
         REMEMBER_COOKIE_DURATION=timedelta(days=30),
+        # The admin page needs two-factor sign in (tests of other features turn this off).
+        ADMIN_REQUIRE_2FA=True,
         PERMANENT_SESSION_LIFETIME=timedelta(days=30),
         # Form tokens stay valid as long as the session, instead of expiring after an hour
         # (which made "Sign out" on a page left open fail while the user stayed signed in).
@@ -368,6 +382,8 @@ def create_app(overrides=None):
         if time.monotonic() - last_purge[0] >= PURGE_EVERY_SECONDS:
             last_purge[0] = time.monotonic()
             purge_unverified()
+            db.execute("DELETE FROM audit_log WHERE created_at < datetime('now', ?)",
+                       (f"-{AUDIT_DAYS} days",))
 
     @app.after_request
     def security_headers(resp):
@@ -436,6 +452,25 @@ def create_app(overrides=None):
         return resp
 
     register_routes(app)
+
+    @app.cli.command("reset-2fa")
+    @click.argument("email")
+    def reset_2fa(email):
+        """Remove two-factor sign in from an account whose phone was lost."""
+        email = email.strip().lower()
+        # Emails build their links with url_for, which needs a request.
+        with app.test_request_context(environ_base={"REMOTE_ADDR": "command line"}):
+            row = db.query("SELECT id FROM users WHERE email = ?", (email,), one=True)
+            if row is None:
+                raise click.ClickException(f"No account for {email}.")
+            db.execute("UPDATE users SET totp_secret = NULL, totp_step = 0 WHERE id = ?",
+                       (row["id"],))
+            audit("2fa_reset", row["id"], email, "", "command line")
+            security_alert(email, "Two-factor sign in was removed from your Nomad Life account "
+                           "by the person who runs the server.")
+        click.echo(f"Two-factor sign in removed from {email}. They can sign in with the "
+                   "password alone and turn it on again on the account page.")
+
     return app
 
 
@@ -558,6 +593,101 @@ def remember_device(resp, email):
     resp.set_cookie(DEVICE_COOKIE, token, max_age=DEVICE_MAX_AGE, httponly=True,
                     samesite="Lax", secure=current_app.config.get("SESSION_COOKIE_SECURE", False))
     return resp
+
+
+# ---------- two-factor sign in ----------
+
+def new_totp_secret():
+    return base64.b32encode(secrets.token_bytes(20)).decode()
+
+
+def totp_code(secret, step):
+    digest = hmac.new(base64.b32decode(secret), struct.pack(">Q", step), "sha1").digest()
+    offset = digest[-1] & 15
+    return f"{(struct.unpack('>I', digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 1000000:06d}"
+
+
+def totp_match(secret, code, last_step=0):
+    """The time step the code belongs to, or None. Steps at or before last_step were used
+    already, so a code seen once (over a shoulder, in a proxy log) never works again."""
+    code = "".join((code or "").split())
+    if not secret or len(code) != 6 or not code.isdigit():
+        return None
+    now = int(time.time() // TOTP_STEP_SECONDS)
+    for step in (now - 1, now, now + 1):
+        if step > last_step and hmac.compare_digest(totp_code(secret, step), code):
+            return step
+    return None
+
+
+def use_totp_step(user_id, step):
+    """Record the step as used. False if another request used it (or a later one) first."""
+    with db.transaction() as conn:
+        return conn.execute("UPDATE users SET totp_step = ? WHERE id = ? AND totp_step < ?",
+                            (step, user_id, step)).rowcount == 1
+
+
+def totp_uri(secret, email):
+    return (f"otpauth://totp/{quote('Nomad Life')}:{quote(email)}?secret={secret}"
+            f"&issuer={quote('Nomad Life')}&period={TOTP_STEP_SECONDS}&digits=6")
+
+
+def totp_qr(secret, email):
+    """The setup QR code as a data URI (no inline SVG, so no markup built from user data)."""
+    return segno.make(totp_uri(secret, email), error="m").svg_data_uri(
+        scale=5, border=4, dark="#000000", light="#ffffff")
+
+
+# ---------- security history and alerts ----------
+
+AUDIT_LABELS = {
+    "sign_in": "Signed in",
+    "sign_in_failed": "Wrong password at sign in",
+    "sign_in_code_failed": "Wrong two-factor code at sign in",
+    "account_confirmed": "Account confirmed",
+    "password_changed": "Password changed",
+    "password_reset": "Password reset by email link",
+    "email_changed": "Email address changed",
+    "sessions_revoked": "Signed out on every other device",
+    "2fa_enabled": "Two-factor sign in turned on",
+    "2fa_disabled": "Two-factor sign in turned off",
+    "2fa_reset": "Two-factor sign in removed by the server operator",
+    "account_deleted": "Account deleted",
+    "admin_plan": "Plan changed by an admin",
+    "admin_quota": "Storage quota changed by an admin",
+    "admin_disable": "Account disabled by an admin",
+    "admin_enable": "Account enabled by an admin",
+    "admin_delete": "Account deleted by an admin",
+    "admin_price": "Plan prices changed",
+}
+
+
+def audit(event, user_id=None, email="", detail="", actor=""):
+    """Record a security event. Never fails the request it belongs to."""
+    ip = client_ip() if has_request_context() else ""  # none on the command line
+    try:
+        db.execute("INSERT INTO audit_log (user_id, email, actor, event, detail, ip) "
+                   "VALUES (?, ?, ?, ?, ?, ?)", (user_id, email or "", actor or "", event,
+                                                 detail or "", ip))
+    except Exception as exc:  # noqa: BLE001 - the history must never break sign in
+        current_app.logger.error("Could not record %s for %s: %s", event, email, exc)
+
+
+def audit_rows(rows):
+    return [dict(r, label=AUDIT_LABELS.get(r["event"], r["event"])) for r in rows]
+
+
+def security_alert(email, what):
+    """Tell the account's mailbox that something important changed, with a way to act if it
+    was not them. Sent every time (no cooldown): each change needs the password or a link."""
+    ip = client_ip() if has_request_context() else ""
+    ok = send_template_email(email, "Security alert for your Nomad Life account",
+                             "security_alert", email=email, what=what, ip=ip,
+                             when=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+                             link=email_link("forgot"))
+    if not ok:
+        current_app.logger.error("Could not send the security alert to %s", email)
+    return ok
 
 
 def too_many_message(wait, scope, what):
@@ -1386,6 +1516,7 @@ def register_routes(app):
             return redirect(url_for("signup"))
         db.execute("UPDATE users SET verified_at = CURRENT_TIMESTAMP WHERE id = ? AND "
                    "verified_at IS NULL", (row["id"],))
+        audit("account_confirmed", row["id"], row["email"])
         if signed_in:  # confirmed from a browser signed in to another account
             flash(f"{row['email']} is confirmed. To use that account, sign out and sign in "
                   "with it.", "success")
@@ -1431,13 +1562,59 @@ def register_routes(app):
                         flash("Please confirm your email first, with the link we sent when you "
                               "signed up.", "error")
                     return render_template("auth/login.html")
-                db.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
-                           (row["id"],))
-                login_user(User(row), remember=bool(request.form.get("remember")))
-                return remember_device(
-                    redirect(safe_next(request.args.get("next", "")) or url_for("index")), email)
+                remember = bool(request.form.get("remember"))
+                next_url = safe_next(request.args.get("next", "")) or url_for("index")
+                if row["totp_secret"]:
+                    # The password was right; the code from the authenticator app comes next.
+                    # Nothing is signed in until then.
+                    session["tfa"] = {"uid": row["id"], "h": password_fingerprint(row["password_hash"]),
+                                      "v": row["session_version"], "remember": remember,
+                                      "next": next_url, "t": int(time.time())}
+                    return redirect(url_for("login_code"))
+                return finish_sign_in(row, remember, next_url)
+            if row:
+                audit("sign_in_failed", row["id"], row["email"])
             flash("Invalid email or password.", "error")
         return render_template("auth/login.html")
+
+    def finish_sign_in(row, remember, next_url, detail=""):
+        db.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?", (row["id"],))
+        login_user(User(row), remember=remember)
+        audit("sign_in", row["id"], row["email"], detail)
+        return remember_device(redirect(next_url), row["email"])
+
+    @app.route("/login/code", methods=["GET", "POST"])
+    def login_code():
+        """Second step of signing in to an account with two-factor sign in turned on."""
+        if current_user.is_authenticated:
+            return redirect(url_for("index"))
+        pending = session.get("tfa") or {}
+        row = db.query("SELECT * FROM users WHERE id = ?", (pending.get("uid"),), one=True)
+        # Stale when too old, or when the password, sessions or two-factor changed meanwhile.
+        if (not row or row["disabled"] or not row["totp_secret"]
+                or time.time() - pending.get("t", 0) > TOTP_PENDING_SECONDS
+                or password_fingerprint(row["password_hash"]) != pending.get("h")
+                or row["session_version"] != pending.get("v")):
+            session.pop("tfa", None)
+            flash("Please sign in again.", "info")
+            return redirect(url_for("login"))
+        if request.method == "POST":
+            device = device_for(row["email"])
+            wait, scope, attempt = take_attempt("fail", row["email"], device)
+            if wait:
+                flash(too_many_message(wait, scope, "wrong codes"), "error")
+                return render_template("auth/login_code.html"), 429
+            step = totp_match(row["totp_secret"], request.form.get("code"), row["totp_step"])
+            if step is not None and use_totp_step(row["id"], step):
+                forgive(attempt, row["email"], device)
+                session.pop("tfa", None)
+                return finish_sign_in(row, pending.get("remember", False),
+                                      safe_next(pending.get("next", "")) or url_for("index"),
+                                      "with two-factor code")
+            audit("sign_in_code_failed", row["id"], row["email"])
+            flash("That code is not correct, or was already used. Please enter the current code "
+                  "from your authenticator app.", "error")
+        return render_template("auth/login_code.html")
 
     @app.route("/logout", methods=["POST"])
     def logout():
@@ -1499,6 +1676,9 @@ def register_routes(app):
                 # Proving the mailbox ends a lock from wrong guesses (by anyone) on this account.
                 db.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key = ?",
                            (f"email:{row['email']}",))
+                audit("password_reset", row["id"], row["email"])
+                security_alert(row["email"], "The password of your Nomad Life account was reset "
+                               "with a link sent to this address.")
                 flash("Your password has been updated. Please sign in.", "success")
                 return redirect(url_for("login"))
         return render_template("auth/reset.html", token=token)
@@ -1755,6 +1935,7 @@ def register_routes(app):
                 remember = app.config["REMEMBER_COOKIE_NAME"] in request.cookies
                 login_user(User(db.query("SELECT * FROM users WHERE id = ?", (row["id"],),
                                          one=True)), remember=remember)
+                audit("sessions_revoked", row["id"], row["email"])
                 flash("Every other browser and device has been signed out.", "success")
                 return redirect(url_for("account"))
             err = check_current_password(row)
@@ -1776,6 +1957,9 @@ def register_routes(app):
                     remember = app.config["REMEMBER_COOKIE_NAME"] in request.cookies
                     login_user(User(db.query("SELECT * FROM users WHERE id = ?", (row["id"],),
                                              one=True)), remember=remember)
+                    audit("password_changed", row["id"], row["email"])
+                    security_alert(row["email"], "The password of your Nomad Life account was "
+                                   "changed.")
                     flash("Your password has been changed. Other devices have been signed out.",
                           "success")
             elif action == "email":
@@ -1815,6 +1999,49 @@ def register_routes(app):
                                    "WHERE id = ?", (row["id"],))
                         flash("We could not send the confirmation email. Please try again later.",
                               "error")
+            elif action == "2fa_enable":
+                secret = session.get("totp_setup")
+                step = totp_match(secret, request.form.get("code"))
+                if err:
+                    flash(err, "error")
+                elif row["totp_secret"]:
+                    flash("Two-factor sign in is already on.", "info")
+                elif step is None:
+                    flash("That code is not correct. Scan the QR code again, or check that the "
+                          "time on your phone is right, and type the current code.", "error")
+                else:
+                    # Sessions from before were signed in without a code: end them.
+                    db.execute("UPDATE users SET totp_secret = ?, totp_step = ?, "
+                               "session_version = session_version + 1 WHERE id = ?",
+                               (secret, step, row["id"]))
+                    session.pop("totp_setup", None)
+                    remember = app.config["REMEMBER_COOKIE_NAME"] in request.cookies
+                    login_user(User(db.query("SELECT * FROM users WHERE id = ?", (row["id"],),
+                                             one=True)), remember=remember)
+                    audit("2fa_enabled", row["id"], row["email"])
+                    security_alert(row["email"], "Two-factor sign in was turned on for your "
+                                   "Nomad Life account.")
+                    flash("Two-factor sign in is on. From now on, signing in also asks for a code "
+                          "from your authenticator app. Other devices have been signed out.",
+                          "success")
+            elif action == "2fa_disable":
+                step = totp_match(row["totp_secret"], request.form.get("code"), row["totp_step"])
+                if err:
+                    flash(err, "error")
+                elif not row["totp_secret"]:
+                    flash("Two-factor sign in is already off.", "info")
+                elif step is None or not use_totp_step(row["id"], step):
+                    flash("That code is not correct. Type the current code from your "
+                          "authenticator app.", "error")
+                else:
+                    db.execute("UPDATE users SET totp_secret = NULL, totp_step = 0 WHERE id = ?",
+                               (row["id"],))
+                    audit("2fa_disabled", row["id"], row["email"])
+                    security_alert(row["email"], "Two-factor sign in was turned off for your "
+                                   "Nomad Life account.")
+                    note = (" The admin page needs it: turn it on again to use it."
+                            if current_user.is_admin else "")
+                    flash("Two-factor sign in is off." + note, "success")
             elif action == "delete":
                 if not delete_confirmed():
                     pass
@@ -1824,6 +2051,7 @@ def register_routes(app):
                     flash(err, "error")
                 else:
                     delete_account(row["id"])
+                    audit("account_deleted", row["id"], row["email"])
                     logout_user()
                     flash("Your account and all its data have been deleted.", "info")
                     return redirect(url_for("landing"))
@@ -1832,7 +2060,16 @@ def register_routes(app):
         counts = db.query("SELECT (SELECT COUNT(*) FROM years WHERE user_id = ?) AS years, "
                           "(SELECT COUNT(*) FROM documents WHERE user_id = ?) AS documents",
                           (row["id"], row["id"]), one=True)
-        return render_template("account.html", row=row, counts=counts, account_storage=storage)
+        totp = None
+        if not row["totp_secret"]:
+            # A new secret for this setup; it only counts once a code from it is confirmed.
+            session.setdefault("totp_setup", new_totp_secret())
+            totp = {"secret": session["totp_setup"],
+                    "qr": totp_qr(session["totp_setup"], row["email"])}
+        activity = audit_rows(db.query(
+            "SELECT * FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 10", (row["id"],)))
+        return render_template("account.html", row=row, counts=counts, account_storage=storage,
+                               totp=totp, activity=activity)
 
     @app.route("/account/email/<token>")
     def confirm_email(token):
@@ -1868,6 +2105,11 @@ def register_routes(app):
         except db.IntegrityError:
             flash("Another account started using this email address in the meantime.", "error")
             return redirect(url_for("account") if current_user.is_authenticated else url_for("login"))
+        audit("email_changed", row["id"], new, f"{row['email']} to {new}")
+        # The old mailbox hears about it too: if the account was taken over, that is where the
+        # owner still reads.
+        security_alert(row["email"], f"The email address of your Nomad Life account was changed "
+                       f"from {row['email']} to {new}. This address can no longer sign in.")
         if current_user.is_authenticated and current_user.id != row["id"]:
             flash(f"That link was for another account; its email address is now {new}.", "info")
             return redirect(url_for("account"))
@@ -1880,6 +2122,11 @@ def register_routes(app):
         # Same answer as for any page that is not yours: nothing to see here.
         if not current_user.is_admin:
             abort(404)
+        # Admins act on everyone's accounts, so a password alone is not enough.
+        if app.config["ADMIN_REQUIRE_2FA"] and not db.query(
+                "SELECT totp_secret FROM users WHERE id = ?", (current_user.id,), one=True)[0]:
+            flash("Turn on two-factor sign in to use the admin page.", "info")
+            abort(redirect(url_for("account") + "#two-factor"))
 
     def admin_url(page=1):
         return url_for("admin", page=page if page > 1 else None)
@@ -1890,7 +2137,7 @@ def register_routes(app):
         require_admin()
         users = db.query(
             "SELECT u.id, u.email, u.created_at, u.last_login_at, u.disabled, u.quota_bytes, "
-            "u.verified_at, u.plan, "
+            "u.verified_at, u.plan, u.totp_secret IS NOT NULL AS has_2fa, "
             "(SELECT COUNT(*) FROM years y WHERE y.user_id = u.id) AS years, "
             "(SELECT COALESCE(SUM(size), 0) FROM documents d WHERE d.user_id = u.id) AS used "
             "FROM users u ORDER BY u.created_at DESC, u.id DESC")
@@ -1916,8 +2163,14 @@ def register_routes(app):
         }
         pager = paginate(users, request.args.get("page"), ADMIN_USERS_PER_PAGE,
                          lambda n, _size: admin_url(n))
+        activity_q = request.args.get("q", "").strip().lower()[:254]
+        activity = audit_rows(db.query(
+            "SELECT * FROM audit_log WHERE (? = '' OR email = ? OR actor = ?) "
+            "ORDER BY id DESC LIMIT ?", (activity_q, activity_q, activity_q, ADMIN_AUDIT_ROWS)))
         return render_template("admin.html", pager=pager, totals=totals,
-                               default_quota=default_quota, plans=list(plans.values()))
+                               default_quota=default_quota, plans=list(plans.values()),
+                               activity=activity, activity_q=activity_q,
+                               activity_limit=ADMIN_AUDIT_ROWS, audit_days=AUDIT_DAYS)
 
     @app.route("/admin/plans/<key>", methods=["POST"])
     @login_required
@@ -1932,6 +2185,7 @@ def register_routes(app):
         if not raw_month and not raw_year:
             db.execute("DELETE FROM plan_prices WHERE plan = ?", (key,))
             p = PLANS[key]
+            audit("admin_price", None, "", f"{name}: default prices", current_user.email)
             flash(f"{name} is back to its default prices (${p['price']} / month, "
                   f"${p['year']} / year).", "success")
             return redirect(back)
@@ -1946,6 +2200,8 @@ def register_routes(app):
                    (key, month, year))
         note = (" The yearly price is not below 12 months, so no saving is shown."
                 if year >= month * 12 else "")
+        audit("admin_price", None, "", f"{name}: ${money(month)} / month, ${money(year)} / year",
+              current_user.email)
         flash(f"{name} now costs ${money(month)} / month and ${money(year)} / year.{note}",
               "success")
         return redirect(back)
@@ -1960,12 +2216,18 @@ def register_routes(app):
         back = admin_url(to_int(request.form.get("page"), 1))
         action = request.form.get("action")
         email = row["email"]
+        who = current_user.email
         if action in ("disable", "delete") and row["id"] == current_user.id:
             flash("You cannot disable or delete your own admin account.", "error")
+        elif action in ("disable", "delete") and email in app.config["ADMIN_EMAILS"]:
+            # One admin account, if taken over, must not be able to lock out the others.
+            flash(f"{email} is an admin. Remove it from ADMIN_EMAILS in config.env first.",
+                  "error")
         elif action == "quota":
             raw = request.form.get("quota_mb", "").strip()
             if not raw:
                 db.execute("UPDATE users SET quota_bytes = NULL WHERE id = ?", (user_id,))
+                audit("admin_quota", user_id, email, "plan default", who)
                 flash(f"{email} now uses the storage quota of the {plan_named(row['plan'])['name']} "
                       f"plan ({format_size(user_quota(user_id), 'down')}).", "success")
             else:
@@ -1979,6 +2241,7 @@ def register_routes(app):
                 else:
                     quota = math.ceil(mb * MB)
                     db.execute("UPDATE users SET quota_bytes = ? WHERE id = ?", (quota, user_id))
+                    audit("admin_quota", user_id, email, format_size(quota, "down"), who)
                     note = (" They already use more than that, so new uploads are blocked until "
                             "they delete receipts.") if storage_used(user_id) > quota else ""
                     flash(f"Storage quota for {email} set to {format_size(quota, 'down')}.{note}",
@@ -1989,6 +2252,7 @@ def register_routes(app):
                 flash("Choose one of the plans.", "error")
             else:
                 db.execute("UPDATE users SET plan = ? WHERE id = ?", (key, user_id))
+                audit("admin_plan", user_id, email, PLANS[key]["name"], who)
                 plan = plan_named(key)
                 if row["quota_bytes"] is not None:
                     note = (f" Their custom storage quota ({format_size(row['quota_bytes'], 'down')})"
@@ -2005,9 +2269,11 @@ def register_routes(app):
             # later does not bring a stolen one back.
             db.execute("UPDATE users SET disabled = 1, session_version = session_version + 1 "
                        "WHERE id = ?", (user_id,))
+            audit("admin_disable", user_id, email, "", who)
             flash(f"{email} is disabled and signed out everywhere.", "info")
         elif action == "enable":
             db.execute("UPDATE users SET disabled = 0 WHERE id = ?", (user_id,))
+            audit("admin_enable", user_id, email, "", who)
             flash(f"{email} can sign in again.", "success")
         elif action == "delete":
             if not delete_confirmed():
@@ -2016,6 +2282,7 @@ def register_routes(app):
                 flash("Type the email address to confirm the deletion.", "error")
             else:
                 delete_account(user_id)
+                audit("admin_delete", user_id, email, "", who)
                 flash(f"The account {email} and all its data were deleted.", "info")
         return redirect(back)
 

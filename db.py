@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at TEXT,
     pending_email TEXT,
     session_version INTEGER NOT NULL DEFAULT 0,
-    plan TEXT NOT NULL DEFAULT 'free'
+    plan TEXT NOT NULL DEFAULT 'free',
+    totp_secret TEXT,
+    totp_step INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS years (
@@ -73,6 +75,22 @@ CREATE TABLE IF NOT EXISTS plan_prices (
     year_cents INTEGER NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Security relevant events (sign ins, password and email changes, two-factor, admin actions).
+-- email is kept as text so the history survives a deleted account; actor is the admin who
+-- acted on someone else's account. Rows older than AUDIT_DAYS are pruned.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    user_id INTEGER,
+    email TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL DEFAULT '',
+    event TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    ip TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_movements_year ON movements(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_year ON documents(year_id);
@@ -135,6 +153,10 @@ MIGRATIONS = [
                                   "DEFAULT 0"]),
     # The user's plan (see PLANS in app.py). Everyone starts on Free.
     ("users", "plan", ["ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'"]),
+    # Two-factor sign in: the TOTP secret (NULL means off) and the last time step used, so a
+    # code can never be used twice.
+    ("users", "totp_secret", ["ALTER TABLE users ADD COLUMN totp_secret TEXT"]),
+    ("users", "totp_step", ["ALTER TABLE users ADD COLUMN totp_step INTEGER NOT NULL DEFAULT 0"]),
 ]
 
 

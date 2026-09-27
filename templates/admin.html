@@ -65,6 +65,7 @@
         <p class="admin-email"><strong>{{ u.email }}</strong>
           <span class="tag">{{ u.plan_name }}</span>
           {% if u.is_admin %}<span class="tag">Admin</span>{% endif %}
+          {% if u.has_2fa %}<span class="tag">Two-factor on</span>{% endif %}
           {% if u.disabled %}<span class="pill pill-error">Disabled</span>{% endif %}
           {% if not u.verified_at %}<span class="pill pill-warn">Email not confirmed</span>{% endif %}
           {% if u.used > u.quota %}<span class="pill pill-warn">Over quota</span>{% endif %}
@@ -96,7 +97,7 @@
           </select>
           <button class="btn btn-ghost btn-sm" type="submit" aria-label="Save plan for {{ u.email }}">Save</button>
         </form>
-        {% if u.id != current_user.id %}
+        {% if u.id != current_user.id and not u.is_admin %}
         <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}">
           {{ ui.csrf() }}
           <input type="hidden" name="action" value="{{ 'enable' if u.disabled else 'disable' }}">
@@ -105,7 +106,7 @@
         </form>
         {{ ui.delete_form(url_for('admin_user', user_id=u.id), 'the account ' ~ u.email ~ ' with all its years, movements and receipts', extra={'action': 'delete', 'page': pager.page, 'confirm_email': ''}, type_to_confirm=u.email, type_field='confirm_email', aria_label='Delete ' ~ u.email) }}
         {% else %}
-        <span class="muted small">This is you</span>
+        <span class="muted small">{{ 'This is you' if u.id == current_user.id else 'Admins cannot be disabled here' }}</span>
         {% endif %}
       </div>
     </li>
@@ -116,6 +117,30 @@
     <p class="muted small">Showing {{ pager.first }} to {{ pager.last }} of {{ pager.total }} accounts</p>
     {{ ui.pagination(pager, 'Account pages') }}
   </div>
+  {% endif %}
+</section>
+
+<section class="card" id="activity" aria-labelledby="activity-title">
+  <div class="card-head">
+    <h2 id="activity-title">Security activity</h2>
+    <p class="muted small">The last {{ activity_limit }} events{% if activity_q %} for &ldquo;{{ activity_q }}&rdquo;{% endif %}, kept for {{ audit_days }} days.</p>
+  </div>
+  <form method="get" action="{{ url_for('admin') }}#activity" class="row admin-quota">
+    <label for="activity-q" class="small">Account email</label>
+    <input id="activity-q" name="q" type="search" value="{{ activity_q }}" placeholder="All accounts">
+    <button class="btn btn-ghost btn-sm" type="submit">Filter</button>
+  </form>
+  {% if activity %}
+  <ul class="activity-list">
+    {% for e in activity %}
+    <li>
+      <span>{{ e.label }}{% if e.detail %} <span class="muted small">({{ e.detail }})</span>{% endif %}{% if e.actor %} <span class="muted small">by {{ e.actor }}</span>{% endif %}</span>
+      <span class="muted small">{{ e.email }}{% if e.email %} &middot; {% endif %}{{ e.created_at }} UTC{% if e.ip %} &middot; {{ e.ip }}{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted small">No events yet.</p>
   {% endif %}
 </section>
 {% endblock %}

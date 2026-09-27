@@ -1,0 +1,15 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Two-factor code | Nomad Life{% endblock %}
+{% block heading %}Enter your code{% endblock %}
+{% block sub %}Open your authenticator app and type the 6 digit code for Nomad Life.{% endblock %}
+{% block form %}
+<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field">
+    <label for="code">Code</label>
+    <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required autofocus>
+  </div>
+  <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+  <p class="center muted small">Lost your phone? Ask the person who runs this Nomad Life server to remove two-factor sign in from your account. <a href="{{ url_for('login') }}">Start over</a></p>
+</form>
+{% endblock %}

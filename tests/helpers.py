@@ -25,6 +25,9 @@ class AppTestCase(unittest.TestCase):
             "GMAIL_USER": "", "GMAIL_APP_PASSWORD": "",
             # Nor may its size settings change what the tests expect: use the defaults.
             "MAX_RECEIPT_BYTES": 10 * appmod.MB, "USER_QUOTA_BYTES": 500 * appmod.MB,
+            # Admin page tests of other features skip the two-factor requirement; the tests in
+            # test_security_129.py turn it back on.
+            "ADMIN_REQUIRE_2FA": False,
         })
         self.client = self.app.test_client()
         self.outbox = []

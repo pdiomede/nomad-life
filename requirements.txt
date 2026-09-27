@@ -1,7 +1,19 @@
-Flask>=3.0,<4
-Flask-Login>=0.6.3,<1
-Flask-WTF>=1.2,<2
-python-dotenv>=1.0,<2
-itsdangerous>=2.1,<3
-Werkzeug>=3.0,<4
+# Exact versions, so every install runs the code that was tested. The weekly GitHub Action
+# (.github/workflows/security.yml) checks them with pip-audit; update them on purpose.
+Flask==3.1.3
+Flask-Login==0.6.3
+Flask-WTF==1.3.0
+python-dotenv==1.2.3
+itsdangerous==2.2.0
+Werkzeug==3.1.8
 fpdf2==2.8.8
+segno==1.6.6
+# Installed by the packages above, pinned too.
+blinker==1.9.0
+click==8.5.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+WTForms==3.2.2
+defusedxml==0.7.1
+fonttools==4.66.0
+pillow==12.3.0
