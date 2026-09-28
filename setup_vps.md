@@ -255,6 +255,7 @@ The database is upgraded by the app on start (new columns are added automaticall
 | Task | Command |
 |---|---|
 | See the app's log | `journalctl -u nomad-life -f` |
+| Watch CPU, memory and disk, with alerts | Beszel, private through an SSH tunnel: [beszel.md](beszel.md) |
 | Restart after changing config.env | `sudo systemctl restart nomad-life` |
 | Someone lost the phone with their authenticator app | `sudo -u nomadlife .venv/bin/flask --app app reset-2fa someone@example.com` (from `/srv/nomad-life/app`; they get an email about it) |
 | Disk used by receipts | `sudo du -sh /srv/nomad-life/uploads` |

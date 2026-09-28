@@ -22,7 +22,7 @@ FLASK_DEBUG=1 .venv/bin/python app.py                     # debug mode (template
 ```
 
 - Tests: a feature gets its own file (`tests/test_<feature>.py`); the fixes of a release go in `tests/test_fixes_<version without dots>.py` (for example `test_fixes_1212.py`), security fixes in `test_security_<version>.py`.
-- Production deployment (gunicorn, nginx, systemd, backups, upgrades) is documented in `setup_vps.md`.
+- Production deployment (gunicorn, nginx, systemd, backups, upgrades) is documented in `setup_vps.md`; server monitoring (Beszel, reached through an SSH tunnel) in `beszel.md`.
 
 - Without `FLASK_DEBUG=1`, Jinja templates are cached: restart the server after editing templates.
 - Static CSS/JS are cached for 7 days and linked with `?v=<asset_version>`, a hash of `style.css` and `theme.js` computed at startup, so edits reach browsers after a server restart without a version bump.
