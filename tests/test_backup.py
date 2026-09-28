@@ -7,6 +7,7 @@ import sqlite3
 import stat
 import tarfile
 import tempfile
+import time
 import unittest
 
 import app as appmod
@@ -53,16 +54,17 @@ class BackupTests(unittest.TestCase):
     def archives(self):
         return sorted(n for n in os.listdir(self.dest) if backup.ARCHIVE.match(n))
 
-    def test_archive_holds_database_key_and_receipts(self):
+    def test_archive_holds_database_and_key_but_not_receipts(self):
+        # Since 1.2.15: every nightly archive held every receipt, so --keep 14 stored them
+        # 14 times on the server's own disk. The off-site copy takes UPLOAD_DIR directly.
         code, out = self.run_backup()
         self.assertEqual(code, 0, out)
+        self.assertNotIn("receipt", out)
         [name] = self.archives()
         path = os.path.join(self.dest, name)
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
         with tarfile.open(path) as tar:
-            self.assertEqual(sorted(tar.getnames()),
-                             [".secret_key", "nomad.db", "uploads/1/a.zip"])
-            self.assertEqual(tar.extractfile("uploads/1/a.zip").read(), b"receipt")
+            self.assertEqual(sorted(tar.getnames()), [".secret_key", "nomad.db"])
             restored = os.path.join(self.tmp, "restored.db")
             with open(restored, "wb") as fh:
                 fh.write(tar.extractfile("nomad.db").read())
@@ -70,6 +72,34 @@ class BackupTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT email FROM users").fetchall(),
                              [("ada@example.com",)])
         self.assertEqual([n for n in os.listdir(self.dest) if n.endswith(".partial")], [])
+
+    def test_with_receipts_adds_every_receipt(self):
+        code, out = self.run_backup("--with-receipts")
+        self.assertEqual(code, 0, out)
+        self.assertIn("1 receipt files", out)
+        with tarfile.open(os.path.join(self.dest, self.archives()[0])) as tar:
+            self.assertEqual(sorted(tar.getnames()),
+                             [".secret_key", "nomad.db", "uploads/1/a.zip"])
+            self.assertEqual(tar.extractfile("uploads/1/a.zip").read(), b"receipt")
+
+    def test_partial_archive_of_a_killed_run_is_removed_once_stale(self):
+        # A run killed part way (reboot, out-of-memory kill) runs no finally block, so its
+        # hidden .partial stayed forever, possibly as large as every receipt.
+        os.makedirs(self.dest)
+        old = os.path.join(self.dest, ".nomadlife-abcd1234.partial")
+        fresh = os.path.join(self.dest, ".nomadlife-wxyz5678.partial")
+        other = os.path.join(self.dest, ".notes-abcd1234.partial")
+        for path in (old, fresh, other):
+            open(path, "w").close()
+        hours_ago = time.time() - 7 * 3600
+        os.utime(old, (hours_ago, hours_ago))
+        os.utime(other, (hours_ago, hours_ago))
+        code, out = self.run_backup()
+        self.assertEqual(code, 0, out)
+        self.assertIn("removed 1 left by an interrupted run", out)
+        self.assertFalse(os.path.exists(old))
+        self.assertTrue(os.path.exists(fresh))  # may belong to a run still writing
+        self.assertTrue(os.path.exists(other))  # not this script's file
 
     def test_keeps_only_the_newest_and_leaves_other_files(self):
         os.makedirs(self.dest)
@@ -100,7 +130,7 @@ class BackupTests(unittest.TestCase):
 
         backup.os.walk = walk_with_a_vanished_file
         try:
-            code, out = self.run_backup()
+            code, out = self.run_backup("--with-receipts")
         finally:
             backup.os.walk = real_walk
         self.assertEqual(code, 0, out)

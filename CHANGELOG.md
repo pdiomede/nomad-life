@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.15] - 2026-09-28
+
+### Changed
+
+- `scripts/backup.py` archives the database and its secret key only. Every nightly archive used to hold every receipt, so `--keep 14` stored the receipts 14 times over on the server's own disk: at 5 GB of receipts that is 70 GB, and a full disk stops the app from saving anything. A receipt never changes once saved, so the off-site copy now takes the receipts folder as it is and stores each receipt once (setup_vps.md, section 11). `--with-receipts` still makes a complete archive for a one-off copy. **Before upgrading, add the receipts folder to the off-site copy**, or the receipts are backed up nowhere from that night on.
+
+### Fixed
+
+- A backup run killed part way (a reboot, the out-of-memory killer) left its hidden `.nomadlife-*.partial` archive behind for good, since no cleanup runs then; the off-site copy then uploaded it every night. A later run removes it once it is six hours old, and never touches a partial that may belong to a run still writing.
+
 ## [1.2.14] - 2026-09-27
 
 ### Added

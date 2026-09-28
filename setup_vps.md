@@ -198,7 +198,7 @@ chronyc tracking     # "System time" should be a few milliseconds off at most
 
 The database and the receipts are everything. Back them up every night, keep copies off the server, encrypted, and try a restore once.
 
-`scripts/backup.py` writes one archive per run with the database, its secret key and every receipt, and keeps the newest `--keep` archives. It reads the paths from `config.env`, is safe while the app runs (SQLite's online backup, half written receipts skipped) and needs nothing beyond the app's own `.venv`. Run it as the app's user, which owns the data:
+The database needs a proper copy; the receipts do not. `scripts/backup.py` writes one small archive per run with the database and its secret key, and keeps the newest `--keep` archives. It reads the paths from `config.env`, is safe while the app runs (SQLite's online backup) and needs nothing beyond the app's own `.venv`. Run it as the app's user, which owns the data:
 
 ```bash
 sudo install -d -o nomadlife -g nomadlife -m 700 /var/backups/nomad-life
@@ -209,7 +209,15 @@ echo "30 3 * * * nomadlife /srv/nomad-life/app/.venv/bin/python /srv/nomad-life/
 
 Each run prints the archive it wrote, for example `/var/backups/nomad-life/nomadlife-2026-09-27_033000.tar.gz`, readable by `nomadlife` only (mode 600).
 
-Then copy `/var/backups/nomad-life` elsewhere every night, encrypted: for example with `restic` or `borg` to another server or to object storage. To restore: stop the service, unpack an archive (`tar -xzf nomadlife-....tar.gz`), put `nomad.db` and `.secret_key` back in `/srv/nomad-life/data` and `uploads/` in `/srv/nomad-life/uploads` (owned by `nomadlife`, mode 700), start the service.
+Then copy **both** `/var/backups/nomad-life` and the receipts folder `/srv/nomad-life/uploads` elsewhere every night, encrypted: for example with `restic` or `borg` to another server or to object storage, run as root or `nomadlife` (the only accounts that can read them). A receipt never changes once saved (the app writes a temporary file and renames it), so the tool can read the folder while the app runs and stores each receipt once; skip `*.tmp`, which are uploads still being written. With restic, for example:
+
+```bash
+restic backup --exclude '*.tmp' /var/backups/nomad-life /srv/nomad-life/uploads
+```
+
+Receipts are deliberately not in the nightly archive: there they were stored `--keep` times over on the server's own disk, which fills up as receipts grow. For a one-off complete archive (before moving to a new server, or before `zip-receipts`), add `--with-receipts`.
+
+To restore: stop the service, unpack an archive (`tar -xzf nomadlife-....tar.gz`), put `nomad.db` and `.secret_key` back in `/srv/nomad-life/data` and the receipts from the off-site copy in `/srv/nomad-life/uploads` (owned by `nomadlife`, mode 700), start the service.
 
 ## 12. The first admin
 
@@ -230,6 +238,8 @@ sudo systemctl restart nomad-life
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
 
+- **1.2.15** leaves the receipts out of the nightly archive. Before upgrading, make sure the off-site copy also takes the receipts folder (section 11), or from that night on the receipts are backed up nowhere. Archives from before still hold the receipts and are removed by `--keep` as usual.
+
 - **1.2.12** stores receipts as ZIP files and resizes big photos. Receipts uploaded before keep working (they are zipped when downloaded), but to save the space run this once:
 
   ```bash
@@ -238,7 +248,7 @@ The database is upgraded by the app on start (new columns are added automaticall
   sudo -u nomadlife .venv/bin/flask --app app zip-receipts --no-shrink  # or: zip only, keep photos
   ```
 
-  It prints how much space was saved and can be run again safely.
+  It rewrites receipts, so take a complete archive first (`scripts/backup.py --dest /var/backups/nomad-life --with-receipts`). It prints how much space was saved and can be run again safely.
 
 ## 14. Day to day
 
