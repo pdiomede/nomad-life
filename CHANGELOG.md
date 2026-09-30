@@ -10,7 +10,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- The header shows Documentation, Contact support and the light or dark mode button first, then your name with its menu.
+- The header shows Documentation, Contact support and the light or dark mode button first, then your name with its menu. On screens wider than a phone the header buttons have a little more space between them.
 - Who gets each day is worked out in one place for the day counts, the "N counted" notes, the map and the overlap report, so they always agree.
 
 ### Fixed

@@ -145,6 +145,8 @@ p { margin: 0; }
 .brand-logo { display: block; flex: none; width: 25px; height: 30px; }
 .brand-logo.lg { width: 47px; height: 56px; margin: 0 auto; }
 .topnav { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* A little more room between the header buttons where there is space for it. */
+@media (min-width: 601px) { .topnav { gap: 14px; } }
 .topnav-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topnav form { margin: 0; }
 .topbar .btn-ghost { color: var(--topbar-text); border-color: rgba(255, 255, 255, 0.2); }
