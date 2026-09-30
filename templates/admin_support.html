@@ -63,20 +63,20 @@
           {{ sort_link('created', 'Opened') }}
           {{ sort_link('updated', 'Last updated') }}
           {{ sort_link('closed', 'Closed') }}
-          <th scope="col" class="num">Messages</th>
+          {{ sort_link('messages', 'Messages') }}
         </tr>
       </thead>
       <tbody>
         {% for t in pager.rows %}
         <tr>
           <td>{{ t.id }}</td>
-          <td class="small">{{ kinds.get(t.kind, 'General question') }}</td>
+          <td class="small nowrap">{{ kinds.get(t.kind, 'General question') }}</td>
           <td><a href="{{ url_for('admin_ticket', ticket_id=t.id) }}" dir="auto">{{ t.subject }}</a>{% if t.unread %} <span class="pill pill-info">New</span>{% endif %}</td>
           <td class="small">{% if t.full_name %}<span dir="auto">{{ t.full_name }}</span><br>{% endif %}<span class="muted">{{ t.email }}</span></td>
-          <td><span class="pill {{ 'pill-ok' if t.status == 'open' else 'pill-muted' }}">{{ 'Open' if t.status == 'open' else 'Closed' }}</span></td>
-          <td class="small nowrap">{{ t.created_at | localdatetime }}</td>
-          <td class="small nowrap">{{ t.updated_at | localdatetime }}</td>
-          <td class="small nowrap">{{ (t.closed_at | localdatetime) if t.closed_at else '' }}</td>
+          <td class="nowrap"><span class="pill {{ 'pill-ok' if t.status == 'open' else 'pill-muted' }}">{{ 'Open' if t.status == 'open' else 'Closed' }}</span></td>
+          <td class="small nowrap">{{ t.created_at | utcdatetime }}</td>
+          <td class="small nowrap">{{ t.updated_at | utcdatetime }}</td>
+          <td class="small nowrap">{{ (t.closed_at | utcdatetime) if t.closed_at else '' }}</td>
           <td class="num">{{ t.messages }}</td>
         </tr>
         {% endfor %}

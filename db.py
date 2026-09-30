@@ -146,6 +146,10 @@ def get_db():
         g.db = sqlite3.connect(current_app.config["DATABASE_PATH"])
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
+        # Unicode aware lower case for searches (SQLite's lower() only knows A to Z).
+        g.db.create_function("casefold", 1,
+                             lambda v: v.casefold() if isinstance(v, str) else v,
+                             deterministic=True)
     return g.db
 
 

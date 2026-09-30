@@ -41,7 +41,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.2.15"
+APP_VERSION = "1.3.0"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -525,6 +525,7 @@ def create_app(overrides=None):
     app.add_template_filter(format_size, "filesize")
     app.add_template_filter(local_date, "localdate")
     app.add_template_filter(local_datetime, "localdatetime")
+    app.add_template_filter(utc_datetime, "utcdatetime")
     app.add_template_filter(country_flag, "flag")
 
     @app.errorhandler(413)
@@ -921,7 +922,9 @@ TICKETS_PER_PAGE = 25
 # Admin table columns that can be sorted, with the SQL behind them. Tickets still open have
 # no closed date: they go last in both directions.
 TICKET_SORTS = {
-    "id": "t.id", "kind": "t.kind", "subject": "t.subject COLLATE NOCASE",
+    # Type sorts by the name shown (Feature request, General question, Report a bug).
+    "id": "t.id", "kind": "CASE t.kind WHEN 'feature' THEN 1 WHEN 'question' THEN 2 ELSE 3 END",
+    "subject": "t.subject COLLATE NOCASE", "messages": "messages",
     "user": "u.email COLLATE NOCASE", "status": "t.status", "created": "t.created_at",
     "updated": "t.updated_at", "closed": "t.closed_at IS NULL, t.closed_at",
 }
@@ -931,8 +934,15 @@ def clean_ticket_body(value):
     """A message as typed: line breaks kept (as \\n), other control and invisible format
     characters removed, surrounding blank space dropped."""
     value = (value or "").replace("\r\n", "\n").replace("\r", "\n")
-    return "".join(ch for ch in value if ch in "\n\t"
-                   or unicodedata.category(ch)[0] != "C").strip()
+    value = "".join(ch for ch in value if ch not in BLANK_LETTERS and (
+        ch in "\n\t" or unicodedata.category(ch)[0] != "C" or ch in JOINERS)).strip()
+    # Only joiners and spaces left: nothing anyone could read.
+    return value if any(not ch.isspace() and ch not in JOINERS for ch in value) else ""
+
+
+def ticket_limit_key():
+    """Ticket limits count per account id, so changing the email starts no new budget."""
+    return f"#{current_user.id}"
 
 
 def support_unread(user_id):
@@ -988,6 +998,7 @@ AUDIT_LABELS = {
     "profile_changed": "Name changed",
     "ticket_opened": "Support ticket opened",
     "ticket_reply": "Support ticket answered",
+    "ticket_message": "Support ticket message from the user",
     "ticket_closed": "Support ticket closed",
     "ticket_reopened": "Support ticket reopened",
     "2fa_enabled": "Two-factor sign in turned on",
@@ -1123,6 +1134,16 @@ def local_date(utc_timestamp):
     except (TypeError, ValueError):
         return utc_timestamp
     return dt.astimezone().strftime("%Y-%m-%d")
+
+
+def utc_datetime(utc_timestamp):
+    """A stored UTC time as "2026-09-30 12:43 UTC": the same for every reader, whatever the
+    server's time zone (support tickets, like the security activity list)."""
+    try:
+        dt = datetime.strptime(utc_timestamp, "%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return utc_timestamp or ""
+    return dt.strftime("%Y-%m-%d %H:%M") + " UTC"
 
 
 def local_datetime(utc_timestamp):
@@ -2947,7 +2968,7 @@ def register_routes(app):
         form = request.form if request.method == "POST" else {}
         if request.method == "POST":
             kind = request.form.get("kind", "")
-            subject = clean_place(request.form.get("subject", ""))
+            subject = clean_name(request.form.get("subject", ""))
             body = clean_ticket_body(request.form.get("body", ""))
             open_count = db.query("SELECT COUNT(*) AS n FROM tickets WHERE user_id = ? AND "
                                   "status = 'open'", (current_user.id,), one=True)["n"]
@@ -2963,7 +2984,7 @@ def register_routes(app):
                 err = (f"You already have {OPEN_TICKETS_MAX} open tickets. Please close the ones "
                        "that are solved first.")
             else:
-                wait, scope, _attempt = take_attempt("ticket", current_user.email)
+                wait, scope, _attempt = take_attempt("ticket", ticket_limit_key())
                 err = too_many_message(wait, scope, "new tickets") if wait else None
             if err:
                 flash(err, "error")
@@ -2999,26 +3020,36 @@ def register_routes(app):
                     flash("Please write a message.", "error")
                 elif len(body) > TICKET_BODY_MAX:
                     flash(f"A message can be at most {TICKET_BODY_MAX} characters.", "error")
-                elif (wait := take_attempt("ticket_msg", current_user.email))[0]:
+                elif (wait := take_attempt("ticket_msg", ticket_limit_key()))[0]:
                     flash(too_many_message(wait[0], wait[1], "messages"), "error")
                 else:
                     with db.transaction() as conn:
                         message_id = conn.execute(
                             "INSERT INTO ticket_messages (ticket_id, author_id, body) "
                             "VALUES (?, ?, ?)", (ticket_id, current_user.id, body)).lastrowid
-                        # Writing on a closed ticket opens it again.
+                        # Writing on a closed ticket opens it again, unless the account is
+                        # already at its limit of open tickets (the message is kept).
+                        open_now = conn.execute("SELECT COUNT(*) FROM tickets WHERE user_id = ? "
+                                                "AND status = 'open'",
+                                                (current_user.id,)).fetchone()[0]
                         reopened = conn.execute(
                             "UPDATE tickets SET status = 'open', closed_at = NULL, closed_by = '' "
-                            "WHERE id = ? AND status = 'closed'", (ticket_id,)).rowcount
+                            "WHERE id = ? AND status = 'closed' AND ? < ?",
+                            (ticket_id, open_now, OPEN_TICKETS_MAX)).rowcount
+                        still_closed = conn.execute("SELECT status FROM tickets WHERE id = ?",
+                                                    (ticket_id,)).fetchone()[0] == "closed"
                         conn.execute("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP, "
                                      "user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
                                      (message_id, ticket_id))
-                    audit("ticket_reopened" if reopened else "ticket_reply", current_user.id,
+                    audit("ticket_reopened" if reopened else "ticket_message", current_user.id,
                           current_user.email, f"#{ticket_id}")
                     notify_admins(ticket_id, "reopened" if reopened else "reply",
                                   current_user.email)
-                    flash("Your message was sent." + (" The ticket is open again."
-                                                      if reopened else ""), "success")
+                    flash("Your message was sent." + (
+                        " The ticket is open again." if reopened else
+                        f" The ticket stays closed: you already have {OPEN_TICKETS_MAX} open "
+                        "tickets. Close the solved ones to open it again." if still_closed
+                        else ""), "success")
                     return redirect(url_for("support_ticket", ticket_id=ticket_id))
                 return render_template("support_ticket.html", ticket=ticket,
                                        messages=ticket_messages(ticket_id), admin_view=False,
@@ -3031,7 +3062,10 @@ def register_routes(app):
                     "status = 'open'", (ticket_id,))
                 if closed:
                     audit("ticket_closed", current_user.id, current_user.email, f"#{ticket_id}")
-                flash("The ticket is closed. Write on it any time to open it again.", "success")
+                    flash("The ticket is closed. Write on it any time to open it again.",
+                          "success")
+                else:
+                    flash("This ticket was already closed.", "info")
             return redirect(url_for("support_ticket", ticket_id=ticket_id))
         messages = ticket_messages(ticket_id)
         if messages and messages[-1]["id"] > ticket["user_seen_id"]:
@@ -3042,7 +3076,9 @@ def register_routes(app):
                                draft="")
 
     def admin_support_url(**values):
-        args = {k: v for k, v in values.items() if v not in (None, "", "all", 1)}
+        # "all" is the default of the filters only: a search for the word "all" is kept.
+        args = {k: v for k, v in values.items() if v not in (None, "", 1)
+                and not (k in ("status", "kind") and v == "all")}
         return url_for("admin_support", **args)
 
     @app.route("/admin/support")
@@ -3066,13 +3102,17 @@ def register_routes(app):
             params.append(kind)
         if q:
             number = q.lstrip("#")
-            if q.startswith("#") and number.isdigit():
+            if q.startswith("#") and number.isascii() and number.isdigit():
+                # A number beyond SQLite's range matches no ticket.
                 where.append("t.id = ?")
-                params.append(int(number))
+                params.append(int(number) if int(number) < 2 ** 63 else -1)
             else:
-                like = "%" + q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-                where.append("(lower(u.email) LIKE ? ESCAPE '\\' OR lower(u.first_name || ' ' || "
-                             "u.last_name) LIKE ? ESCAPE '\\')")
+                # casefold (registered in db.get_db) folds every script, not only A to Z,
+                # so "élodie" finds "Élodie".
+                like = ("%" + q.casefold().replace("\\", "\\\\").replace("%", "\\%")
+                        .replace("_", "\\_") + "%")
+                where.append("(casefold(u.email) LIKE ? ESCAPE '\\' OR casefold(u.first_name "
+                             "|| ' ' || u.last_name) LIKE ? ESCAPE '\\')")
                 params += [like, like]
         order = ", ".join(f"{part} {direction.upper()}" if not part.endswith("IS NULL")
                           else part for part in TICKET_SORTS[sort].split(", "))
@@ -3105,27 +3145,49 @@ def register_routes(app):
         back = url_for("admin_ticket", ticket_id=ticket_id)
         if request.method == "POST":
             action = request.form.get("action")
-            if action == "reply":
+            if action in ("reply", "reopen_reply"):
                 body = clean_ticket_body(request.form.get("body", ""))
-                if ticket["status"] != "open":
-                    flash("This ticket is closed. Reopen it to answer.", "error")
+                reopen = action == "reopen_reply"
+                if ticket["status"] != "open" and not reopen:
+                    flash("This ticket was closed meanwhile. Your answer is below: reopen the "
+                          "ticket and send it, or leave it closed.", "error")
                 elif not body:
                     flash("Please write a message.", "error")
                 elif len(body) > TICKET_BODY_MAX:
                     flash(f"A message can be at most {TICKET_BODY_MAX} characters.", "error")
                 else:
                     with db.transaction() as conn:
-                        message_id = conn.execute(
-                            "INSERT INTO ticket_messages (ticket_id, author_id, from_admin, body) "
-                            "VALUES (?, ?, 1, ?)", (ticket_id, current_user.id, body)).lastrowid
-                        conn.execute("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP, "
-                                     "admin_seen_id = MAX(admin_seen_id, ?) WHERE id = ?",
-                                     (message_id, ticket_id))
-                    audit("ticket_reply", ticket["user_id"], ticket["email"], f"#{ticket_id}",
-                          current_user.email)
-                    notify_user(ticket, "reply")
-                    flash("Your answer was sent. The user gets an email.", "success")
-                    return redirect(back)
+                        if reopen:
+                            reopened = conn.execute(
+                                "UPDATE tickets SET status = 'open', closed_at = NULL, "
+                                "closed_by = '' WHERE id = ? AND status = 'closed'",
+                                (ticket_id,)).rowcount
+                        # Checked again under the write lock: another admin (or the user)
+                        # may have closed the ticket since the page was read.
+                        still_open = conn.execute("SELECT status FROM tickets WHERE id = ?",
+                                                  (ticket_id,)).fetchone()[0] == "open"
+                        if still_open:
+                            message_id = conn.execute(
+                                "INSERT INTO ticket_messages (ticket_id, author_id, from_admin, "
+                                "body) VALUES (?, ?, 1, ?)",
+                                (ticket_id, current_user.id, body)).lastrowid
+                            conn.execute("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP, "
+                                         "admin_seen_id = MAX(admin_seen_id, ?) WHERE id = ?",
+                                         (message_id, ticket_id))
+                    if still_open:
+                        if reopen and reopened:
+                            audit("ticket_reopened", ticket["user_id"], ticket["email"],
+                                  f"#{ticket_id}", current_user.email)
+                        audit("ticket_reply", ticket["user_id"], ticket["email"],
+                              f"#{ticket_id}", current_user.email)
+                        notify_user(ticket, "reply")
+                        flash("Your answer was sent. The user gets an email.", "success")
+                        return redirect(back)
+                    flash("This ticket was closed meanwhile. Your answer is below: reopen the "
+                          "ticket and send it, or leave it closed.", "error")
+                    ticket = db.query("SELECT t.*, u.email, u.first_name, u.last_name FROM "
+                                      "tickets t JOIN users u ON u.id = t.user_id WHERE t.id = ?",
+                                      (ticket_id,), one=True)
                 return render_template("support_ticket.html", ticket=ticket,
                                        messages=ticket_messages(ticket_id), admin_view=True,
                                        kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,

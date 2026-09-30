@@ -62,7 +62,7 @@ class UserTicketTests(SupportBase):
         self.assertIsNone(t["closed_at"])
         self.assertEqual(self.messages()[0]["body"], "Line 1\nLine 2")
         html = self.client.get("/support").get_data(as_text=True)
-        self.assertIn("#1 Map is empty", html)
+        self.assertIn("#1 <bdi>Map is empty</bdi>", html)
         self.assertIn("Report a bug", html)
         self.assertIn(">Open<", html)
         ticket_page = self.client.get("/support/1").get_data(as_text=True)
@@ -133,7 +133,7 @@ class ConversationTests(SupportBase):
         self.assertNotIn("Map is empty", mail["text"] + mail["html"])
         html = self.client.get("/app", follow_redirects=True).get_data(as_text=True)
         self.assertIn("support-dot", html)
-        self.assertIn("1 new reply", html)
+        self.assertIn("1 ticket with a new reply", html)
         self.assertIn("New reply", self.client.get("/support").get_data(as_text=True))
         page = self.client.get("/support/1").get_data(as_text=True)
         self.assertIn("Nomad Life support", page)
@@ -229,7 +229,8 @@ class AdminTableTests(SupportBase):
                          ["1", "2", "3"])
 
     def test_every_column_sorts_both_ways(self):
-        expected = {"id": ["1", "2", "3"], "kind": ["1", "2", "3"],
+        # Type sorts by its shown name: Feature request, General question, Report a bug.
+        expected = {"id": ["1", "2", "3"], "kind": ["2", "3", "1"],
                     "subject": ["1", "2", "3"], "user": ["1", "2", "3"]}
         for key, order in expected.items():
             self.assertEqual(self.rows(f"?sort={key}&dir=asc"), order, key)

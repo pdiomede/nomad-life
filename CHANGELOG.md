@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.0] - 2026-09-30
+
+### Added
+
+- Support tickets. A question mark in the header ("Contact support") and a **Support** item in the menu open `/support`, the list of your tickets with their status and their opened, last updated and closed dates. **Submit a ticket** asks for a type (Report a bug, Feature request, General question), a subject and a description. Each ticket is a conversation between the user and support; both sides can close it, and a user message reopens it.
+- Admins get **Support tickets** in the menu (`/admin/support`): every ticket, filterable by status and type, searchable by email, name or `#number`, sortable by every column, with an answer, close, reopen and "reopen and send" on each ticket.
+- Notification emails for new tickets and messages (to the admins) and for answers and closing (to the user). They link to the ticket and never contain the message.
+- New tables `tickets` and `ticket_messages`, created on start. Deleting an account deletes its tickets.
+
+### Changed
+
+- The footer's author link and the page author in the structured data point to x.com/pdiomede.
+
+### Fixed
+
+Found in a review of the new support pages before release:
+
+- Searching the admin table for `#` followed by a non ASCII digit or a very large number returned an error page.
+- An admin answer sent while another admin closed the ticket was saved on the closed ticket; it is now refused with the draft kept, and a closed ticket offers "Reopen and send".
+- Searching for a name with accents (Élodie) found nothing when typed in another case.
+- A search for the word "all" was dropped from the sort and page links.
+- Ticket times were shown in server time without saying so; they are now in UTC and labelled.
+- A user message was recorded in the admin activity as "Support ticket answered".
+- The Type column sorted by internal key instead of the shown name, and the Messages column could not be sorted.
+- The admin table and a ticket from a long email address overflowed on phones.
+- Writing on a closed ticket reopened it even when the user already had the maximum of open tickets.
+- The ticket rate limit started over after an email change.
+- Closing an already closed ticket still said it was closed now.
+- The header buttons were squeezed next to a long name on phones, and the close button overflowed its card at 320 pixels.
+- The header label counted replies instead of tickets with a reply.
+- A subject or description made only of invisible letters was accepted.
+- A right to left subject moved the ticket number to the other end of the row.
+
 ## [1.2.15] - 2026-09-28
 
 ### Changed
