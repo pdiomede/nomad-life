@@ -11,7 +11,7 @@ All notable changes to this project are documented in this file.
 
 - Support tickets are numbered per year: `2026-1`, `2026-2`, and from January `2027-1`. The number is in the ticket list, on each ticket, in the admin table (sorted as numbers, so 2026-9 comes before 2026-10), in the emails and in their subjects, and in the addresses (`/support/2026-1`). The database gives the numbers itself: a trigger takes the next one of the year when a ticket is saved, a unique index refuses a duplicate, and a counter per year keeps a number from ever being given twice, also after an account is deleted. Existing tickets are renumbered on start in the order they were opened, and their history entries follow. Links in emails sent before (`/support/3`) still open the right ticket.
 - The admin ticket search finds a ticket by its number (`2026-3` or `#2026-3`), and a whole email address finds only that account's tickets (a part of an address still finds every match). The Support tickets link on an admin account page therefore lists only that account's tickets.
-- "Contact Us" in the footer of every page, the landing page and the 404 page included, writes to info@nomadlife.pro.
+- "Contact Us" in the footer of every page, the landing page and the 404 page included, writes to info@nomadlife.pro. The landing page footer never shows Settings and Admin, also when signed in.
 
 ### Changed
 

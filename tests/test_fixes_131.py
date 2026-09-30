@@ -335,3 +335,18 @@ class SessionReviewTests(AppTestCase):
     def test_the_404_page_has_contact_us(self):
         html = self.app.test_client().get("/no-such-page").get_data(as_text=True)
         self.assertIn(f'href="mailto:{appmod.CONTACT_EMAIL}">Contact Us</a>', html)
+
+
+class LandingFooterTests(AppTestCase):
+    def footer(self, path):
+        html = self.client.get(path).get_data(as_text=True)
+        return html[html.index("<footer"):html.index("</footer>")]
+
+    def test_landing_footer_has_no_account_links_even_when_signed_in(self):
+        self.app.config["ADMIN_EMAILS"] = frozenset({"a@example.com"})
+        self.signup("a@example.com")
+        landing = self.footer("/")
+        self.assertIn("Contact Us", landing)
+        self.assertNotIn('href="/settings"', landing)
+        self.assertNotIn('href="/admin"', landing)
+        self.assertIn('href="/settings"', self.footer("/plan"))  # the app pages keep them
