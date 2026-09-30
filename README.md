@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.4.0**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.4.1**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -106,7 +106,7 @@ Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their
 
 - Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements (always for every account, also while searching).
 - The monthly and yearly price of Pro and Nomad+ ("Plans and prices"). Leave both fields empty to go back to the default prices in `PLANS`.
-- The accounts table, 10 per page: account (name, email, and flags such as Admin, Two-factor on, Disabled, Email not confirmed, Over quota), plan, joined, last sign in, IP address (the last sign in IP, or the sign up IP marked "sign up" for an account that never signed in; accounts from before 1.4.0 have no sign up IP), years and storage used. Search by part of an email, a name or an IP (`185.220.` lists every account from that network), and sort by account, joined, last sign in, years or storage.
+- The accounts table, 10 per page: account (name, email, and flags such as Admin, Two-factor on, Disabled, Email not confirmed, Over quota), plan, joined, last sign in, last known IP (the address of the last sign in, marked "at last sign in", or the sign up address, marked "at sign up", for an account that never signed in; accounts from before 1.4.0 have no sign up IP), years and storage used. Search by part of an email, a name or an IP (`185.220.` lists every account from that network), and sort by account, joined, last sign in, years or storage.
 - Security activity: the last 100 events (sign ins, failed sign ins, password, email and two-factor changes, admin actions with the admin who made them), filterable by account email. Events are kept for 365 days.
 
 **View** (or the email in the table) opens the account's own page, `/admin/users/<id>`:
@@ -119,6 +119,18 @@ Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their
 **Back to accounts** returns to the same search, sort and page, also after saving.
 
 Admins also get **Support tickets** in the menu (`/admin/support`), see [Support](#support).
+
+### Fake accounts
+
+Bots sign other people's work addresses up on many websites at once (to flood their inbox), and until 1.4.0 the company mail scanners that open every link in incoming mail confirmed those accounts. They look like this on the admin page: a company address, joined recently, **never signed in**, no years, often several from the same company. To list them and delete them, run on the server (from the app folder, as the user that runs the app):
+
+```bash
+./checkFakeUsers.sh --dry-run            # report only
+./checkFakeUsers.sh                      # report, then asks what to delete
+./checkFakeUsers.sh --min-age-hours 72   # only accounts older than 3 days (default 24)
+```
+
+It lists only accounts that are confirmed, never signed in, hold nothing (no years, receipts or tickets), are not admins, not disabled, have no plan or quota set by an admin, and joined at least a day ago. For each one it shows how soon after sign up it was confirmed ("4 s, scanner" when under 2 minutes, which no person manages) and the confirming and sign up IPs. It then asks which to delete (all, some by number such as `1,3,5-7`, or none) and to type `DELETE`. Each deletion is checked again at that moment, so an account that signs in meanwhile is kept, and each is recorded in the security history as deleted by `check-fake-users`. Take a backup first (`scripts/backup.py`). It is the same as `.venv/bin/flask --app app check-fake-users`.
 
 The admin page needs **two-factor sign in**: an admin without it is sent to the Settings page to turn it on first. Admins cannot disable or delete their own account or another admin's (remove it from `ADMIN_EMAILS` first), and nobody can become an admin from inside the app. Everyone else gets "Page not found" at `/admin`.
 

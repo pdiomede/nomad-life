@@ -344,6 +344,7 @@ The database is upgraded by the app on start (new columns are added automaticall
 | Someone lost the phone with their authenticator app | `.venv/bin/flask --app app reset-2fa someone@example.com` (from `/var/www/nomad-life`; they get an email about it) |
 | Disk used by receipts | `sudo du -sh /var/www/nomad-life/uploads` |
 | Check the pinned packages for known vulnerabilities | `.venv/bin/pip install pip-audit && .venv/bin/pip-audit -r requirements.txt` (the GitHub Action also does this every Monday) |
+| Accounts that look fake (confirmed, never signed in, no data) | `./checkFakeUsers.sh --dry-run` to see them, `./checkFakeUsers.sh` to choose and delete them (from `/var/www/nomad-life`, after a backup) |
 | Many "Too many attempts" in the log | Somebody is guessing passwords; the limits hold them. With fail2ban you can also block the IP. |
 
 ## 15. Checklist

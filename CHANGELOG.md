@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.4.1] - 2026-10-01
+
+### Added
+
+- `./checkFakeUsers.sh` (the same as `flask --app app check-fake-users`) lists the accounts that look fake and offers to delete them. Listed are only accounts that are confirmed, never signed in, hold nothing (no years, receipts or tickets), are not admins, not disabled, have no plan or quota set by an admin, and joined at least 24 hours ago (`--min-age-hours`). For each it shows how soon after sign up the email was confirmed ("4 s, scanner" under 2 minutes), the confirming IP and the sign up IP. It asks which to delete (all, some by number, or none), then asks to type `DELETE`; `--dry-run` only reports. Each account is checked again in the deletion itself, so one that signs in meanwhile is kept, and every deletion is recorded in the security history.
+
+### Changed
+
+- The IP column of the admin accounts table is called **Last known IP**, and every address says where it comes from: "at last sign in" or "at sign up".
+
 ## [1.4.0] - 2026-10-01
 
 ### Added

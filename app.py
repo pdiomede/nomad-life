@@ -41,7 +41,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -674,10 +674,161 @@ def create_app(overrides=None):
         click.echo(f"Two-factor sign in removed from {email}. They can sign in with the "
                    "password alone and turn it on again on the Settings page.")
 
+    @app.cli.command("check-fake-users")
+    @click.option("--min-age-hours", type=click.IntRange(0, None), default=FAKE_MIN_AGE_HOURS,
+                  show_default=True, help="Only accounts that joined at least this long ago.")
+    @click.option("--dry-run", is_flag=True, help="Only show the report, delete nothing.")
+    def check_fake_users(min_age_hours, dry_run):
+        """Report accounts that look fake and offer to delete them.
+
+        Listed: confirmed, never signed in, no years, receipts or tickets, not an admin, not
+        disabled, no plan or quota set by an admin, joined at least --min-age-hours ago. Bots sign people's work addresses up, and until 1.4.0 the
+        company mail scanners that open every link confirmed those accounts."""
+        admins = app.config["ADMIN_EMAILS"]
+        rows = fake_user_candidates(min_age_hours, admins)
+        if not rows:
+            click.echo("No accounts look fake: every confirmed account has signed in or holds "
+                       "data.")
+            return
+        head = ("#", "Email", "Joined (UTC)", "Confirmed after", "Confirm IP", "Sign up IP")
+        table = [head] + [
+            (str(i), r["email"], r["created_at"][:16],
+             short_duration(r["confirm_seconds"]) + (", scanner" if r["scanner"] else ""),
+             r["confirm_ip"] or "not recorded", r["signup_ip"] or "not recorded")
+            for i, r in enumerate(rows, 1)]
+        widths = [max(len(line[c]) for line in table) for c in range(len(head))]
+        for line in table:
+            click.echo("  ".join(cell.ljust(w) for cell, w in zip(line, widths)).rstrip())
+        scanners = sum(r["scanner"] for r in rows)
+        click.echo(f"\n{len(rows)} account{'' if len(rows) == 1 else 's'} confirmed but never "
+                   f"signed in, with no data, joined over {min_age_hours} hours ago. "
+                   f"{scanners} {'was' if scanners == 1 else 'were'} confirmed within "
+                   f"{SCANNER_SECONDS // 60} minutes of signing up, the mark of a mail scanner "
+                   "opening the link.")
+        if dry_run:
+            click.echo("Dry run: nothing deleted.")
+            return
+        click.echo("Take a backup first: .venv/bin/python scripts/backup.py --dest DIR --keep 14")
+        chosen = None
+        while chosen is None:
+            chosen = parse_selection(click.prompt(
+                f"Delete all {len(rows)} (a), some (numbers like 1,3,5-7), or none (n)?",
+                default="n", show_default=False), len(rows))
+            if chosen is None:
+                click.echo(f"Please answer a, n, or numbers from 1 to {len(rows)}.")
+        if not chosen:
+            click.echo("Nothing deleted.")
+            return
+        picked = [rows[i - 1] for i in chosen]
+        if click.prompt(f"Type DELETE to delete {len(picked)} account"
+                        f"{'' if len(picked) == 1 else 's'}", default="",
+                        show_default=False) != "DELETE":
+            click.echo("Nothing deleted.")
+            return
+        deleted, kept = [], []
+        for r in picked:
+            # The same conditions again in the DELETE itself: an account that signed in or
+            # added data since the report stays (and an admin is never touched).
+            gone = r["email"] not in admins and db.execute_rowcount(
+                f"DELETE FROM users WHERE id = ? AND id IN (SELECT u.id FROM users u WHERE "
+                f"{FAKE_USER_WHERE}) AND email = ?", (r["id"], r["email"]))
+            if not gone:
+                kept.append(r["email"])
+                continue
+            deleted.append(r["email"])
+            audit("admin_delete", r["id"], r["email"], "fake account", "check-fake-users")
+            try:  # an account without receipts has at most an empty folder
+                os.rmdir(os.path.join(app.config["UPLOAD_DIR"], str(r["id"])))
+            except OSError:
+                pass
+        click.echo(f"Deleted {len(deleted)} account{'' if len(deleted) == 1 else 's'}"
+                   + (": " + ", ".join(deleted) if deleted else "") + ".")
+        if kept:
+            click.echo("Kept, because they signed in, added data or were changed by an admin "
+                       "meanwhile: "
+                       + ", ".join(kept) + ".")
+
     return app
 
 
 # ---------- helpers ----------
+
+FAKE_MIN_AGE_HOURS = 24  # check-fake-users leaves newer accounts alone: they may sign in yet
+SCANNER_SECONDS = 120  # confirmed this soon after sign up: a mail scanner opened the link
+
+# An account check-fake-users may list and delete: confirmed, never signed in, holding nothing
+# (no years, so no stays or receipts, and no tickets), and never touched by an admin: a disabled
+# account blocks its address from signing up again, and a plan or quota set by hand means a
+# real customer. Used again in the DELETE itself, so an account that signs in, adds data or is
+# changed by an admin between the report and the answer is kept.
+FAKE_USER_WHERE = (
+    "u.verified_at IS NOT NULL AND u.last_login_at IS NULL AND u.disabled = 0 "
+    "AND u.plan = 'free' AND u.quota_bytes IS NULL "
+    "AND NOT EXISTS (SELECT 1 FROM years y WHERE y.user_id = u.id) "
+    "AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.user_id = u.id) "
+    "AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.user_id = u.id)")
+
+
+def fake_user_candidates(min_age_hours, admins):
+    """Accounts that look fake, oldest first, with the evidence: when and from where the email
+    was confirmed (the first account_confirmed event) and the sign up IP. Admins never."""
+    rows = db.query(
+        "SELECT u.id, u.email, u.created_at, u.signup_ip, "
+        "(SELECT a.created_at FROM audit_log a WHERE a.user_id = u.id "
+        " AND a.event = 'account_confirmed' ORDER BY a.id LIMIT 1) AS confirmed_at, "
+        "(SELECT a.ip FROM audit_log a WHERE a.user_id = u.id "
+        " AND a.event = 'account_confirmed' ORDER BY a.id LIMIT 1) AS confirm_ip "
+        f"FROM users u WHERE {FAKE_USER_WHERE} AND u.created_at <= datetime('now', ?) "
+        "ORDER BY u.created_at, u.id", (f"-{int(min_age_hours)} hours",))
+    out = []
+    for r in rows:
+        if r["email"] in admins:
+            continue
+        seconds = None
+        if r["confirmed_at"]:
+            try:
+                seconds = (datetime.strptime(r["confirmed_at"][:19], "%Y-%m-%d %H:%M:%S")
+                           - datetime.strptime(r["created_at"][:19], "%Y-%m-%d %H:%M:%S")
+                           ).total_seconds()
+            except ValueError:
+                seconds = None
+        out.append(dict(r, confirm_seconds=seconds,
+                        scanner=seconds is not None and 0 <= seconds < SCANNER_SECONDS))
+    return out
+
+
+def short_duration(seconds):
+    """30 s, 4 min, 3 h, 2 d."""
+    if seconds is None:
+        return "not recorded"
+    seconds = max(int(seconds), 0)
+    for unit, size in (("d", 86400), ("h", 3600), ("min", 60)):
+        if seconds >= size:
+            return f"{seconds // size} {unit}"
+    return f"{seconds} s"
+
+
+def parse_selection(answer, count):
+    """The accounts chosen at the prompt: "a" for all, "n" or nothing for none, or numbers
+    and ranges ("1,3,5-7"). None when the answer cannot be read."""
+    answer = answer.strip().lower()
+    if answer in ("a", "all"):
+        return list(range(1, count + 1))
+    if answer in ("", "n", "no", "none"):
+        return []
+    chosen = set()
+    for part in answer.replace(" ", ",").split(","):
+        if not part:
+            continue
+        low, _, high = part.partition("-")
+        if not low.isdigit() or (high and not high.isdigit()):
+            return None
+        low, high = int(low), int(high or low)
+        if not 1 <= low <= high <= count:
+            return None
+        chosen.update(range(low, high + 1))
+    return sorted(chosen)
+
 
 def serializer(salt="password-reset"):
     """Signed tokens for emailed links. Each kind of link has its own salt, so a password

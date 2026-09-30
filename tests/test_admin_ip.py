@@ -37,13 +37,13 @@ class AdminIpTests(AppTestCase):
         self.assertEqual(self.user("a@example.com")["signup_ip"], "203.0.113.7")
         joiner.post(self.last_link("a@example.com"))
         # Before any sign in the table shows the sign up IP, marked as such.
-        self.assertIn('203.0.113.7<br><span class="muted">sign up</span>', self.table_row("a@example.com"))
+        self.assertIn('203.0.113.7<br><span class="muted">at sign up</span>', self.table_row("a@example.com"))
         traveller = self.client_from("2001:db8::42")
         traveller.post("/login", data={"email": "a@example.com", "password": "password1"})
         self.assertEqual(self.user("a@example.com")["last_login_ip"], "2001:db8::42")
         row = self.table_row("a@example.com")
-        self.assertIn("2001:db8::42", row)
-        self.assertNotIn("sign up", row)
+        self.assertIn('2001:db8::42<br><span class="muted">at last sign in</span>', row)
+        self.assertNotIn("at sign up", row)
         page = self.admin.get(f"/admin/users/{self.user('a@example.com')['id']}").get_data(as_text=True)
         self.assertIn('>203.0.113.7</a>', page)
         self.assertIn('>2001:db8::42</a>', page)
@@ -98,3 +98,50 @@ class LastLoginIpMigrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BehindNginxTests(AppTestCase):
+    """PROXY_COUNT=1 as on the server: nginx appends the visitor's address to X-Forwarded-For
+    ($proxy_add_x_forwarded_for), and only that last entry may be trusted."""
+
+    def setUp(self):
+        super().setUp()
+        import app as appmod
+        self.app = appmod.create_app(dict(self.app.config, PROXY_COUNT=1))
+        self.client = self.app.test_client()
+        self.client.environ_base["REMOTE_ADDR"] = "127.0.0.1"  # nginx on the same machine
+
+    def ips(self, email="a@example.com"):
+        with self.db() as conn:
+            row = conn.execute("SELECT signup_ip, last_login_ip FROM users WHERE email = ?",
+                               (email,)).fetchone()
+            events = [r[0] for r in conn.execute("SELECT ip FROM audit_log ORDER BY id")]
+        return tuple(row), events
+
+    def test_a_forged_header_cannot_choose_the_recorded_ip(self):
+        # The visitor sends their own X-Forwarded-For; nginx adds the real address after it.
+        forged = {"X-Forwarded-For": "6.6.6.6, 203.0.113.9"}
+        self.client.post("/signup", data={"email": "a@example.com", "password": "password1",
+                                          "confirm": "password1"}, headers=forged)
+        self.client.post(self.last_link("a@example.com"), headers=forged)
+        self.client.post("/login", data={"email": "a@example.com", "password": "password1"},
+                         headers=forged)
+        (signup_ip, last_ip), events = self.ips()
+        self.assertEqual((signup_ip, last_ip), ("203.0.113.9", "203.0.113.9"))
+        self.assertEqual(set(events), {"203.0.113.9"})
+        self.assertNotIn("6.6.6.6", str(events))
+
+    def test_two_factor_sign_in_records_the_ip_of_the_code_step(self):
+        import app as appmod
+        self.signup()
+        self.client.post("/logout")
+        secret = appmod.new_totp_secret()
+        with self.db() as conn:
+            conn.execute("UPDATE users SET totp_secret = ?", (secret,))
+        via = {"X-Forwarded-For": "198.51.100.77"}
+        self.client.post("/login", data={"email": "a@example.com", "password": "password1"},
+                         headers=via)
+        import time
+        self.client.post("/login/code", data={"code": appmod.totp_code(secret, int(time.time()) // 30)},
+                         headers=via)
+        self.assertEqual(self.ips()[0][1], "198.51.100.77")
