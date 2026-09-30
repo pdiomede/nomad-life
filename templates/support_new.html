@@ -12,7 +12,7 @@
     </div>
   </div>
   <section class="card">
-    <form method="post" class="stack">
+    <form method="post" class="stack" data-submit-once>
       {{ ui.csrf() }}
       <div class="field">
         <label for="ticket-kind">What is it about?</label>

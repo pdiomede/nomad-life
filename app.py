@@ -41,7 +41,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -1070,6 +1070,19 @@ def chat_rows(messages, admin_view, owner_name=""):
         row["group_end"] = nxt is None or nxt["day"] != row["day"] or nxt["party"] != row["party"] \
             or (nxt["at"] - row["at"]).total_seconds() > CHAT_GROUP_SECONDS
     return rows
+
+
+DUPLICATE_SECONDS = 60  # the same ticket or message sent again this soon: a double submit
+
+
+def duplicate_message(conn, ticket_id, author_id, from_admin, body):
+    """The same text by the same author on this ticket within DUPLICATE_SECONDS: one form sent
+    twice (a double click, a retried request). Call inside the write transaction."""
+    return conn.execute(
+        "SELECT id FROM ticket_messages WHERE ticket_id = ? AND author_id = ? AND from_admin = ? "
+        "AND body = ? AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 1",
+        (ticket_id, author_id, int(bool(from_admin)), body,
+         f"-{DUPLICATE_SECONDS} seconds")).fetchone()
 
 
 def ticket_messages(ticket_id):
@@ -3129,8 +3142,15 @@ def register_routes(app):
             abort(404)
         return row
 
-    def ticket_url(endpoint, ticket):
-        return url_for(endpoint, **ticket_args(ticket))
+    def ticket_url(endpoint, ticket, **list_args):
+        return url_for(endpoint, **ticket_args(ticket), **list_args)
+
+    def support_list_args(source):
+        """The tab and page of /support, carried to a ticket and back."""
+        status = source.get("status")
+        page = to_int(source.get("page"), 1)
+        return {k: v for k, v in (("status", status if status in ("open", "closed") else None),
+                                  ("page", page if page > 1 else None)) if v is not None}
 
     @app.route("/support")
     @login_required
@@ -3147,8 +3167,9 @@ def register_routes(app):
         pager = paginate(tickets, request.args.get("page"), TICKETS_PER_PAGE,
                          lambda n, _size: url_for("support", status=None if status == "all"
                                                   else status, page=n if n > 1 else None))
+        list_args = support_list_args({"status": status, "page": pager["page"]})
         return render_template("support.html", pager=pager, status=status, counts=counts,
-                               kinds=TICKET_KINDS)
+                               kinds=TICKET_KINDS, list_args=list_args)
 
     @app.route("/support/new", methods=["GET", "POST"])
     @login_required
@@ -3177,9 +3198,20 @@ def register_routes(app):
             ticket_id = None
             if not err:
                 with db.transaction() as conn:
+                    # The same ticket sent twice (a double click): the second one finds the
+                    # first under the write lock and opens it instead of making another.
+                    ticket = conn.execute(
+                        "SELECT t.* FROM tickets t JOIN ticket_messages m ON m.ticket_id = t.id "
+                        "WHERE t.user_id = ? AND t.kind = ? AND t.subject = ? AND m.body = ? "
+                        "AND t.created_at >= datetime('now', ?) ORDER BY t.id DESC LIMIT 1",
+                        (current_user.id, kind, subject, body,
+                         f"-{DUPLICATE_SECONDS} seconds")).fetchone()
+                    duplicate = ticket is not None
                     # Counted again under the write lock: parallel posts cannot pass the cap.
-                    if conn.execute("SELECT COUNT(*) FROM tickets WHERE user_id = ? AND "
-                                    "status = 'open'", (current_user.id,)).fetchone()[0] \
+                    if duplicate:
+                        pass
+                    elif conn.execute("SELECT COUNT(*) FROM tickets WHERE user_id = ? AND "
+                                      "status = 'open'", (current_user.id,)).fetchone()[0] \
                             >= OPEN_TICKETS_MAX:
                         err = (f"You already have {OPEN_TICKETS_MAX} open tickets. Please close "
                                "the ones that are solved first.")
@@ -3201,8 +3233,9 @@ def register_routes(app):
                                        subject_max=TICKET_SUBJECT_MAX,
                                        body_max=TICKET_BODY_MAX), 400
             ref = ticket_ref(ticket)
-            audit("ticket_opened", current_user.id, current_user.email, f"#{ref}")
-            notify_admins(ticket, "new", current_user.email)
+            if not duplicate:
+                audit("ticket_opened", current_user.id, current_user.email, f"#{ref}")
+                notify_admins(ticket, "new", current_user.email)
             flash(f"Ticket #{ref} was sent. We will answer here and email you when we do.",
                   "success")
             return redirect(ticket_url("support_ticket", ticket))
@@ -3225,6 +3258,8 @@ def register_routes(app):
     def support_ticket(year, seq):
         ticket = get_ticket_or_404(year, seq)
         ticket_id, ref = ticket["id"], ticket_ref(ticket)
+        list_args = support_list_args(request.args)  # back to the same tab and page
+        back_url = url_for("support", **list_args)
         if request.method == "POST":
             action = request.form.get("action")
             if action == "reply":
@@ -3237,23 +3272,29 @@ def register_routes(app):
                     flash(too_many_message(wait[0], wait[1], "messages"), "error")
                 else:
                     with db.transaction() as conn:
-                        message_id = conn.execute(
-                            "INSERT INTO ticket_messages (ticket_id, author_id, body) "
-                            "VALUES (?, ?, ?)", (ticket_id, current_user.id, body)).lastrowid
-                        # Writing on a closed ticket opens it again, unless the account is
-                        # already at its limit of open tickets (the message is kept).
-                        open_now = conn.execute("SELECT COUNT(*) FROM tickets WHERE user_id = ? "
-                                                "AND status = 'open'",
-                                                (current_user.id,)).fetchone()[0]
-                        reopened = conn.execute(
-                            "UPDATE tickets SET status = 'open', closed_at = NULL, closed_by = '' "
-                            "WHERE id = ? AND status = 'closed' AND ? < ?",
-                            (ticket_id, open_now, OPEN_TICKETS_MAX)).rowcount
-                        still_closed = conn.execute("SELECT status FROM tickets WHERE id = ?",
-                                                    (ticket_id,)).fetchone()[0] == "closed"
-                        conn.execute("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP, "
-                                     "user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
-                                     (message_id, ticket_id))
+                        duplicate = duplicate_message(conn, ticket_id, current_user.id, False, body)
+                        if not duplicate:
+                            message_id = conn.execute(
+                                "INSERT INTO ticket_messages (ticket_id, author_id, body) "
+                                "VALUES (?, ?, ?)", (ticket_id, current_user.id, body)).lastrowid
+                            # Writing on a closed ticket opens it again, unless the account is
+                            # already at its limit of open tickets (the message is kept).
+                            open_now = conn.execute("SELECT COUNT(*) FROM tickets WHERE "
+                                                    "user_id = ? AND status = 'open'",
+                                                    (current_user.id,)).fetchone()[0]
+                            reopened = conn.execute(
+                                "UPDATE tickets SET status = 'open', closed_at = NULL, "
+                                "closed_by = '' WHERE id = ? AND status = 'closed' AND ? < ?",
+                                (ticket_id, open_now, OPEN_TICKETS_MAX)).rowcount
+                            still_closed = conn.execute(
+                                "SELECT status FROM tickets WHERE id = ?",
+                                (ticket_id,)).fetchone()[0] == "closed"
+                            conn.execute("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP, "
+                                         "user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
+                                         (message_id, ticket_id))
+                    if duplicate:  # sent twice: the first one already did everything
+                        flash("Your message was sent.", "success")
+                        return redirect(ticket_url("support_ticket", ticket, **list_args))
                     audit("ticket_reopened" if reopened else "ticket_message", current_user.id,
                           current_user.email, f"#{ref}")
                     notify_admins(ticket, "reopened" if reopened else "reply",
@@ -3263,8 +3304,8 @@ def register_routes(app):
                         f" The ticket stays closed: you already have {OPEN_TICKETS_MAX} open "
                         "tickets. Close the solved ones to open it again." if still_closed
                         else ""), "success")
-                    return redirect(ticket_url("support_ticket", ticket))
-                return render_template("support_ticket.html", ticket=ticket,
+                    return redirect(ticket_url("support_ticket", ticket, **list_args))
+                return render_template("support_ticket.html", ticket=ticket, back_url=back_url,
                                        messages=ticket_messages(ticket_id), admin_view=False,
                                        kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
                                        draft=request.form.get("body", ""),
@@ -3280,22 +3321,24 @@ def register_routes(app):
                           "success")
                 else:
                     flash("This ticket was already closed.", "info")
-            return redirect(ticket_url("support_ticket", ticket))
+            return redirect(ticket_url("support_ticket", ticket, **list_args))
         messages = ticket_messages(ticket_id)
         if messages and messages[-1]["id"] > ticket["user_seen_id"]:
             # Housekeeping: skipped when the database is busy (the dot stays until next time),
             # so reading a ticket never fails behind another request's write.
             db.try_execute("UPDATE tickets SET user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
                            (messages[-1]["id"], ticket_id))
-        return render_template("support_ticket.html", ticket=ticket, messages=messages,
+        return render_template("support_ticket.html", ticket=ticket, back_url=back_url, messages=messages,
                                admin_view=False, kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
                                draft="", at_cap=open_ticket_cap_reached(ticket))
 
-    def admin_support_url(**values):
+    def admin_support_args(**values):
         # "all" is the default of the filters only: a search for the word "all" is kept.
-        args = {k: v for k, v in values.items() if v not in (None, "", 1)
+        return {k: v for k, v in values.items() if v not in (None, "", 1, "1")
                 and not (k in ("status", "kind") and v == "all")}
-        return url_for("admin_support", **args)
+
+    def admin_support_url(**values):
+        return url_for("admin_support", **admin_support_args(**values))
 
     @app.route("/admin/support")
     @login_required
@@ -3350,9 +3393,11 @@ def register_routes(app):
                          lambda n, _size: admin_support_url(**state, page=n))
         counts = db.query("SELECT COUNT(*) AS total, COALESCE(SUM(status = 'open'), 0) AS open "
                           "FROM tickets", one=True)
+        # Filters, search, sort and page go to each ticket, so its Back returns here.
+        list_args = admin_support_args(**state, page=pager["page"])
         return render_template("admin_support.html", pager=pager, state=state, counts=counts,
                                kinds=TICKET_KINDS, sorts=list(TICKET_SORTS),
-                               support_url=admin_support_url)
+                               support_url=admin_support_url, list_args=list_args)
 
     @app.route("/admin/support/<int:ticket_id>", methods=["GET", "POST"])
     @login_required
@@ -3375,7 +3420,12 @@ def register_routes(app):
         if ticket is None:
             abort(404)
         ticket_id, ref = ticket["id"], ticket_ref(ticket)
-        back = ticket_url("admin_ticket", ticket)
+        # The list's filters, search, sort and page, for Back and after each action. Only
+        # carried in links: /admin/support checks them again.
+        list_args = admin_support_args(**{k: request.args.get(k, "")[:254] for k in
+                                          ("status", "kind", "q", "sort", "dir", "page")})
+        back = ticket_url("admin_ticket", ticket, **list_args)
+        back_url = admin_support_url(**list_args)
         if request.method == "POST":
             action = request.form.get("action")
             if action in ("reply", "reopen_reply"):
@@ -3399,7 +3449,9 @@ def register_routes(app):
                         # may have closed the ticket since the page was read.
                         still_open = conn.execute("SELECT status FROM tickets WHERE id = ?",
                                                   (ticket_id,)).fetchone()[0] == "open"
-                        if still_open:
+                        duplicate = still_open and duplicate_message(
+                            conn, ticket_id, current_user.id, True, body)
+                        if still_open and not duplicate:
                             message_id = conn.execute(
                                 "INSERT INTO ticket_messages (ticket_id, author_id, from_admin, "
                                 "body) VALUES (?, ?, 1, ?)",
@@ -3407,6 +3459,9 @@ def register_routes(app):
                             conn.execute("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP, "
                                          "admin_seen_id = MAX(admin_seen_id, ?) WHERE id = ?",
                                          (message_id, ticket_id))
+                    if duplicate:  # sent twice: the first one already did everything
+                        flash("Your answer was sent. The user gets an email.", "success")
+                        return redirect(back)
                     if still_open:
                         if reopen and reopened:
                             audit("ticket_reopened", ticket["user_id"], ticket["email"],
@@ -3421,7 +3476,7 @@ def register_routes(app):
                     ticket = db.query("SELECT t.*, u.email, u.first_name, u.last_name FROM "
                                       "tickets t JOIN users u ON u.id = t.user_id WHERE t.id = ?",
                                       (ticket_id,), one=True)
-                return render_template("support_ticket.html", ticket=ticket,
+                return render_template("support_ticket.html", ticket=ticket, back_url=back_url,
                                        messages=ticket_messages(ticket_id), admin_view=True,
                                        kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
                                        draft=request.form.get("body", ""),
@@ -3452,7 +3507,7 @@ def register_routes(app):
         if messages and messages[-1]["id"] > ticket["admin_seen_id"]:
             db.try_execute("UPDATE tickets SET admin_seen_id = MAX(admin_seen_id, ?) WHERE id = ?",
                            (messages[-1]["id"], ticket_id))
-        return render_template("support_ticket.html", ticket=ticket, messages=messages,
+        return render_template("support_ticket.html", ticket=ticket, back_url=back_url, messages=messages,
                                admin_view=True, kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
                                draft="", owner_name=full_name(ticket))
 

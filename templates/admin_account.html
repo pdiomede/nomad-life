@@ -82,6 +82,16 @@
     {{ ui.delete_form(url_for('admin_user', user_id=u.id), 'the account ' ~ u.email ~ ' with all its years, movements and receipts', extra=dict(state, action='delete', confirm_email=''), type_to_confirm=u.email, type_field='confirm_email', aria_label='Delete ' ~ u.email) }}
   </div>
   <p class="muted small">Disabling signs the account out everywhere; it can be enabled again. Deleting removes the account with all its data for good.</p>
+  {% elif u.id != current_user.id and u.disabled %}
+  {# An account disabled before its address was added to ADMIN_EMAILS: it cannot sign in,
+     so enabling it must stay possible (disabling and deleting admins stays refused). #}
+  <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}">
+    {{ ui.csrf() }}
+    <input type="hidden" name="action" value="enable">
+    {{ list_state() }}
+    <button class="btn btn-ghost btn-sm" type="submit" aria-label="Enable {{ u.email }}">Enable</button>
+  </form>
+  <p class="muted small">This admin account is disabled, so it cannot sign in. Admins cannot be disabled or deleted here.</p>
   {% else %}
   <p class="muted small">{{ 'This is you.' if u.id == current_user.id else 'Admins cannot be disabled or deleted here. Remove the address from ADMIN_EMAILS in config.env first.' }}</p>
   {% endif %}

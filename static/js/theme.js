@@ -32,6 +32,23 @@
     });
   }
 
+  // Forms marked data-submit-once ignore a second submit (a double click on "Submit ticket"
+  // would otherwise send it twice; the server also refuses the copy). Coming back to the page
+  // with the browser's Back button makes the form usable again.
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!form.hasAttribute || !form.hasAttribute("data-submit-once")) return;
+    if (form.getAttribute("data-sent")) {
+      event.preventDefault();
+      return;
+    }
+    form.setAttribute("data-sent", "1");
+  });
+  window.addEventListener("pageshow", function () {
+    var sent = document.querySelectorAll("form[data-sent]");
+    for (var i = 0; i < sent.length; i++) sent[i].removeAttribute("data-sent");
+  });
+
   // Deleting always asks twice. Step 1 names what will be deleted, step 2 asks "Are you sure?"
   // (and, for a year, to type it). Only then the form gets confirm_delete=2, which the server
   // requires before deleting anything.

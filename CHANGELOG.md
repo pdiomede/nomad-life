@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.2] - 2026-10-01
+
+### Changed
+
+- The Support page introduction reads "Found a bug, have a question, or want to suggest a feature? Open a ticket and we’ll reply here and notify you by email." and stays on one line on wider screens.
+
+### Fixed
+
+Admin page:
+
+- An account disabled before its address was added to `ADMIN_EMAILS` could not be enabled again: its page hid the Enable button, as for any admin, and a disabled account cannot sign in, so only a database change let it back in. Its page now offers Enable (disabling and deleting admins stays refused).
+
+Support tickets:
+
+- "Back to all tickets" on a ticket dropped the list's status and type filters, search, sort and page, so an admin going through a filtered list started over after each ticket; the user's "Back to your tickets" likewise dropped the Open or Closed tab. Both now return to the same view, also after answering, closing or reopening.
+- A double click on "Submit ticket" or on "Send message" (or "Send answer") sent it twice: two tickets, or the same message twice, each with its own emails. The browser now sends these forms once, and the server treats the same ticket or message from the same person within a minute as already sent.
+
 ## [1.3.1] - 2026-09-30
 
 ### Added

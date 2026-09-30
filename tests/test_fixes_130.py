@@ -109,7 +109,7 @@ class AdminFixTests(Base):
         self.open_ticket(kind="bug")
         self.open_ticket(kind="feature")
         self.client.post(f"/support/{ref(1)}", data={"action": "reply", "body": "x"})
-        rows = lambda q: re.findall(r'href="/admin/support/\d{4}-(\d+)" dir="auto"',
+        rows = lambda q: re.findall(r'href="/admin/support/\d{4}-(\d+)(?:\?[^"]*)?" dir="auto"',
                                     self.admin.get("/admin/support" + q).get_data(as_text=True))
         self.assertEqual(rows("?sort=kind&dir=asc"), ["2", "1"])
         self.assertEqual(rows("?sort=messages&dir=desc"), ["1", "2"])

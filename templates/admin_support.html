@@ -66,7 +66,7 @@
         <tr>
           <td class="nowrap">{{ t | ticket_ref }}</td>
           <td class="small nowrap">{{ kinds.get(t.kind, 'General question') }}</td>
-          <td><a href="{{ url_for('admin_ticket', year=t.ref_year, seq=t.ref_seq) }}" dir="auto">{{ t.subject }}</a>{% if t.unread %} <span class="pill pill-info">New</span>{% endif %}</td>
+          <td><a href="{{ url_for('admin_ticket', year=t.ref_year, seq=t.ref_seq, **list_args) }}" dir="auto">{{ t.subject }}</a>{% if t.unread %} <span class="pill pill-info">New</span>{% endif %}</td>
           <td class="small">{% if t.full_name %}<span dir="auto">{{ t.full_name }}</span><br>{% endif %}<span class="muted">{{ t.email }}</span></td>
           <td class="nowrap"><span class="pill {{ 'pill-ok' if t.status == 'open' else 'pill-muted' }}">{{ 'Open' if t.status == 'open' else 'Closed' }}</span></td>
           <td class="small nowrap">{{ t.created_at | utcdatetime }}</td>

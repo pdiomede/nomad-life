@@ -146,7 +146,7 @@ class TicketNumberTests(AppTestCase):
         def rows(query):
             import re
             html = self.admin.get("/admin/support" + query).get_data(as_text=True)
-            return re.findall(r'href="/admin/support/\d{4}-(\d+)" dir="auto"', html)
+            return re.findall(r'href="/admin/support/\d{4}-(\d+)(?:\?[^"]*)?" dir="auto"', html)
 
         self.assertEqual(rows(f"?q={ref(2)}"), ["2"])
         self.assertEqual(rows(f"?q=%23{ref(10)}"), ["10"])

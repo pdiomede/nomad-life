@@ -4,9 +4,9 @@
 {% block content %}
 <div class="narrow">
   {% if admin_view %}
-  <a class="back" href="{{ url_for('admin_support') }}">&larr; Back to all tickets</a>
+  <a class="back" href="{{ back_url }}">&larr; Back to all tickets</a>
   {% else %}
-  <a class="back" href="{{ url_for('support') }}">&larr; Back to your tickets</a>
+  <a class="back" href="{{ back_url }}">&larr; Back to your tickets</a>
   {% endif %}
   <div class="page-head">
     <div>
@@ -43,7 +43,7 @@
     <h2 id="reply-title">{{ 'Answer' if admin_view else 'Reply' }}</h2>
     {% if admin_view and ticket.status != 'open' %}
       <p class="muted small">This ticket is closed. Reopen it to answer, or write and send: that reopens it.</p>
-      <form method="post" class="stack">
+      <form method="post" class="stack" data-submit-once>
         {{ ui.csrf() }}
         <input type="hidden" name="action" value="reopen_reply">
         <div class="field">
@@ -59,7 +59,7 @@
       </form>
     {% else %}
       {% if ticket.status != 'open' %}<p class="muted small">{% if at_cap %}This ticket is closed. You have reached the limit of open tickets, so writing here keeps it closed: close the solved ones to open it again.{% else %}This ticket is closed. Writing a message opens it again.{% endif %}</p>{% endif %}
-      <form method="post" class="stack">
+      <form method="post" class="stack" data-submit-once>
         {{ ui.csrf() }}
         <input type="hidden" name="action" value="reply">
         <div class="field">

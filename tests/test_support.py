@@ -213,7 +213,7 @@ class AdminTableTests(SupportBase):
 
     def rows(self, query=""):
         html = self.admin.get("/admin/support" + query).get_data(as_text=True)
-        return re.findall(r'<a href="/admin/support/\d{4}-(\d+)" dir="auto">', html)
+        return re.findall(r'<a href="/admin/support/\d{4}-(\d+)(?:\?[^"]*)?" dir="auto">', html)
 
     def test_filters_and_search(self):
         self.assertEqual(sorted(self.rows()), ["1", "2", "3"])
