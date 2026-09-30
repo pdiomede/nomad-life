@@ -1,6 +1,7 @@
 """check-fake-users (./checkFakeUsers.sh): which accounts it lists, and how it deletes them."""
 import os
 import subprocess
+import sys
 
 from tests.helpers import AppTestCase
 
@@ -123,7 +124,9 @@ class CheckFakeUsersTests(AppTestCase):
         self.assertIn("No accounts look fake", self.run_tool().output)
 
     def test_the_script_runs_the_command(self):
+        # The Python running the tests, which has Flask, locally and in GitHub Actions.
         result = subprocess.run([os.path.join(ROOT, "checkFakeUsers.sh"), "--help"],
-                                capture_output=True, text=True, cwd="/")
+                                capture_output=True, text=True, cwd="/",
+                                env=dict(os.environ, PYTHON=sys.executable))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--dry-run", result.stdout)
