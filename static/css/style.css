@@ -661,6 +661,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .admin-flags { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 6px 0 0; }
 .admin-flags .pill { margin: 0; }
 .admin-users-table .admin-view { text-align: right; vertical-align: middle; }
+.admin-users-table .admin-ip { overflow-wrap: anywhere; min-width: 7rem; }  /* IPv6 addresses wrap */
 .admin-account-title { overflow-wrap: anywhere; }
 .admin-details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; margin: 0; }
 .admin-details dt { color: var(--muted); }

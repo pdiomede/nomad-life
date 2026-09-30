@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS users (
     totp_secret TEXT,
     totp_step INTEGER NOT NULL DEFAULT 0,
     first_name TEXT NOT NULL DEFAULT '',
-    last_name TEXT NOT NULL DEFAULT ''
+    last_name TEXT NOT NULL DEFAULT '',
+    signup_ip TEXT NOT NULL DEFAULT '',
+    last_login_ip TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS years (
@@ -233,6 +235,14 @@ MIGRATIONS = [
     # The name set on the Settings page (optional; empty means not given).
     ("users", "first_name", ["ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''"]),
     ("users", "last_name", ["ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''"]),
+    # Where an account signed up from (unknown before 1.4.0) and last signed in from, for the
+    # admin page. The last sign in comes from the security history where it has one.
+    ("users", "signup_ip", ["ALTER TABLE users ADD COLUMN signup_ip TEXT NOT NULL DEFAULT ''"]),
+    ("users", "last_login_ip", [
+        "ALTER TABLE users ADD COLUMN last_login_ip TEXT NOT NULL DEFAULT ''",
+        "UPDATE users SET last_login_ip = COALESCE((SELECT a.ip FROM audit_log a "
+        "WHERE a.user_id = users.id AND a.event = 'sign_in' ORDER BY a.id DESC LIMIT 1), '')",
+    ]),
     # Receipts are stored as ZIP files since 1.2.12: size is the ZIP on disk (what quotas
     # count), format and file_size describe the file inside. Older rows point to plain files.
     ("documents", "format", ["ALTER TABLE documents ADD COLUMN format TEXT NOT NULL DEFAULT ''",

@@ -80,10 +80,11 @@ class AppTestCase(unittest.TestCase):
         return conn
 
     def signup(self, email="a@example.com", client=None, password="password1"):
-        """Sign up, open the confirmation link from the email, then sign in."""
+        """Sign up, open the confirmation link from the email and press its button, then sign
+        in."""
         client = client or self.client
         client.post("/signup", data={"email": email, "password": password, "confirm": password})
-        client.get(self.last_link(email))
+        client.post(self.last_link(email))
         client.post("/login", data={"email": email, "password": password})
         return client
 

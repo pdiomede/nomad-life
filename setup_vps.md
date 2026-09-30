@@ -318,6 +318,8 @@ A server set up from an older copy of this guide lacks `--graceful-timeout 120` 
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
 
+- **1.4.0** records the IP address of each sign up and sign in (two columns added on start; the last sign in IP of existing accounts is taken from the security history), and the email confirmation link now opens a page with a button. Accounts that company mail scanners confirmed before, by opening the link (confirmed seconds after signing up, never signed in), stay until you delete them from their admin page.
+
 - **1.3.1** numbers support tickets per year (2026-1, 2026-2, ...). Existing tickets are renumbered on start, in the order they were opened; links in emails sent before still open the right ticket. To see the numbers after the restart: `sqlite3 data/nomad.db "SELECT ref_year || '-' || ref_seq, subject FROM tickets ORDER BY id"`.
 
 - **1.2.15** leaves the receipts out of the nightly archive. Before upgrading, make sure the off-site copy also takes the receipts folder (section 11), or from that night on the receipts are backed up nowhere. Archives from before still hold the receipts and are removed by `--keep` as usual.

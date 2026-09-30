@@ -44,7 +44,8 @@ class SignupConfirmationTests(AppTestCase):
 
     def test_link_confirms_then_sign_in_works(self):
         self.post_signup()
-        resp = self.client.get(self.last_link(EMAIL))
+        # Since 1.4.0 the link opens a page and its button confirms (see test_verify_button).
+        resp = self.client.post(self.last_link(EMAIL))
         self.assertEqual(resp.headers["Location"], "/login")
         self.assertIsNotNone(self.user()["verified_at"])
         self.assertEqual(self.login().headers["Location"], "/app")
@@ -277,7 +278,7 @@ class SignupDeepHuntTests(AppTestCase):
         self.client.get("/app", follow_redirects=True)  # show (and clear) the sign up messages
         other = self.app.test_client()
         self.post_signup(client=other)
-        html = self.client.get(self.last_link(EMAIL), follow_redirects=True).get_data(as_text=True)
+        html = self.client.post(self.last_link(EMAIL), follow_redirects=True).get_data(as_text=True)
         self.assertIn(f"{EMAIL} is confirmed", html)
         self.assertIn("sign out", html)
         self.assertNotIn("Please sign in to start", html)

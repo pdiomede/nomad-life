@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.4.0] - 2026-10-01
+
+### Added
+
+- The admin accounts table has an IP column: the address of the last sign in, or the sign up address (marked "sign up") for an account that never signed in. The account page shows both, each linked to a search for it, and the accounts search also finds part of an IP, so every account from one network shows at once. The sign up IP is recorded from this version on; the last sign in IP of existing accounts comes from the security history. Two new columns, `signup_ip` and `last_login_ip`, are added on start.
+
+### Fixed
+
+- Company mail scanners (Microsoft Defender, Mimecast, Proofpoint), which open every link in incoming mail to check it, confirmed accounts a bot had signed up with other people's work addresses: opening the confirmation link was enough. Those accounts, confirmed seconds after sign up and never signed in, stayed for good instead of being removed after 20 minutes. The link now opens a page with a **Confirm my account** button and only the button confirms, so the security history also records the IP of the person who pressed it. The confirmation email says so. Accounts confirmed this way before stay until an admin deletes them.
+
 ## [1.3.2] - 2026-10-01
 
 ### Changed

@@ -41,7 +41,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.4.0"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -2091,8 +2091,9 @@ def register_routes(app):
                                            (email,)).fetchone()
                         if not old:
                             uid = conn.execute(
-                                "INSERT INTO users (email, password_hash, email_sent_at) "
-                                "VALUES (?, ?, CURRENT_TIMESTAMP)", (email, pw_hash)).lastrowid
+                                "INSERT INTO users (email, password_hash, email_sent_at, "
+                                "signup_ip) VALUES (?, ?, CURRENT_TIMESTAMP, ?)",
+                                (email, pw_hash, client_ip())).lastrowid
                 if old and (old["verified_at"] is not None or old["disabled"]):
                     if not old["disabled"] and email_allowed(old["id"]):
                         if not send_template_email(email, "You already have a Nomad Life account",
@@ -2131,7 +2132,7 @@ def register_routes(app):
                 return redirect(url_for("login"))
         return render_template("auth/signup.html")
 
-    @app.route("/verify/<token>")
+    @app.route("/verify/<token>", methods=["GET", "POST"])
     def verify(token):
         purge_unverified()
         try:
@@ -2172,6 +2173,12 @@ def register_routes(app):
             flash("This confirmation link is no longer valid. If you signed up more than once, "
                   "use the link in the newest email; otherwise, sign up again.", "error")
             return redirect(url_for("signup"))
+        if request.method == "GET":
+            # Company mail scanners open every link in incoming mail. Opening the link must not
+            # confirm, or accounts a bot signed up with other people's addresses would stay:
+            # only the button does, and unconfirmed accounts are removed after VERIFY_MINUTES.
+            return render_template("auth/verify.html", email=row["email"],
+                                   minutes=minutes_left(row))
         db.execute("UPDATE users SET verified_at = CURRENT_TIMESTAMP WHERE id = ? AND "
                    "verified_at IS NULL", (row["id"],))
         audit("account_confirmed", row["id"], row["email"])
@@ -2236,7 +2243,8 @@ def register_routes(app):
         return render_template("auth/login.html")
 
     def finish_sign_in(row, remember, next_url, detail=""):
-        db.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?", (row["id"],))
+        db.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP, last_login_ip = ? "
+                   "WHERE id = ?", (client_ip(), row["id"]))
         sign_in_user(row, remember)
         audit("sign_in", row["id"], row["email"], detail)
         return remember_device(redirect(next_url), row["email"])
@@ -2930,6 +2938,7 @@ def register_routes(app):
         rows = db.query(
             "SELECT u.id, u.email, u.created_at, u.last_login_at, u.disabled, u.quota_bytes, "
             "u.verified_at, u.plan, u.totp_secret IS NOT NULL AS has_2fa, u.first_name, u.last_name, "
+            "u.signup_ip, u.last_login_ip, "
             "(SELECT COUNT(*) FROM years y WHERE y.user_id = u.id) AS years, "
             "(SELECT COALESCE(SUM(size), 0) FROM documents d WHERE d.user_id = u.id) AS used "
             f"FROM users u WHERE {where} ORDER BY {order}", params)
@@ -2961,9 +2970,11 @@ def register_routes(app):
         where, params = "1 = 1", []
         if state["search"]:
             # casefold (registered in db.get_db) folds every script and composes accents.
+            # Part of an IP finds every account that signed up or last signed in from it.
             where = ("(casefold(u.email) LIKE ? ESCAPE '\\' OR casefold(u.first_name || ' ' "
-                     "|| u.last_name) LIKE ? ESCAPE '\\')")
-            params = [db.search_like(state["search"])] * 2
+                     "|| u.last_name) LIKE ? ESCAPE '\\' OR u.signup_ip LIKE ? ESCAPE '\\' "
+                     "OR u.last_login_ip LIKE ? ESCAPE '\\')")
+            params = [db.search_like(state["search"])] * 4
         direction = state["dir"].upper()
         order = ", ".join(f"{part} {direction}" if not part.endswith("IS NULL") else part
                           for part in ADMIN_USER_SORTS[state["sort"]].split(", "))
@@ -3009,6 +3020,7 @@ def register_routes(app):
             {"id": user_id}, one=True)
         state = admin_list_state(request.args)
         return render_template("admin_account.html", u=u, counts=counts, state=state,
+                               admin_url=admin_url,
                                back=admin_url(**state), plans=plan_catalog(),
                                activity=account_activity(u["email"], ADMIN_ACCOUNT_AUDIT_ROWS),
                                activity_limit=ADMIN_ACCOUNT_AUDIT_ROWS,

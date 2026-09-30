@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.3.2**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.4.0**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -9,7 +9,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - A simple landing page that explains the app, with a "Launch app" button to sign in.
 - Share buttons for X, LinkedIn, Facebook, WhatsApp, Telegram and Reddit, with a link preview image.
 - A friendly 404 page for wrong links.
-- One private workspace per user with sign up, sign in and password reset by email (Gmail). New accounts confirm their email with a link, and accounts not confirmed within 20 minutes are deleted.
+- One private workspace per user with sign up, sign in and password reset by email (Gmail). New accounts confirm their email with a link and a "Confirm my account" button on the page it opens (so company mail scanners, which open every link, cannot confirm an account for someone), and accounts not confirmed within 20 minutes are deleted.
 - One workspace per solar year, each with a base city and country.
 - Log movements with date range, country and city.
 - The movements list shows 10 per page, with numbered square page buttons and a choice of 10, 25 or 50 per page.
@@ -106,12 +106,12 @@ Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their
 
 - Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements (always for every account, also while searching).
 - The monthly and yearly price of Pro and Nomad+ ("Plans and prices"). Leave both fields empty to go back to the default prices in `PLANS`.
-- The accounts table, 10 per page: account (name, email, and flags such as Admin, Two-factor on, Disabled, Email not confirmed, Over quota), plan, joined, last sign in, years and storage used. Search by part of an email or a name, and sort by account, joined, last sign in, years or storage.
+- The accounts table, 10 per page: account (name, email, and flags such as Admin, Two-factor on, Disabled, Email not confirmed, Over quota), plan, joined, last sign in, IP address (the last sign in IP, or the sign up IP marked "sign up" for an account that never signed in; accounts from before 1.4.0 have no sign up IP), years and storage used. Search by part of an email, a name or an IP (`185.220.` lists every account from that network), and sort by account, joined, last sign in, years or storage.
 - Security activity: the last 100 events (sign ins, failed sign ins, password, email and two-factor changes, admin actions with the admin who made them), filterable by account email. Events are kept for 365 days.
 
 **View** (or the email in the table) opens the account's own page, `/admin/users/<id>`:
 
-- Details: joined, email confirmed, last sign in, two-factor, signed in devices, years, movements, receipts, storage, and its support tickets (linked).
+- Details: joined, email confirmed, last sign in, sign up IP and last sign in IP (each linked to a search for it), two-factor, signed in devices, years, movements, receipts, storage, and its support tickets (linked). The IPs are kept with the account and deleted with it; the security history keeps its own copy for 365 days.
 - The plan (Free, Pro or Nomad+) and a storage quota in MB (empty means the quota of the plan).
 - Disable or enable the account (disabling signs it out everywhere and blocks sign in), or delete it with all its years, movements and receipts (it asks twice and needs the email typed).
 - The account's recent security activity.

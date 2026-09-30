@@ -30,6 +30,8 @@
     <dt>Joined</dt><dd>{{ u.created_at | localdate }}</dd>
     <dt>Email confirmed</dt><dd>{{ (u.verified_at | localdate) if u.verified_at else 'Not yet' }}</dd>
     <dt>Last sign in</dt><dd>{{ (u.last_login_at | localdate) if u.last_login_at else 'Never' }}</dd>
+    <dt>Sign up IP</dt><dd>{% if u.signup_ip %}<a href="{{ admin_url(search=u.signup_ip) }}#accounts">{{ u.signup_ip }}</a>{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
+    <dt>Last sign in IP</dt><dd>{% if u.last_login_ip %}<a href="{{ admin_url(search=u.last_login_ip) }}#accounts">{{ u.last_login_ip }}</a>{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
     <dt>Two-factor sign in</dt><dd>{{ 'On' if u.has_2fa else 'Off' }}</dd>
     <dt>Signed in devices</dt><dd>{{ counts.devices }}</dd>
     <dt>Years</dt><dd>{{ u.years }}</dd>

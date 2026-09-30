@@ -1,0 +1,11 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Confirm your account | Nomad Life{% endblock %}
+{% block heading %}Confirm your Nomad Life account{% endblock %}
+{% block sub %}You signed up with {{ email }}. Press the button to confirm the address and start.{% endblock %}
+{% block form %}
+<form method="post" class="stack" data-submit-once>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button class="btn btn-primary btn-block" type="submit">Confirm my account</button>
+  <p class="muted small">Did not sign up? Close this page: without the button the account is removed within {{ minutes }} minutes.</p>
+</form>
+{% endblock %}

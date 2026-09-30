@@ -1,6 +1,6 @@
 Hi{% if first_name %} {{ first_name }}{% endif %},
 
-Thanks for signing up for Nomad Life. Please confirm that {{ email }} is your email address by opening the link below within {{ minutes }} minute{{ "s" if minutes != 1 }}:
+Thanks for signing up for Nomad Life. Please confirm that {{ email }} is your email address within {{ minutes }} minute{{ "s" if minutes != 1 }}: open the link below and press "Confirm my account".
 
 {{ link }}
 
