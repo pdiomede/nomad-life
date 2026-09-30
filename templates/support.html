@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Support | Nomad Life{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('index') }}">&larr; Back to your dashboard</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Support</p>
+    <h1>Your tickets</h1>
+    <p class="muted">Found a bug, missing a feature or have a question? Open a ticket: we answer here and send you an email when we do.</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('support_new') }}">Submit a ticket</a>
+</div>
+
+<section class="card" aria-labelledby="tickets-title">
+  <div class="card-head">
+    <h2 id="tickets-title">Tickets</h2>
+    <nav class="tabs" aria-label="Show tickets">
+      {% for key, label in [("all", "All"), ("open", "Open"), ("closed", "Closed")] %}
+        <a href="{{ url_for('support', status=None if key == 'all' else key) }}"{% if status == key %} aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+  {% if pager.rows %}
+  <ul class="ticket-list">
+    {% for t in pager.rows %}
+    <li class="ticket-row">
+      <div class="ticket-main">
+        <a class="ticket-subject" href="{{ url_for('support_ticket', ticket_id=t.id) }}" dir="auto">#{{ t.id }} {{ t.subject }}</a>
+        <p class="muted small">
+          <span class="tag">{{ kinds.get(t.kind, 'General question') }}</span>
+          Opened {{ t.created_at | localdatetime }} &middot; updated {{ t.updated_at | localdatetime }}{% if t.closed_at %} &middot; closed {{ t.closed_at | localdatetime }}{% endif %}
+        </p>
+      </div>
+      <div class="ticket-state">
+        {% if t.unread %}<span class="pill pill-info">New reply</span>{% endif %}
+        <span class="pill {{ 'pill-ok' if t.status == 'open' else 'pill-muted' }}">{{ 'Open' if t.status == 'open' else 'Closed' }}</span>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if pager.pages > 1 %}
+  <div class="table-foot">
+    <p class="muted small">Showing {{ pager.first }} to {{ pager.last }} of {{ pager.total }} tickets</p>
+    {{ ui.pagination(pager, 'Ticket pages') }}
+  </div>
+  {% endif %}
+  {% else %}
+  <p class="empty">{% if counts.total %}No {{ status }} tickets.{% else %}No tickets yet. Need help? <a href="{{ url_for('support_new') }}">Submit a ticket</a>.{% endif %}</p>
+  {% endif %}
+</section>
+{% endblock %}

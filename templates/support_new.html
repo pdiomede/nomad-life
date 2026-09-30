@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}New ticket | Nomad Life{% endblock %}
+{% block content %}
+<div class="narrow">
+  <a class="back" href="{{ url_for('support') }}">&larr; Back to your tickets</a>
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Support</p>
+      <h1>Submit a ticket</h1>
+      <p class="muted">Tell us what happened or what you need. We answer on the Support page and email you when we do.</p>
+    </div>
+  </div>
+  <section class="card">
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <div class="field">
+        <label for="ticket-kind">What is it about?</label>
+        <select id="ticket-kind" name="kind" required>
+          <option value="" {% if not form.kind %}selected{% endif %} disabled>Choose one</option>
+          {% for key, label in kinds.items() %}
+            <option value="{{ key }}" {% if form.kind == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="ticket-subject">Subject</label>
+        <input id="ticket-subject" name="subject" type="text" maxlength="{{ subject_max }}" value="{{ form.subject or '' }}" required dir="auto">
+      </div>
+      <div class="field">
+        <label for="ticket-body">Description</label>
+        <textarea id="ticket-body" name="body" rows="8" maxlength="{{ body_max }}" required dir="auto" aria-describedby="ticket-body-hint">{{ form.body or '' }}</textarea>
+        <span class="hint" id="ticket-body-hint">For a bug: what you did, what you expected and what happened instead. Up to {{ body_max }} characters.</span>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" type="submit">Send ticket</button>
+        <a class="btn btn-ghost" href="{{ url_for('support') }}">Cancel</a>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

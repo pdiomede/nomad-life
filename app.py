@@ -102,7 +102,7 @@ SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and 
                    "hotel bills and flight tickets in one place. Free for digital nomads.")
 # Paths that need an account. Kept out of search engines via robots.txt.
 PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin",
-                 "/account", "/settings", "/plan"]
+                 "/account", "/settings", "/plan", "/support"]
 ADMIN_USERS_PER_PAGE = 25
 MAX_QUOTA_MB = 1024 * 1024  # 1 TB, a sanity cap for quotas typed on the admin page
 RESET_TOKEN_MAX_AGE = 3600
@@ -122,7 +122,9 @@ LIMITS = {("fail", "email"): 5, ("fail", "device"): 5, ("fail", "ip"): 20,
           ("forgot", "ip"): 5, ("signup", "ip"): 10,
           # Wrong two-factor codes count apart from passwords, and only a right code clears
           # them, so typing the password again never buys more guesses.
-          ("code", "email"): 5, ("code", "ip"): 20}
+          ("code", "email"): 5, ("code", "ip"): 20,
+          # Support: new tickets and messages per account.
+          ("ticket", "email"): 5, ("ticket_msg", "email"): 30}
 DEVICE_COOKIE = "nomadlife_device"
 DEVICE_MAX_AGE = 365 * 24 * 3600
 # Sign up and sign in hash passwords with scrypt (about 32 MB of memory each), so only a few
@@ -515,11 +517,14 @@ def create_app(overrides=None):
                 if current_user.is_authenticated else None,
                 "storage": storage_summary(current_user.id)
                 if current_user.is_authenticated else None,
-                "site": site_meta()}
+                "site": site_meta(),
+                "support_unread": support_unread(current_user.id)
+                if current_user.is_authenticated else 0}
 
     app.add_template_filter(parse_date, "todate")
     app.add_template_filter(format_size, "filesize")
     app.add_template_filter(local_date, "localdate")
+    app.add_template_filter(local_datetime, "localdatetime")
     app.add_template_filter(country_flag, "flag")
 
     @app.errorhandler(413)
@@ -906,6 +911,67 @@ def detect_type(file, ext):
     return None
 
 
+# ---------- support tickets ----------
+
+TICKET_KINDS = {"bug": "Report a bug", "feature": "Feature request", "question": "General question"}
+TICKET_SUBJECT_MAX = 150
+TICKET_BODY_MAX = 5000
+OPEN_TICKETS_MAX = 20
+TICKETS_PER_PAGE = 25
+# Admin table columns that can be sorted, with the SQL behind them. Tickets still open have
+# no closed date: they go last in both directions.
+TICKET_SORTS = {
+    "id": "t.id", "kind": "t.kind", "subject": "t.subject COLLATE NOCASE",
+    "user": "u.email COLLATE NOCASE", "status": "t.status", "created": "t.created_at",
+    "updated": "t.updated_at", "closed": "t.closed_at IS NULL, t.closed_at",
+}
+
+
+def clean_ticket_body(value):
+    """A message as typed: line breaks kept (as \\n), other control and invisible format
+    characters removed, surrounding blank space dropped."""
+    value = (value or "").replace("\r\n", "\n").replace("\r", "\n")
+    return "".join(ch for ch in value if ch in "\n\t"
+                   or unicodedata.category(ch)[0] != "C").strip()
+
+
+def support_unread(user_id):
+    """Tickets of this user with an admin message the user has not opened yet."""
+    row = db.query("SELECT COUNT(*) AS n FROM tickets t WHERE t.user_id = ? AND EXISTS ("
+                   "SELECT 1 FROM ticket_messages m WHERE m.ticket_id = t.id AND m.from_admin = 1 "
+                   "AND m.id > t.user_seen_id)", (user_id,), one=True)
+    return row["n"] if row else 0
+
+
+def notify_admins(ticket_id, event, user_email):
+    """Tell every admin that a ticket needs them. A link only, never the ticket's text."""
+    link = email_link("admin_ticket", ticket_id=ticket_id)
+    for admin in sorted(current_app.config["ADMIN_EMAILS"]):
+        if not send_template_email(admin, f"Support ticket #{ticket_id} needs an answer",
+                                   "ticket_admin", ticket_id=ticket_id, event=event,
+                                   user_email=user_email, link=link):
+            current_app.logger.error("Could not email %s about ticket %s", admin, ticket_id)
+
+
+def notify_user(ticket, event):
+    """Tell the ticket's owner that support answered or closed it: a link, never the text."""
+    owner = db.query("SELECT email FROM users WHERE id = ?", (ticket["user_id"],), one=True)
+    if owner is None:
+        return
+    subject = (f"Support answered your ticket #{ticket['id']}" if event == "reply"
+               else f"Your support ticket #{ticket['id']} was closed")
+    if not send_template_email(owner["email"], subject, "ticket_user", ticket_id=ticket["id"],
+                               event=event, link=email_link("support_ticket",
+                                                            ticket_id=ticket["id"])):
+        current_app.logger.error("Could not email %s about ticket %s", owner["email"],
+                                 ticket["id"])
+
+
+def ticket_messages(ticket_id):
+    return db.query("SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY id",
+                    (ticket_id,))
+
+
 # ---------- security history and alerts ----------
 
 AUDIT_LABELS = {
@@ -920,6 +986,10 @@ AUDIT_LABELS = {
     "email_changed": "Email address changed",
     "sessions_revoked": "Signed out on every other device",
     "profile_changed": "Name changed",
+    "ticket_opened": "Support ticket opened",
+    "ticket_reply": "Support ticket answered",
+    "ticket_closed": "Support ticket closed",
+    "ticket_reopened": "Support ticket reopened",
     "2fa_enabled": "Two-factor sign in turned on",
     "2fa_disabled": "Two-factor sign in turned off",
     "2fa_reset": "Two-factor sign in removed by the server operator",
@@ -1055,6 +1125,15 @@ def local_date(utc_timestamp):
     return dt.astimezone().strftime("%Y-%m-%d")
 
 
+def local_datetime(utc_timestamp):
+    """Like local_date, with hours and minutes."""
+    try:
+        dt = datetime.strptime(utc_timestamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return utc_timestamp or ""
+    return dt.astimezone().strftime("%Y-%m-%d %H:%M")
+
+
 def format_size(size, rounding="nearest"):
     """Human readable size. Round capacities ("left", limits) down and offending file sizes up,
     so a message never reads like "10 MB is larger than the 10 MB limit"."""
@@ -1146,7 +1225,7 @@ def site_meta():
                              "183 day indicator for your base country",
                              "Receipt storage for rental contracts, hotel bills and flight tickets",
                              "Private workspace for each user"],
-             "author": {"@type": "Person", "name": "Paolo Diomede", "url": "https://pdiomede.com"},
+             "author": {"@type": "Person", "name": "Paolo Diomede", "url": "https://x.com/pdiomede"},
              "isPartOf": {"@id": url + "#website"}},
         ],
     }
@@ -2558,6 +2637,7 @@ def register_routes(app):
             # Name changes are not security events: they must not push a stranger's sign in
             # off this short list.
             "SELECT * FROM audit_log WHERE user_id = ? AND event != 'profile_changed' "
+            "AND event NOT LIKE 'ticket\\_%' ESCAPE '\\' "
             "ORDER BY id DESC LIMIT 10", (row["id"],)))
         devices = db.query("SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = ?",
                            (row["id"],), one=True)["n"]
@@ -2833,6 +2913,249 @@ def register_routes(app):
                 audit("admin_delete", user_id, email, "", who)
                 flash(f"The account {email} and all its data were deleted.", "info")
         return redirect(back)
+
+    # --- support ---
+
+    def get_ticket_or_404(ticket_id):
+        row = db.query("SELECT * FROM tickets WHERE id = ? AND user_id = ?",
+                       (ticket_id, current_user.id), one=True)
+        if row is None:
+            abort(404)
+        return row
+
+    @app.route("/support")
+    @login_required
+    def support():
+        status = request.args.get("status", "all")
+        status = status if status in ("open", "closed") else "all"
+        tickets = db.query(
+            "SELECT t.*, (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id = t.id "
+            "AND m.from_admin = 1 AND m.id > t.user_seen_id) AS unread FROM tickets t "
+            "WHERE t.user_id = ? AND (? = 'all' OR t.status = ?) "
+            "ORDER BY t.updated_at DESC, t.id DESC", (current_user.id, status, status))
+        counts = db.query("SELECT COUNT(*) AS total, COALESCE(SUM(status = 'open'), 0) AS open "
+                          "FROM tickets WHERE user_id = ?", (current_user.id,), one=True)
+        pager = paginate(tickets, request.args.get("page"), TICKETS_PER_PAGE,
+                         lambda n, _size: url_for("support", status=None if status == "all"
+                                                  else status, page=n if n > 1 else None))
+        return render_template("support.html", pager=pager, status=status, counts=counts,
+                               kinds=TICKET_KINDS)
+
+    @app.route("/support/new", methods=["GET", "POST"])
+    @login_required
+    def support_new():
+        form = request.form if request.method == "POST" else {}
+        if request.method == "POST":
+            kind = request.form.get("kind", "")
+            subject = clean_place(request.form.get("subject", ""))
+            body = clean_ticket_body(request.form.get("body", ""))
+            open_count = db.query("SELECT COUNT(*) AS n FROM tickets WHERE user_id = ? AND "
+                                  "status = 'open'", (current_user.id,), one=True)["n"]
+            if kind not in TICKET_KINDS:
+                err = "Please choose what the ticket is about."
+            elif not subject or not body:
+                err = "Please write a subject and a description."
+            elif len(subject) > TICKET_SUBJECT_MAX:
+                err = f"The subject can be at most {TICKET_SUBJECT_MAX} characters."
+            elif len(body) > TICKET_BODY_MAX:
+                err = f"The description can be at most {TICKET_BODY_MAX} characters."
+            elif open_count >= OPEN_TICKETS_MAX:
+                err = (f"You already have {OPEN_TICKETS_MAX} open tickets. Please close the ones "
+                       "that are solved first.")
+            else:
+                wait, scope, _attempt = take_attempt("ticket", current_user.email)
+                err = too_many_message(wait, scope, "new tickets") if wait else None
+            if err:
+                flash(err, "error")
+                return render_template("support_new.html", form=form, kinds=TICKET_KINDS,
+                                       subject_max=TICKET_SUBJECT_MAX,
+                                       body_max=TICKET_BODY_MAX), 400
+            with db.transaction() as conn:
+                ticket_id = conn.execute("INSERT INTO tickets (user_id, kind, subject) "
+                                         "VALUES (?, ?, ?)",
+                                         (current_user.id, kind, subject)).lastrowid
+                message_id = conn.execute("INSERT INTO ticket_messages (ticket_id, author_id, "
+                                          "body) VALUES (?, ?, ?)",
+                                          (ticket_id, current_user.id, body)).lastrowid
+                conn.execute("UPDATE tickets SET user_seen_id = ? WHERE id = ?",
+                             (message_id, ticket_id))
+            audit("ticket_opened", current_user.id, current_user.email, f"#{ticket_id}")
+            notify_admins(ticket_id, "new", current_user.email)
+            flash(f"Ticket #{ticket_id} was sent. We will answer here and email you when we do.",
+                  "success")
+            return redirect(url_for("support_ticket", ticket_id=ticket_id))
+        return render_template("support_new.html", form=form, kinds=TICKET_KINDS,
+                               subject_max=TICKET_SUBJECT_MAX, body_max=TICKET_BODY_MAX)
+
+    @app.route("/support/<int:ticket_id>", methods=["GET", "POST"])
+    @login_required
+    def support_ticket(ticket_id):
+        ticket = get_ticket_or_404(ticket_id)
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "reply":
+                body = clean_ticket_body(request.form.get("body", ""))
+                if not body:
+                    flash("Please write a message.", "error")
+                elif len(body) > TICKET_BODY_MAX:
+                    flash(f"A message can be at most {TICKET_BODY_MAX} characters.", "error")
+                elif (wait := take_attempt("ticket_msg", current_user.email))[0]:
+                    flash(too_many_message(wait[0], wait[1], "messages"), "error")
+                else:
+                    with db.transaction() as conn:
+                        message_id = conn.execute(
+                            "INSERT INTO ticket_messages (ticket_id, author_id, body) "
+                            "VALUES (?, ?, ?)", (ticket_id, current_user.id, body)).lastrowid
+                        # Writing on a closed ticket opens it again.
+                        reopened = conn.execute(
+                            "UPDATE tickets SET status = 'open', closed_at = NULL, closed_by = '' "
+                            "WHERE id = ? AND status = 'closed'", (ticket_id,)).rowcount
+                        conn.execute("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP, "
+                                     "user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
+                                     (message_id, ticket_id))
+                    audit("ticket_reopened" if reopened else "ticket_reply", current_user.id,
+                          current_user.email, f"#{ticket_id}")
+                    notify_admins(ticket_id, "reopened" if reopened else "reply",
+                                  current_user.email)
+                    flash("Your message was sent." + (" The ticket is open again."
+                                                      if reopened else ""), "success")
+                    return redirect(url_for("support_ticket", ticket_id=ticket_id))
+                return render_template("support_ticket.html", ticket=ticket,
+                                       messages=ticket_messages(ticket_id), admin_view=False,
+                                       kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
+                                       draft=request.form.get("body", "")), 400
+            if action == "close":
+                closed = db.execute_rowcount(
+                    "UPDATE tickets SET status = 'closed', closed_at = CURRENT_TIMESTAMP, "
+                    "closed_by = 'user', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND "
+                    "status = 'open'", (ticket_id,))
+                if closed:
+                    audit("ticket_closed", current_user.id, current_user.email, f"#{ticket_id}")
+                flash("The ticket is closed. Write on it any time to open it again.", "success")
+            return redirect(url_for("support_ticket", ticket_id=ticket_id))
+        messages = ticket_messages(ticket_id)
+        if messages and messages[-1]["id"] > ticket["user_seen_id"]:
+            db.execute("UPDATE tickets SET user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
+                       (messages[-1]["id"], ticket_id))
+        return render_template("support_ticket.html", ticket=ticket, messages=messages,
+                               admin_view=False, kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
+                               draft="")
+
+    def admin_support_url(**values):
+        args = {k: v for k, v in values.items() if v not in (None, "", "all", 1)}
+        return url_for("admin_support", **args)
+
+    @app.route("/admin/support")
+    @login_required
+    def admin_support():
+        require_admin()
+        status = request.args.get("status", "all")
+        status = status if status in ("open", "closed") else "all"
+        kind = request.args.get("kind", "all")
+        kind = kind if kind in TICKET_KINDS else "all"
+        q = request.args.get("q", "").strip()[:254]
+        sort = request.args.get("sort", "updated")
+        sort = sort if sort in TICKET_SORTS else "updated"
+        direction = "asc" if request.args.get("dir") == "asc" else "desc"
+        where, params = ["1 = 1"], []
+        if status != "all":
+            where.append("t.status = ?")
+            params.append(status)
+        if kind != "all":
+            where.append("t.kind = ?")
+            params.append(kind)
+        if q:
+            number = q.lstrip("#")
+            if q.startswith("#") and number.isdigit():
+                where.append("t.id = ?")
+                params.append(int(number))
+            else:
+                like = "%" + q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+                where.append("(lower(u.email) LIKE ? ESCAPE '\\' OR lower(u.first_name || ' ' || "
+                             "u.last_name) LIKE ? ESCAPE '\\')")
+                params += [like, like]
+        order = ", ".join(f"{part} {direction.upper()}" if not part.endswith("IS NULL")
+                          else part for part in TICKET_SORTS[sort].split(", "))
+        tickets = db.query(
+            "SELECT t.*, u.email, u.first_name, u.last_name, "
+            "(SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id = t.id) AS messages, "
+            "(SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id = t.id "
+            "AND m.from_admin = 0 AND m.id > t.admin_seen_id) AS unread "
+            "FROM tickets t JOIN users u ON u.id = t.user_id WHERE " + " AND ".join(where)
+            + f" ORDER BY {order}, t.id {direction.upper()}", params)
+        tickets = [dict(t, full_name=full_name(t)) for t in tickets]
+        state = {"status": status, "kind": kind, "q": q, "sort": sort, "dir": direction}
+        pager = paginate(tickets, request.args.get("page"), TICKETS_PER_PAGE,
+                         lambda n, _size: admin_support_url(**state, page=n))
+        counts = db.query("SELECT COUNT(*) AS total, COALESCE(SUM(status = 'open'), 0) AS open "
+                          "FROM tickets", one=True)
+        return render_template("admin_support.html", pager=pager, state=state, counts=counts,
+                               kinds=TICKET_KINDS, sorts=list(TICKET_SORTS),
+                               support_url=admin_support_url)
+
+    @app.route("/admin/support/<int:ticket_id>", methods=["GET", "POST"])
+    @login_required
+    def admin_ticket(ticket_id):
+        require_admin()
+        ticket = db.query("SELECT t.*, u.email, u.first_name, u.last_name FROM tickets t "
+                          "JOIN users u ON u.id = t.user_id WHERE t.id = ?", (ticket_id,),
+                          one=True)
+        if ticket is None:
+            abort(404)
+        back = url_for("admin_ticket", ticket_id=ticket_id)
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "reply":
+                body = clean_ticket_body(request.form.get("body", ""))
+                if ticket["status"] != "open":
+                    flash("This ticket is closed. Reopen it to answer.", "error")
+                elif not body:
+                    flash("Please write a message.", "error")
+                elif len(body) > TICKET_BODY_MAX:
+                    flash(f"A message can be at most {TICKET_BODY_MAX} characters.", "error")
+                else:
+                    with db.transaction() as conn:
+                        message_id = conn.execute(
+                            "INSERT INTO ticket_messages (ticket_id, author_id, from_admin, body) "
+                            "VALUES (?, ?, 1, ?)", (ticket_id, current_user.id, body)).lastrowid
+                        conn.execute("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP, "
+                                     "admin_seen_id = MAX(admin_seen_id, ?) WHERE id = ?",
+                                     (message_id, ticket_id))
+                    audit("ticket_reply", ticket["user_id"], ticket["email"], f"#{ticket_id}",
+                          current_user.email)
+                    notify_user(ticket, "reply")
+                    flash("Your answer was sent. The user gets an email.", "success")
+                    return redirect(back)
+                return render_template("support_ticket.html", ticket=ticket,
+                                       messages=ticket_messages(ticket_id), admin_view=True,
+                                       kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
+                                       draft=request.form.get("body", ""),
+                                       owner_name=full_name(ticket)), 400
+            if action == "close":
+                if db.execute_rowcount(
+                        "UPDATE tickets SET status = 'closed', closed_at = CURRENT_TIMESTAMP, "
+                        "closed_by = 'admin', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND "
+                        "status = 'open'", (ticket_id,)):
+                    audit("ticket_closed", ticket["user_id"], ticket["email"], f"#{ticket_id}",
+                          current_user.email)
+                    notify_user(ticket, "closed")
+                    flash("The ticket is closed. The user gets an email.", "success")
+            elif action == "reopen":
+                if db.execute_rowcount(
+                        "UPDATE tickets SET status = 'open', closed_at = NULL, closed_by = '', "
+                        "updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'closed'",
+                        (ticket_id,)):
+                    audit("ticket_reopened", ticket["user_id"], ticket["email"],
+                          f"#{ticket_id}", current_user.email)
+                    flash("The ticket is open again.", "success")
+            return redirect(back)
+        messages = ticket_messages(ticket_id)
+        if messages and messages[-1]["id"] > ticket["admin_seen_id"]:
+            db.execute("UPDATE tickets SET admin_seen_id = MAX(admin_seen_id, ?) WHERE id = ?",
+                       (messages[-1]["id"], ticket_id))
+        return render_template("support_ticket.html", ticket=ticket, messages=messages,
+                               admin_view=True, kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
+                               draft="", owner_name=full_name(ticket))
 
     # --- documents ---
 

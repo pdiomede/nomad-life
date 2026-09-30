@@ -647,3 +647,37 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .tfa-key { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
 .tfa-steps li:nth-child(2) .tfa-key { display: inline-block; white-space: normal; word-spacing: 2px; }
 .admin-name { margin: 0 0 2px; font-weight: 600; overflow-wrap: anywhere; }
+
+/* Support: header icon, ticket list, conversation and the admin table. */
+.support-btn { position: relative; text-decoration: none; }
+.support-btn:hover { text-decoration: none; }
+.support-dot { position: absolute; top: 3px; right: 3px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent-2); border: 2px solid var(--topbar); }
+.menu-badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--info-bg); color: var(--link); font-size: 12px; font-weight: 700; text-align: center; }
+.pill-info { background: var(--info-bg); color: var(--link); }
+.pill-muted { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.tabs a { padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; color: var(--link); font-size: 13px; font-weight: 500; }
+.tabs a:hover { background: var(--surface-2); text-decoration: none; }
+.tabs a[aria-current="page"] { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.ticket-list { list-style: none; margin: 0; padding: 0; }
+.ticket-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.ticket-row:last-child { border-bottom: 0; }
+.ticket-main { flex: 1 1 260px; min-width: 0; }
+.ticket-main p { margin: 4px 0 0; }
+.ticket-subject { font-weight: 600; overflow-wrap: anywhere; }
+.ticket-state { display: flex; flex-wrap: wrap; gap: 6px; }
+.messages { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.message { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); max-width: 92%; }
+.message-user { justify-self: end; background: var(--surface-2); }
+.message-support { justify-self: start; border-color: var(--link); }
+.message-meta { margin: 0 0 6px; }
+.message-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.ticket-close { margin-top: 14px; }
+.support-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; margin-bottom: 14px; }
+.support-filters .field { min-width: 130px; }
+.support-filters .grow { flex: 1 1 200px; }
+.support-filter-actions { display: flex; gap: 8px; }
+.support-table td { vertical-align: top; overflow-wrap: anywhere; }
+.support-table td.nowrap { white-space: nowrap; overflow-wrap: normal; }
+.sort-link { color: inherit; white-space: nowrap; }
+.sort-link.is-active { color: var(--link); }

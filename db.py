@@ -106,6 +106,35 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
 
+-- Support tickets: one row per ticket, its messages apart. updated_at moves with every message
+-- or status change; closed_at is NULL while open. The *_seen_id columns hold the last message
+-- the user (or any admin) has seen, for the "new reply" badges.
+CREATE TABLE IF NOT EXISTS tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'question',
+    subject TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    closed_at TEXT,
+    closed_by TEXT NOT NULL DEFAULT '',
+    user_seen_id INTEGER NOT NULL DEFAULT 0,
+    admin_seen_id INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_tickets_user ON tickets(user_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS ticket_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    from_admin INTEGER NOT NULL DEFAULT 0,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_messages ON ticket_messages(ticket_id, id);
+
 CREATE INDEX IF NOT EXISTS idx_movements_year ON movements(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_year ON documents(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_movement ON documents(movement_id);
@@ -222,6 +251,18 @@ def transaction():
         raise
     else:
         db.commit()
+
+
+def execute_rowcount(sql, args=()):
+    """Like execute(), returning how many rows changed (for "only if still open" updates)."""
+    db = get_db()
+    try:
+        cur = db.execute(sql, args)
+        db.commit()
+    except sqlite3.Error:
+        db.rollback()
+        raise
+    return cur.rowcount
 
 
 def execute(sql, args=()):

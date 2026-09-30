@@ -1,0 +1,13 @@
+{% extends "email/_layout.html" %}
+{% set p = "margin:0 0 14px; font-size:15px; line-height:1.6; color:#303549;" %}
+{% block preheader %}{% if event == "reply" %}Support answered your ticket #{{ ticket_id }}.{% else %}Your ticket #{{ ticket_id }} was closed.{% endif %}{% endblock %}
+{% block heading %}{% if event == "reply" %}You have an answer{% else %}Ticket closed{% endif %}{% endblock %}
+{% block body %}
+{% if event == "reply" %}
+<p class="nl-text" style="{{ p }}">Nomad Life support answered your ticket <strong>#{{ ticket_id }}</strong>. Open it in the app to read the answer and reply.</p>
+{% else %}
+<p class="nl-text" style="{{ p }}">Nomad Life support closed your ticket <strong>#{{ ticket_id }}</strong>. If you still need help, write on it to open it again.</p>
+{% endif %}
+{% endblock %}
+{% block button %}Open ticket #{{ ticket_id }}{% endblock %}
+{% block note %}For your privacy, messages are only shown in the app, never in emails.{% endblock %}

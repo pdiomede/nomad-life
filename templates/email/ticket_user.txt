@@ -1,0 +1,8 @@
+Hi{% if first_name %} {{ first_name }}{% endif %},
+
+{% if event == "reply" %}Nomad Life support answered your ticket #{{ ticket_id }}. Open it to read the answer and reply:{% else %}Nomad Life support closed your ticket #{{ ticket_id }}. If you still need help, write on it to open it again:{% endif %}
+
+{{ link }}
+
+Nomad Life
+{{ site_url }}

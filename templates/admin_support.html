@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Support tickets | Nomad Life{% endblock %}
+{% macro sort_link(key, label) %}
+  {% set active = state.sort == key %}
+  {% set next_dir = 'asc' if active and state.dir == 'desc' else 'desc' %}
+  <th scope="col"{% if active %} aria-sort="{{ 'ascending' if state.dir == 'asc' else 'descending' }}"{% endif %}>
+    <a class="sort-link{% if active %} is-active{% endif %}" href="{{ support_url(status=state.status, kind=state.kind, q=state.q, sort=key, dir=next_dir) }}">{{ label }}{% if active %}<span aria-hidden="true">{{ ' ↑' if state.dir == 'asc' else ' ↓' }}</span>{% endif %}</a>
+  </th>
+{% endmacro %}
+{% block content %}
+<a class="back" href="{{ url_for('admin') }}">&larr; Back to admin</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Admin</p>
+    <h1>Support tickets</h1>
+    <p class="muted">{{ counts.open }} open of {{ counts.total }} ticket{{ '' if counts.total == 1 else 's' }}.</p>
+  </div>
+</div>
+
+<section class="card" aria-labelledby="support-title">
+  <h2 id="support-title" class="visually-hidden">All tickets</h2>
+  <form method="get" action="{{ url_for('admin_support') }}" class="support-filters">
+    <div class="field">
+      <label for="f-status">Status</label>
+      <select id="f-status" name="status">
+        {% for key, label in [("all", "All"), ("open", "Open"), ("closed", "Closed")] %}
+          <option value="{{ key }}" {% if state.status == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="f-kind">Type</label>
+      <select id="f-kind" name="kind">
+        <option value="all" {% if state.kind == 'all' %}selected{% endif %}>All types</option>
+        {% for key, label in kinds.items() %}
+          <option value="{{ key }}" {% if state.kind == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field grow">
+      <label for="f-q">User or #ticket</label>
+      <input id="f-q" name="q" type="search" value="{{ state.q }}" placeholder="Email, name or #12">
+    </div>
+    <input type="hidden" name="sort" value="{{ state.sort }}">
+    <input type="hidden" name="dir" value="{{ state.dir }}">
+    <div class="support-filter-actions">
+      <button class="btn btn-primary btn-sm" type="submit">Apply</button>
+      {% if state.status != 'all' or state.kind != 'all' or state.q %}<a class="btn btn-ghost btn-sm" href="{{ url_for('admin_support') }}">Clear</a>{% endif %}
+    </div>
+  </form>
+
+  {% if pager.rows %}
+  <div class="table-wrap">
+    <table class="table support-table">
+      <thead>
+        <tr>
+          {{ sort_link('id', '#') }}
+          {{ sort_link('kind', 'Type') }}
+          {{ sort_link('subject', 'Subject') }}
+          {{ sort_link('user', 'User') }}
+          {{ sort_link('status', 'Status') }}
+          {{ sort_link('created', 'Opened') }}
+          {{ sort_link('updated', 'Last updated') }}
+          {{ sort_link('closed', 'Closed') }}
+          <th scope="col" class="num">Messages</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in pager.rows %}
+        <tr>
+          <td>{{ t.id }}</td>
+          <td class="small">{{ kinds.get(t.kind, 'General question') }}</td>
+          <td><a href="{{ url_for('admin_ticket', ticket_id=t.id) }}" dir="auto">{{ t.subject }}</a>{% if t.unread %} <span class="pill pill-info">New</span>{% endif %}</td>
+          <td class="small">{% if t.full_name %}<span dir="auto">{{ t.full_name }}</span><br>{% endif %}<span class="muted">{{ t.email }}</span></td>
+          <td><span class="pill {{ 'pill-ok' if t.status == 'open' else 'pill-muted' }}">{{ 'Open' if t.status == 'open' else 'Closed' }}</span></td>
+          <td class="small nowrap">{{ t.created_at | localdatetime }}</td>
+          <td class="small nowrap">{{ t.updated_at | localdatetime }}</td>
+          <td class="small nowrap">{{ (t.closed_at | localdatetime) if t.closed_at else '' }}</td>
+          <td class="num">{{ t.messages }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pager.pages > 1 %}
+  <div class="table-foot">
+    <p class="muted small">Showing {{ pager.first }} to {{ pager.last }} of {{ pager.total }} tickets</p>
+    {{ ui.pagination(pager, 'Ticket pages') }}
+  </div>
+  {% endif %}
+  {% else %}
+  <p class="empty">No tickets match.</p>
+  {% endif %}
+</section>
+{% endblock %}
