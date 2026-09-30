@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 ## [1.3.1] - 2026-09-30
 
+### Added
+
+- Admin accounts table. The Users section of `/admin` is now a table with 10 accounts a page, a search box (part of an email or a name, ignoring case) and sortable columns: account, joined, last sign in, years and storage. Plan, flags (Admin, Two-factor on, Disabled, Email not confirmed, Over quota) and the storage used of the quota are shown in each row; on phones the table keeps the account and last sign in.
+- Account page for admins (`/admin/users/<id>`, the **View** button or the email in the table): details (joined, email confirmed, last sign in, two-factor, signed in devices, years, movements, receipts, storage, support tickets), the plan and quota forms, disable or enable, delete, and the account's recent security activity. The quota, plan and access actions moved here from the list. **Back to accounts** returns to the same search, sort and page, also after saving.
+
+### Changed
+
+- The question mark in the header glows slowly until the support pages have been opened once in this browser, and again whenever a ticket has a new reply. It stays still for people who ask their system for reduced motion.
+- The "Finish setting up your account" email (signing up again for an address waiting for confirmation) has a **Confirm my Account** button.
+- The introduction on **Submit a ticket** stays on one line on wider screens.
+- `setup_vps.md` uses the real server layout: the app, its database and its receipts in `/var/www/nomad-life`, run as `paolo`. gunicorn now lets running requests finish for up to 120 seconds when it restarts (`--graceful-timeout 120`, `TimeoutStopSec=150`), and the upgrade section explains that nobody is signed out by an upgrade and how to check that nobody is using the app first.
+
 ### Fixed
 
 Database calls:

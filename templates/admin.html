@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui with context %}
 {% block title %}Admin | Nomad Life{% endblock %}
+{% macro sort_href(key, dir) %}{{ admin_url(search=state.search, sort=key, dir=dir, q=activity_q) }}#accounts{% endmacro %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -56,71 +57,69 @@
   </div>
 </section>
 
-<section class="card admin-users" aria-labelledby="users-title">
+<section class="card admin-users" id="accounts" aria-labelledby="users-title">
   <div class="card-head"><h2 id="users-title">Users</h2></div>
-  <ul class="admin-list">
-    {% for u in pager.rows %}
-    <li class="admin-user">
-      <div class="admin-user-main">
-        {% if u.full_name %}<p class="admin-name">{{ u.full_name }}</p>{% endif %}
-        <p class="admin-email"><strong>{{ u.email }}</strong>
-          <span class="tag">{{ u.plan_name }}</span>
-          {% if u.is_admin %}<span class="tag">Admin</span>{% endif %}
-          {% if u.has_2fa %}<span class="tag">Two-factor on</span>{% endif %}
-          {% if u.disabled %}<span class="pill pill-error">Disabled</span>{% endif %}
-          {% if not u.verified_at %}<span class="pill pill-warn">Email not confirmed</span>{% endif %}
-          {% if u.used > u.quota %}<span class="pill pill-warn">Over quota</span>{% endif %}
-        </p>
-        <p class="muted small">Joined {{ u.created_at | localdate }} &middot; last sign in {{ (u.last_login_at | localdate) if u.last_login_at else 'not recorded' }} &middot; {{ u.years }} year{{ '' if u.years == 1 else 's' }}</p>
-        <p class="small">{{ u.used | filesize('down') }} used of {{ u.quota | filesize('down') }}{% if u.quota_bytes is none %} <span class="muted">({{ u.plan_name }} plan)</span>{% endif %}</p>
-      </div>
-      <div class="admin-actions">
-        <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}" class="admin-quota">
-          {{ ui.csrf() }}
-          <input type="hidden" name="action" value="quota">
-          <input type="hidden" name="page" value="{{ pager.page }}">
-          <input type="hidden" name="q" value="{{ activity_q }}">
-          <label for="quota-{{ u.id }}" class="small">Quota in MB</label>
-          <input id="quota-{{ u.id }}" name="quota_mb" type="number" min="1" max="1048576" step="any" inputmode="decimal"
-                 value="{{ u.quota_mb }}"
-                 placeholder="Default" aria-describedby="quota-help-{{ u.id }}">
-          <button class="btn btn-ghost btn-sm" type="submit">Save</button>
-          <span class="visually-hidden" id="quota-help-{{ u.id }}">Leave empty to use the default quota.</span>
-        </form>
-        <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}" class="admin-quota">
-          {{ ui.csrf() }}
-          <input type="hidden" name="action" value="plan">
-          <input type="hidden" name="page" value="{{ pager.page }}">
-          <input type="hidden" name="q" value="{{ activity_q }}">
-          <label for="plan-{{ u.id }}" class="small">Plan</label>
-          <select id="plan-{{ u.id }}" name="plan">
-            {% for p in plans %}
-              <option value="{{ p.key }}"{% if p.key == u.plan_key %} selected{% endif %}>{{ p.name }} ({% if p.price_cents %}${{ p.price }} / month, ${{ p.year }} / year{% else %}free{% endif %})</option>
-            {% endfor %}
-          </select>
-          <button class="btn btn-ghost btn-sm" type="submit" aria-label="Save plan for {{ u.email }}">Save</button>
-        </form>
-        {% if u.id != current_user.id and not u.is_admin %}
-        <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}">
-          {{ ui.csrf() }}
-          <input type="hidden" name="action" value="{{ 'enable' if u.disabled else 'disable' }}">
-          <input type="hidden" name="page" value="{{ pager.page }}">
-          <input type="hidden" name="q" value="{{ activity_q }}">
-          <button class="btn btn-ghost btn-sm" type="submit" aria-label="{{ 'Enable' if u.disabled else 'Disable' }} {{ u.email }}">{{ 'Enable' if u.disabled else 'Disable' }}</button>
-        </form>
-        {{ ui.delete_form(url_for('admin_user', user_id=u.id), 'the account ' ~ u.email ~ ' with all its years, movements and receipts', extra={'action': 'delete', 'page': pager.page, 'q': activity_q, 'confirm_email': ''}, type_to_confirm=u.email, type_field='confirm_email', aria_label='Delete ' ~ u.email) }}
-        {% else %}
-        <span class="muted small">{{ 'This is you' if u.id == current_user.id else 'Admins cannot be disabled here' }}</span>
-        {% endif %}
-      </div>
-    </li>
-    {% endfor %}
-  </ul>
-  {% if pager.pages > 1 %}
-  <div class="table-foot">
-    <p class="muted small">Showing {{ pager.first }} to {{ pager.last }} of {{ pager.total }} accounts</p>
-    {{ ui.pagination(pager, 'Account pages') }}
+  <form method="get" action="{{ url_for('admin') }}#accounts" class="support-filters">
+    <div class="field grow">
+      <label for="users-search">Search accounts</label>
+      <input id="users-search" name="search" type="search" value="{{ state.search }}" placeholder="Email or name" maxlength="254">
+    </div>
+    <input type="hidden" name="sort" value="{{ state.sort }}">
+    <input type="hidden" name="dir" value="{{ state.dir }}">
+    {% if activity_q %}<input type="hidden" name="q" value="{{ activity_q }}">{% endif %}
+    <div class="support-filter-actions">
+      <button class="btn btn-primary btn-sm" type="submit">Search</button>
+      {% if state.search %}<a class="btn btn-ghost btn-sm" href="{{ admin_url(sort=state.sort, dir=state.dir, q=activity_q) }}#accounts">Clear</a>{% endif %}
+    </div>
+  </form>
+
+  {% if pager.rows %}
+  <div class="table-wrap">
+    <table class="table admin-users-table">
+      <thead>
+        <tr>
+          {{ ui.sort_th(state, 'email', 'Account', sort_href) }}
+          <th scope="col" class="hide-sm">Plan</th>
+          {{ ui.sort_th(state, 'joined', 'Joined', sort_href, 'hide-sm') }}
+          {{ ui.sort_th(state, 'last', 'Last sign in', sort_href) }}
+          {{ ui.sort_th(state, 'years', 'Years', sort_href, 'num hide-sm') }}
+          {{ ui.sort_th(state, 'used', 'Storage', sort_href, 'num hide-sm') }}
+          <th scope="col" class="hide-sm"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in pager.rows %}
+        <tr>
+          <td>
+            {% if u.full_name %}<p class="admin-name" dir="auto">{{ u.full_name }}</p>{% endif %}
+            <p class="admin-email"><a href="{{ account_url(u.id, state) }}" dir="auto">{{ u.email }}</a></p>
+            {% if u.is_admin or u.has_2fa or u.disabled or not u.verified_at or u.used > u.quota %}
+            <p class="admin-flags">
+              {% if u.is_admin %}<span class="tag">Admin</span>{% endif %}
+              {% if u.has_2fa %}<span class="tag">Two-factor on</span>{% endif %}
+              {% if u.disabled %}<span class="pill pill-error">Disabled</span>{% endif %}
+              {% if not u.verified_at %}<span class="pill pill-warn">Email not confirmed</span>{% endif %}
+              {% if u.used > u.quota %}<span class="pill pill-warn">Over quota</span>{% endif %}
+            </p>
+            {% endif %}
+          </td>
+          <td class="small nowrap hide-sm"><span class="tag">{{ u.plan_name }}</span>{% if u.quota_bytes is not none %}<br><span class="muted">custom quota</span>{% endif %}</td>
+          <td class="small nowrap hide-sm">{{ u.created_at | localdate }}</td>
+          <td class="small nowrap">{{ (u.last_login_at | localdate) if u.last_login_at else 'Never' }}</td>
+          <td class="num hide-sm">{{ u.years }}</td>
+          <td class="num small nowrap hide-sm">{{ u.used | filesize('down') }} / {{ u.quota | filesize('down') }}</td>
+          <td class="admin-view hide-sm"><a class="btn btn-ghost btn-sm" href="{{ account_url(u.id, state) }}" aria-label="View {{ u.email }}">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
+  <div class="table-foot">
+    <p class="muted small">Showing {{ pager.first }} to {{ pager.last }} of {{ pager.total }} account{{ '' if pager.total == 1 else 's' }}{% if state.search %} matching &ldquo;{{ state.search }}&rdquo;{% endif %}</p>
+    {% if pager.pages > 1 %}{{ ui.pagination(pager, 'Account pages') }}{% endif %}
+  </div>
+  {% else %}
+  <p class="empty">No accounts match.</p>
   {% endif %}
 </section>
 
@@ -130,6 +129,9 @@
     <p class="muted small">The last {{ activity_limit }} events{% if activity_q %} for &ldquo;{{ activity_q }}&rdquo;{% endif %}, kept for {{ audit_days }} days.</p>
   </div>
   <form method="get" action="{{ url_for('admin') }}#activity" class="row admin-quota">
+    {% for key in ('search', 'sort', 'dir', 'page') %}
+      {% if state[key] and state[key] != {'sort': 'joined', 'dir': 'desc', 'page': 1}.get(key) %}<input type="hidden" name="{{ key }}" value="{{ state[key] }}">{% endif %}
+    {% endfor %}
     <label for="activity-q" class="small">Account email</label>
     <input id="activity-q" name="q" type="search" value="{{ activity_q }}" placeholder="All accounts">
     <button class="btn btn-ghost btn-sm" type="submit">Filter</button>

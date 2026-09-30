@@ -103,7 +103,7 @@ SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and 
 # Paths that need an account. Kept out of search engines via robots.txt.
 PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin",
                  "/account", "/settings", "/plan", "/support"]
-ADMIN_USERS_PER_PAGE = 25
+ADMIN_USERS_PER_PAGE = 10
 MAX_QUOTA_MB = 1024 * 1024  # 1 TB, a sanity cap for quotas typed on the admin page
 RESET_TOKEN_MAX_AGE = 3600
 # A new account must be confirmed from its email within this time, or it is deleted.
@@ -963,6 +963,12 @@ TICKET_SORTS = {
     "user": "u.email COLLATE NOCASE", "status": "t.status", "created": "t.created_at",
     "updated": "t.updated_at", "closed": "t.closed_at IS NULL, t.closed_at",
 }
+# Sortable columns of the admin accounts table. Accounts that never signed in go last.
+ADMIN_USER_SORTS = {
+    "email": "u.email COLLATE NOCASE", "joined": "u.created_at",
+    "last": "u.last_login_at IS NULL, u.last_login_at", "years": "years", "used": "used",
+}
+ADMIN_ACCOUNT_AUDIT_ROWS = 20
 
 
 def clean_ticket_body(value):
@@ -2839,52 +2845,116 @@ def register_routes(app):
             flash("Turn on two-factor sign in to use the admin page.", "info")
             abort(redirect(url_for("settings")))  # no anchor: the message stays in view
 
-    def admin_url(page=1, q=""):
-        # The activity filter stays while paging and after saving a user's settings.
-        return url_for("admin", page=page if page > 1 else None, q=q or None)
+    def admin_args(values):
+        """URL arguments without the defaults, so plain /admin stays plain."""
+        return {k: v for k, v in values.items() if v not in (None, "", 1)
+                and not (k == "sort" and v == "joined") and not (k == "dir" and v == "desc")}
+
+    def admin_url(**values):
+        # The accounts search, sort and page, and the activity filter (q), stay while paging,
+        # on the account page and after saving an account's settings.
+        return url_for("admin", **admin_args(values))
+
+    def admin_account_url(user_id, state):
+        return url_for("admin_account", user_id=user_id, **admin_args(state))
+
+    def admin_list_state(source):
+        """Search, sort and page of the accounts table, from the query string or a form."""
+        sort = source.get("sort", "joined")
+        return {"search": source.get("search", "").strip()[:254],
+                "sort": sort if sort in ADMIN_USER_SORTS else "joined",
+                "dir": "asc" if source.get("dir") == "asc" else "desc",
+                "page": max(to_int(source.get("page"), 1), 1)}
+
+    def admin_accounts(where="1 = 1", params=(), order="u.created_at DESC"):
+        """Accounts with their plan, quota, storage and years, ready for the admin pages."""
+        rows = db.query(
+            "SELECT u.id, u.email, u.created_at, u.last_login_at, u.disabled, u.quota_bytes, "
+            "u.verified_at, u.plan, u.totp_secret IS NOT NULL AS has_2fa, u.first_name, u.last_name, "
+            "(SELECT COUNT(*) FROM years y WHERE y.user_id = u.id) AS years, "
+            "(SELECT COALESCE(SUM(size), 0) FROM documents d WHERE d.user_id = u.id) AS used "
+            f"FROM users u WHERE {where} ORDER BY {order}", params)
+        plans = {p["key"]: p for p in plan_catalog()}
+        # Without a custom quota an account gets the quota of its plan.
+        return [dict(u, plan_name=plans.get(u["plan"], plans["free"])["name"],
+                     plan_key=u["plan"] if u["plan"] in plans else "free",
+                     quota=u["quota_bytes"] if u["quota_bytes"] is not None
+                     else plans.get(u["plan"], plans["free"])["quota_bytes"],
+                     quota_mb=f"{u['quota_bytes'] / MB:.1f}".removesuffix(".0")
+                     if u["quota_bytes"] is not None else "",
+                     is_admin=u["email"] in app.config["ADMIN_EMAILS"], full_name=full_name(u))
+                for u in rows]
+
+    def account_activity(email, limit):
+        """Events of an account (or all, for an empty email): its whole history, also from
+        before an email change, and what it did as an admin."""
+        return audit_rows(db.query(
+            "SELECT * FROM audit_log WHERE (? = '' OR email = ? OR actor = ? OR user_id = "
+            "(SELECT id FROM users WHERE email = ?)) ORDER BY id DESC LIMIT ?",
+            (email, email, email, email, limit)))
 
     @app.route("/admin")
     @login_required
     def admin():
         require_admin()
-        users = db.query(
-            "SELECT u.id, u.email, u.created_at, u.last_login_at, u.disabled, u.quota_bytes, "
-            "u.verified_at, u.plan, u.totp_secret IS NOT NULL AS has_2fa, u.first_name, u.last_name, "
-            "(SELECT COUNT(*) FROM years y WHERE y.user_id = u.id) AS years, "
-            "(SELECT COALESCE(SUM(size), 0) FROM documents d WHERE d.user_id = u.id) AS used "
-            "FROM users u ORDER BY u.created_at DESC, u.id DESC")
-        default_quota = app.config["USER_QUOTA_BYTES"]
-        plans = {p["key"]: p for p in plan_catalog()}
-        # Without a custom quota an account gets the quota of its plan.
-        users = [dict(u, plan_name=plans.get(u["plan"], plans["free"])["name"],
-                      plan_key=u["plan"] if u["plan"] in plans else "free",
-                      quota=u["quota_bytes"] if u["quota_bytes"] is not None
-                      else plans.get(u["plan"], plans["free"])["quota_bytes"],
-                      quota_mb=f"{u['quota_bytes'] / MB:.1f}".removesuffix(".0")
-                      if u["quota_bytes"] is not None else "",
-                      is_admin=u["email"] in app.config["ADMIN_EMAILS"], full_name=full_name(u))
-                 for u in users]
+        state = admin_list_state(request.args)
+        activity_q = request.args.get("q", "").strip().lower()[:254]
+        where, params = "1 = 1", []
+        if state["search"]:
+            # casefold (registered in db.get_db) folds every script and composes accents.
+            where = ("(casefold(u.email) LIKE ? ESCAPE '\\' OR casefold(u.first_name || ' ' "
+                     "|| u.last_name) LIKE ? ESCAPE '\\')")
+            params = [db.search_like(state["search"])] * 2
+        direction = state["dir"].upper()
+        order = ", ".join(f"{part} {direction}" if not part.endswith("IS NULL") else part
+                          for part in ADMIN_USER_SORTS[state["sort"]].split(", "))
+        users = admin_accounts(where, params, f"{order}, u.id {direction}")
+        # Totals always count every account, also while the table shows a search.
+        counts = db.query(
+            "SELECT COUNT(*) AS users, COALESCE(SUM(disabled), 0) AS disabled, "
+            "COALESCE(SUM(quota_bytes IS NOT NULL), 0) AS custom_quota FROM users", one=True)
         totals = {
-            "users": len(users),
-            "disabled": sum(1 for u in users if u["disabled"]),
-            "custom_quota": sum(1 for u in users if u["quota_bytes"] is not None),
-            "storage": sum(u["used"] for u in users),
+            **dict(counts),
+            "storage": db.query("SELECT COALESCE(SUM(size), 0) AS n FROM documents", one=True)["n"],
             "years": db.query("SELECT COUNT(*) AS n FROM years", one=True)["n"],
             "movements": db.query("SELECT COUNT(*) AS n FROM movements", one=True)["n"],
             "documents": db.query("SELECT COUNT(*) AS n FROM documents", one=True)["n"],
         }
-        pager = paginate(users, request.args.get("page"), ADMIN_USERS_PER_PAGE,
-                         lambda n, _size: admin_url(n, request.args.get("q", "").strip()))
-        activity_q = request.args.get("q", "").strip().lower()[:254]
-        activity = audit_rows(db.query(
-            # The account's whole history, also from before an email change.
-            "SELECT * FROM audit_log WHERE (? = '' OR email = ? OR actor = ? OR user_id = "
-            "(SELECT id FROM users WHERE email = ?)) ORDER BY id DESC LIMIT ?",
-            (activity_q, activity_q, activity_q, activity_q, ADMIN_AUDIT_ROWS)))
-        return render_template("admin.html", pager=pager, totals=totals,
-                               default_quota=default_quota, plans=list(plans.values()),
-                               activity=activity, activity_q=activity_q,
+        list_state = {k: v for k, v in state.items() if k != "page"}
+        pager = paginate(users, state["page"], ADMIN_USERS_PER_PAGE,
+                         lambda n, _size: admin_url(**list_state, page=n, q=activity_q) + "#accounts")
+        state["page"] = pager["page"]
+        activity = account_activity(activity_q, ADMIN_AUDIT_ROWS)
+        return render_template("admin.html", pager=pager, totals=totals, state=state,
+                               admin_url=admin_url,
+                               account_url=admin_account_url,
+                               default_quota=app.config["USER_QUOTA_BYTES"],
+                               plans=plan_catalog(), activity=activity, activity_q=activity_q,
                                activity_limit=ADMIN_AUDIT_ROWS, audit_days=AUDIT_DAYS)
+
+    @app.route("/admin/users/<int:user_id>")
+    @login_required
+    def admin_account(user_id):
+        require_admin()
+        found = admin_accounts("u.id = ?", (user_id,))
+        if not found:
+            abort(404)
+        u = found[0]
+        counts = db.query(
+            "SELECT (SELECT COUNT(*) FROM movements m JOIN years y ON y.id = m.year_id "
+            "WHERE y.user_id = :id) AS movements, "
+            "(SELECT COUNT(*) FROM documents WHERE user_id = :id) AS documents, "
+            "(SELECT COUNT(*) FROM user_sessions WHERE user_id = :id) AS devices, "
+            "(SELECT COUNT(*) FROM tickets WHERE user_id = :id) AS tickets, "
+            "(SELECT COUNT(*) FROM tickets WHERE user_id = :id AND status = 'open') AS open_tickets",
+            {"id": user_id}, one=True)
+        state = admin_list_state(request.args)
+        return render_template("admin_account.html", u=u, counts=counts, state=state,
+                               back=admin_url(**state), plans=plan_catalog(),
+                               activity=account_activity(u["email"], ADMIN_ACCOUNT_AUDIT_ROWS),
+                               activity_limit=ADMIN_ACCOUNT_AUDIT_ROWS,
+                               history=admin_url(q=u["email"]) + "#activity",
+                               tickets_url=url_for("admin_support", q=u["email"]))
 
     @app.route("/admin/plans/<key>", methods=["POST"])
     @login_required
@@ -2927,7 +2997,8 @@ def register_routes(app):
         row = db.query("SELECT * FROM users WHERE id = ?", (user_id,), one=True)
         if row is None:
             abort(404)
-        back = admin_url(to_int(request.form.get("page"), 1), request.form.get("q", "").strip())
+        state = admin_list_state(request.form)
+        back = admin_account_url(user_id, state)
         action = request.form.get("action")
         email = row["email"]
         who = current_user.email
@@ -2999,6 +3070,7 @@ def register_routes(app):
                 delete_account(user_id)
                 audit("admin_delete", user_id, email, "", who)
                 flash(f"The account {email} and all its data were deleted.", "info")
+                back = admin_url(**state)
         return redirect(back)
 
     # --- support ---
@@ -3185,8 +3257,7 @@ def register_routes(app):
             else:
                 # casefold (registered in db.get_db) folds every script, not only A to Z,
                 # and composes accents, so "élodie" finds "Élodie" however it was typed.
-                like = ("%" + db.search_fold(q).replace("\\", "\\\\").replace("%", "\\%")
-                        .replace("_", "\\_") + "%")
+                like = db.search_like(q)
                 where.append("(casefold(u.email) LIKE ? ESCAPE '\\' OR casefold(u.first_name "
                              "|| ' ' || u.last_name) LIKE ? ESCAPE '\\')")
                 params += [like, like]

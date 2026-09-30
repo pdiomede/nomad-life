@@ -121,7 +121,7 @@ class NameUsageTests(AppTestCase):
         self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
         admin = self.signup("admin@example.com", client=self.app.test_client())
         html = admin.get("/admin").get_data(as_text=True)
-        self.assertIn('<p class="admin-name">Ada Lovelace</p>', html)
+        self.assertIn('<p class="admin-name" dir="auto">Ada Lovelace</p>', html)
 
     def test_accountant_package_names_the_holder(self):
         self.set_plan("pro")

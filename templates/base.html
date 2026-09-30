@@ -63,7 +63,7 @@
               </form>
             </div>
           </details>
-          <a class="icon-btn support-btn" href="{{ url_for('support') }}" title="Contact support" aria-label="Contact support{% if support_unread %} ({{ support_unread }} ticket{{ '' if support_unread == 1 else 's' }} with a new reply){% endif %}">
+          <a class="icon-btn support-btn{% if support_unread %} is-new{% endif %}" href="{{ url_for('support') }}" title="Contact support" aria-label="Contact support{% if support_unread %} ({{ support_unread }} ticket{{ '' if support_unread == 1 else 's' }} with a new reply){% endif %}">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.5-2.7 4"/><path d="M12 17.4h.01"/></svg>
             {% if support_unread %}<span class="support-dot" aria-hidden="true"></span>{% endif %}
           </a>

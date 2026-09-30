@@ -167,7 +167,7 @@ class AdminPlanTests(AppTestCase):
             conn.execute("UPDATE users SET plan = 'pro' WHERE email = 'user@example.com'")
         self.assertIn(b"of 5 GB", user.get("/plan").data)
         self.signup("admin@example.com")
-        html = self.client.get("/admin").get_data(as_text=True)
+        html = self.client.get("/admin/users/1").get_data(as_text=True)
         self.assertIn("0 B used of 5 GB", html)
         self.assertIn("(Pro plan)", html)
 
@@ -192,7 +192,7 @@ class AdminPlanSelectorTests(AppTestCase):
             return conn.execute("SELECT plan FROM users WHERE id = ?", (self.uid,)).fetchone()[0]
 
     def test_selector_lists_every_plan_with_the_current_one_selected(self):
-        html = self.client.get("/admin").get_data(as_text=True)
+        html = self.client.get(f"/admin/users/{self.uid}").get_data(as_text=True)
         self.assertIn(f'id="plan-{self.uid}"', html)
         self.assertIn('<option value="free" selected>Free (free)</option>', html)
         self.assertIn('<option value="pro">Pro ($4 / month, $40 / year)</option>', html)
@@ -308,7 +308,7 @@ class AdminPriceTests(AppTestCase):
         self.assertIn("Upgrade to Pro, $5 / month ($49.99 / year)",
                       self.client.get("/plan").get_data(as_text=True))
         self.assertIn("Pro ($5 / month, $49.99 / year)",
-                      self.client.get("/admin").get_data(as_text=True))
+                      self.client.get("/admin/users/1").get_data(as_text=True))
 
     def test_empty_fields_restore_the_default(self):
         self.price("plus", "12", "100")

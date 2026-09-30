@@ -231,6 +231,7 @@ class ReviewTwoTests(AppTestCase):
         admin = self.signup("admin@example.com", client=self.app.test_client())
         html = admin.get("/admin?q=a@example.com").get_data(as_text=True)
         self.assertIn('name="q" value="a@example.com"', html)
+        # Since 1.3.1 the actions live on the account page, which keeps the accounts search.
         resp = admin.post("/admin/users/1", data={"action": "plan", "plan": "pro", "page": "1",
-                                                  "q": "a@example.com"})
-        self.assertEqual(resp.headers["Location"], "/admin?q=a@example.com")
+                                                  "search": "a@"})
+        self.assertEqual(resp.headers["Location"], "/admin/users/1?search=a@")

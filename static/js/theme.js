@@ -17,6 +17,21 @@
     });
   }
 
+  // The support button in the header glows slowly until this browser has opened the support
+  // pages once, so people notice it is new. A new reply makes it glow again (set by the server).
+  var support = document.querySelector(".support-btn");
+  if (support) {
+    var seen = false;
+    try {
+      if (/^\/support(\/|$)/.test(location.pathname)) localStorage.setItem("nl_support_seen", "1");
+      seen = localStorage.getItem("nl_support_seen") === "1";
+    } catch (e) { seen = true; }
+    if (!seen) support.classList.add("is-new");
+    support.addEventListener("click", function () {
+      try { localStorage.setItem("nl_support_seen", "1"); } catch (e) {}
+    });
+  }
+
   // Deleting always asks twice. Step 1 names what will be deleted, step 2 asks "Are you sure?"
   // (and, for a year, to type it). Only then the form gets confirm_delete=2, which the server
   // requires before deleting anything.

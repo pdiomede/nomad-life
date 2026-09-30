@@ -148,6 +148,13 @@ def search_fold(text):
     return unicodedata.normalize("NFC", unicodedata.normalize("NFC", text).casefold())
 
 
+def search_like(text):
+    """A LIKE pattern (with ESCAPE '\\') that finds the folded text anywhere, so % and _ typed in
+    a search box are matched as they are."""
+    return ("%" + search_fold(text).replace("\\", "\\\\").replace("%", "\\%")
+            .replace("_", "\\_") + "%")
+
+
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(current_app.config["DATABASE_PATH"])

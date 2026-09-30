@@ -188,6 +188,7 @@ p { margin: 0; }
 .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
 .page-head .muted { margin-top: 6px; max-width: 560px; }
+.page-head .muted.wide { max-width: none; }  /* one line on wider screens */
 
 /* Buttons */
 .btn {
@@ -622,6 +623,20 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .admin-quota input { width: 110px; }
 .admin-price input { width: 90px; }
 .admin-plans { margin-bottom: 20px; }
+/* Accounts table: the account column keeps a readable width, the table scrolls on phones. */
+.admin-users-table td { vertical-align: top; }
+.admin-users-table td:first-child { min-width: 14rem; overflow-wrap: anywhere; }
+.admin-users-table .admin-email { display: block; margin: 0; }
+.admin-users-table .admin-name + .admin-email { font-size: 13px; }
+/* On phones only account (its email links to the View page) and last sign in are shown. */
+@media (max-width: 600px) { .admin-users-table td:first-child { min-width: 0; } }
+.admin-flags { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 6px 0 0; }
+.admin-flags .pill { margin: 0; }
+.admin-users-table .admin-view { text-align: right; vertical-align: middle; }
+.admin-account-title { overflow-wrap: anywhere; }
+.admin-details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; margin: 0; }
+.admin-details dt { color: var(--muted); }
+.admin-details dd { margin: 0; overflow-wrap: anywhere; }
 .pending-email { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 16px; padding: 10px 14px; border-radius: 6px; background: var(--info-bg); overflow-wrap: anywhere; }
 .pending-email form { margin: 0; }
 
@@ -651,6 +666,15 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 /* Support: header icon, ticket list, conversation and the admin table. */
 .support-btn { position: relative; text-decoration: none; }
 .support-btn:hover { text-decoration: none; }
+/* A slow glow (3 seconds a cycle) on the support button while it is new or has a new reply. */
+.support-btn.is-new { animation: support-glow 3s ease-in-out infinite; }
+@keyframes support-glow {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; background: transparent; }
+  50% { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.14); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .support-btn.is-new { animation: none; background: rgba(255, 255, 255, 0.14); }
+}
 .support-dot { position: absolute; top: 3px; right: 3px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent-2); border: 2px solid var(--topbar); }
 .menu-badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--info-bg); color: var(--link); font-size: 12px; font-weight: 700; text-align: center; }
 .pill-info { background: var(--info-bg); color: var(--link); }

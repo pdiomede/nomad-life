@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}{{ u.email }} | Admin | Nomad Life{% endblock %}
+{% macro list_state() %}
+  {% for key in ('search', 'sort', 'dir', 'page') %}
+    {% if state[key] and state[key] != {'sort': 'joined', 'dir': 'desc', 'page': 1}.get(key) %}<input type="hidden" name="{{ key }}" value="{{ state[key] }}">{% endif %}
+  {% endfor %}
+{% endmacro %}
+{% block content %}
+<a class="back" href="{{ back }}#accounts">&larr; Back to accounts</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Admin</p>
+    <h1 class="admin-account-title" dir="auto">{{ u.email }}</h1>
+    {% if u.full_name %}<p class="admin-name" dir="auto">{{ u.full_name }}</p>{% endif %}
+    <p class="admin-flags">
+      <span class="tag">{{ u.plan_name }}</span>
+      {% if u.is_admin %}<span class="tag">Admin</span>{% endif %}
+      {% if u.has_2fa %}<span class="tag">Two-factor on</span>{% endif %}
+      {% if u.disabled %}<span class="pill pill-error">Disabled</span>{% endif %}
+      {% if not u.verified_at %}<span class="pill pill-warn">Email not confirmed</span>{% endif %}
+      {% if u.used > u.quota %}<span class="pill pill-warn">Over quota</span>{% endif %}
+    </p>
+  </div>
+</div>
+
+<section class="card" aria-labelledby="details-title">
+  <div class="card-head"><h2 id="details-title">Details</h2></div>
+  <dl class="admin-details">
+    <dt>Joined</dt><dd>{{ u.created_at | localdate }}</dd>
+    <dt>Email confirmed</dt><dd>{{ (u.verified_at | localdate) if u.verified_at else 'Not yet' }}</dd>
+    <dt>Last sign in</dt><dd>{{ (u.last_login_at | localdate) if u.last_login_at else 'Never' }}</dd>
+    <dt>Two-factor sign in</dt><dd>{{ 'On' if u.has_2fa else 'Off' }}</dd>
+    <dt>Signed in devices</dt><dd>{{ counts.devices }}</dd>
+    <dt>Years</dt><dd>{{ u.years }}</dd>
+    <dt>Movements</dt><dd>{{ counts.movements }}</dd>
+    <dt>Receipts</dt><dd>{{ counts.documents }}</dd>
+    <dt>Storage</dt><dd>{{ u.used | filesize('down') }} used of {{ u.quota | filesize('down') }}{% if u.quota_bytes is none %} <span class="muted">({{ u.plan_name }} plan)</span>{% else %} <span class="muted">(custom quota)</span>{% endif %}</dd>
+    <dt>Support tickets</dt><dd>{% if counts.tickets %}<a href="{{ tickets_url }}">{{ counts.tickets }} ticket{{ '' if counts.tickets == 1 else 's' }}</a>{% if counts.open_tickets %} <span class="muted">({{ counts.open_tickets }} open)</span>{% endif %}{% else %}None{% endif %}</dd>
+  </dl>
+</section>
+
+<section class="card" aria-labelledby="plan-title">
+  <div class="card-head"><h2 id="plan-title">Plan and storage</h2></div>
+  <div class="admin-actions">
+    <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}" class="admin-quota">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="plan">
+      {{ list_state() }}
+      <label for="plan-{{ u.id }}" class="small">Plan</label>
+      <select id="plan-{{ u.id }}" name="plan">
+        {% for p in plans %}
+          <option value="{{ p.key }}"{% if p.key == u.plan_key %} selected{% endif %}>{{ p.name }} ({% if p.price_cents %}${{ p.price }} / month, ${{ p.year }} / year{% else %}free{% endif %})</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-ghost btn-sm" type="submit" aria-label="Save plan for {{ u.email }}">Save</button>
+    </form>
+    <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}" class="admin-quota">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="quota">
+      {{ list_state() }}
+      <label for="quota-{{ u.id }}" class="small">Quota in MB</label>
+      <input id="quota-{{ u.id }}" name="quota_mb" type="number" min="1" max="1048576" step="any" inputmode="decimal"
+             value="{{ u.quota_mb }}"
+             placeholder="Default" aria-describedby="quota-help-{{ u.id }}">
+      <button class="btn btn-ghost btn-sm" type="submit" aria-label="Save quota for {{ u.email }}">Save</button>
+    </form>
+  </div>
+  <p class="muted small" id="quota-help-{{ u.id }}">Leave the quota empty to use the storage of the plan.</p>
+</section>
+
+<section class="card" aria-labelledby="access-title">
+  <div class="card-head"><h2 id="access-title">Access</h2></div>
+  {% if u.id != current_user.id and not u.is_admin %}
+  <div class="admin-actions">
+    <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="{{ 'enable' if u.disabled else 'disable' }}">
+      {{ list_state() }}
+      <button class="btn btn-ghost btn-sm" type="submit" aria-label="{{ 'Enable' if u.disabled else 'Disable' }} {{ u.email }}">{{ 'Enable' if u.disabled else 'Disable' }}</button>
+    </form>
+    {{ ui.delete_form(url_for('admin_user', user_id=u.id), 'the account ' ~ u.email ~ ' with all its years, movements and receipts', extra=dict(state, action='delete', confirm_email=''), type_to_confirm=u.email, type_field='confirm_email', aria_label='Delete ' ~ u.email) }}
+  </div>
+  <p class="muted small">Disabling signs the account out everywhere; it can be enabled again. Deleting removes the account with all its data for good.</p>
+  {% else %}
+  <p class="muted small">{{ 'This is you.' if u.id == current_user.id else 'Admins cannot be disabled or deleted here. Remove the address from ADMIN_EMAILS in config.env first.' }}</p>
+  {% endif %}
+</section>
+
+<section class="card" aria-labelledby="activity-title">
+  <div class="card-head">
+    <h2 id="activity-title">Recent activity</h2>
+    <a class="small" href="{{ history }}">Full history</a>
+  </div>
+  {% if activity %}
+  <ul class="activity-list">
+    {% for e in activity %}
+    <li>
+      <span>{{ e.label }}{% if e.detail %} <span class="muted small">({{ e.detail }})</span>{% endif %}{% if e.actor %} <span class="muted small">by {{ e.actor }}</span>{% endif %}</span>
+      <span class="muted small">{{ e.email }}{% if e.email %} &middot; {% endif %}{{ e.created_at }} UTC{% if e.ip %} &middot; {{ e.ip }}{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted small">No events yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -172,9 +172,12 @@ class AdminTwoFactorTests(AppTestCase):
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT disabled FROM users WHERE id = ?",
                                           (boss,)).fetchone()[0], 0)
-        html = self.client.get("/admin").get_data(as_text=True)
-        self.assertNotIn('aria-label="Disable boss@example.com"', html)
-        self.assertIn('aria-label="Disable user@example.com"', html)
+        with self.db() as conn:
+            user = conn.execute("SELECT id FROM users WHERE email = 'user@example.com'").fetchone()[0]
+        self.assertNotIn('aria-label="Disable boss@example.com"',
+                         self.client.get(f"/admin/users/{boss}").get_data(as_text=True))
+        self.assertIn('aria-label="Disable user@example.com"',
+                      self.client.get(f"/admin/users/{user}").get_data(as_text=True))
 
 
 class AlertTests(AppTestCase):

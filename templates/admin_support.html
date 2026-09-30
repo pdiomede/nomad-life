@@ -1,13 +1,8 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui with context %}
 {% block title %}Support tickets | Nomad Life{% endblock %}
-{% macro sort_link(key, label) %}
-  {% set active = state.sort == key %}
-  {% set next_dir = 'asc' if active and state.dir == 'desc' else 'desc' %}
-  <th scope="col"{% if active %} aria-sort="{{ 'ascending' if state.dir == 'asc' else 'descending' }}"{% endif %}>
-    <a class="sort-link{% if active %} is-active{% endif %}" href="{{ support_url(status=state.status, kind=state.kind, q=state.q, sort=key, dir=next_dir) }}">{{ label }}{% if active %}<span aria-hidden="true">{{ ' ↑' if state.dir == 'asc' else ' ↓' }}</span>{% endif %}</a>
-  </th>
-{% endmacro %}
+{% macro sort_href(key, dir) %}{{ support_url(status=state.status, kind=state.kind, q=state.q, sort=key, dir=dir) }}{% endmacro %}
+{% macro sort_link(key, label) %}{{ ui.sort_th(state, key, label, sort_href) }}{% endmacro %}
 {% block content %}
 <a class="back" href="{{ url_for('admin') }}">&larr; Back to admin</a>
 <div class="page-head">

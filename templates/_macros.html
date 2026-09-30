@@ -83,6 +83,16 @@
 {% endif %}
 {% endmacro %}
 
+{# A sortable column header of an admin table. `href(key, dir)` builds the link that keeps the
+   table's other filters; a second click on the active column flips the direction. #}
+{% macro sort_th(state, key, label, href, class="") %}
+  {% set active = state.sort == key %}
+  {% set next_dir = 'asc' if active and state.dir == 'desc' else 'desc' %}
+  <th scope="col"{% if class %} class="{{ class }}"{% endif %}{% if active %} aria-sort="{{ 'ascending' if state.dir == 'asc' else 'descending' }}"{% endif %}>
+    <a class="sort-link{% if active %} is-active{% endif %}" href="{{ href(key, next_dir) }}">{{ label }}{% if active %}<span aria-hidden="true">{{ ' ↑' if state.dir == 'asc' else ' ↓' }}</span>{% endif %}</a>
+  </th>
+{% endmacro %}
+
 {# Square numbered page links. `p` comes from paginate() in app.py. #}
 {% macro pagination(p, label) %}
 <nav class="pager" aria-label="{{ label }}">
