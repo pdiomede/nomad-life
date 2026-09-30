@@ -54,7 +54,17 @@
   <div class="main-col">
   <section class="card" id="movements" aria-labelledby="movements-title">
     <div class="card-head">
-      <h2 id="movements-title">Movements</h2>
+      <div class="movements-title">
+        <h2 id="movements-title">Movements</h2>
+        {% if overlaps %}
+        {# Shown by theme.js, which opens the report; without JavaScript the "N counted" notes
+           in the table still tell which movements share days. #}
+        <button type="button" class="overlap-alert" data-overlap-open aria-haspopup="dialog" aria-controls="overlap-dialog" data-tip="Overlapping movements" hidden
+                aria-label="Overlapping movements ({{ overlap_total }}): show the report">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12 3.2 1.8 20.6h20.4z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 9.5v5.2" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="17.6" r="1.25" fill="#FFFFFF"/></svg>
+        </button>
+        {% endif %}
+      </div>
     </div>
     {% if movements %}
     <div class="table-wrap">
@@ -100,6 +110,20 @@
       </div>
     {% endif %}
   </section>
+
+  {% if overlaps %}
+  <dialog class="overlap-dialog" id="overlap-dialog" aria-labelledby="overlap-title" aria-describedby="overlap-text">
+    <p class="eyebrow">{{ overlap_total }} overlap{{ '' if overlap_total == 1 else 's' }}</p>
+    <h2 id="overlap-title">Overlapping movements in {{ y.year }}</h2>
+    <pre class="overlap-report" id="overlap-text" tabindex="0">{{ overlap_text }}</pre>
+    <p class="visually-hidden" role="status" data-overlap-status></p>
+    <div class="confirm-actions">
+      <span class="overlap-copied small" data-overlap-copied aria-hidden="true"></span>
+      <button class="btn btn-ghost" type="button" data-overlap-copy>Copy</button>
+      <button class="btn btn-primary" type="button" data-overlap-close>Close</button>
+    </div>
+  </dialog>
+  {% endif %}
 
   {% set pins, off_map = map %}
   <section class="card map-card" aria-labelledby="map-title">

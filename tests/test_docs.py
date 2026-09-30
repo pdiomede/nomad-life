@@ -42,7 +42,7 @@ class DocsPageTests(AppTestCase):
         self.assertIn('<a href="/docs">Docs</a>', landing)
         self.signup()
         html = self.client.get("/settings").get_data(as_text=True)
-        self.assertIn('class="icon-btn docs-btn" href="/docs" data-tip="Documentation"', html)
+        self.assertIn('class="icon-btn docs-btn docs-btn-app" href="/docs" data-tip="Documentation"', html)
         self.assertIn('<a class="user-menu-item menu-docs" href="/docs">Documentation</a>', html)
         # The chat bubble names itself with the same tooltip, not a title.
         self.assertIn('href="/support" data-tip="Contact support"', html)

@@ -42,7 +42,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.5.1"
+APP_VERSION = "1.5.2"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -2052,17 +2052,127 @@ def stay_order(movements):
     return ordered
 
 
+def assign_days(movements):
+    """{date: movement id} for every day some movement covers: the one place each day counts.
+    A shared day belongs to the stay that started later (the arrival); on the same start day
+    the shorter stay wins, so a side trip is never hidden by the longer stay around it; with
+    identical dates, the newest entry. The single source for compute_stats and the overlap
+    report."""
+    owner = {}
+    for m in stay_order(movements):
+        d, end = parse_date(m["start_date"]), parse_date(m["end_date"])
+        while d <= end:
+            owner[d] = m["id"]
+            d += timedelta(days=1)
+    return owner
+
+
+# The dashboard report details at most this many overlapping pairs (and counts the rest), so a
+# year of many overlapping stays cannot make the page slow.
+OVERLAP_REPORT_MAX = 50
+
+
+def shares_days(a_start, a_end, b_start, b_end):
+    """Days two stays share, when that is an overlap to report, else 0. A travel day (the
+    first stay ends the day the other begins: leave one place, arrive in the next) is normal
+    and not an overlap. The one rule for the warning on save and the dashboard alert."""
+    if (b_start, -b_end.toordinal()) < (a_start, -a_end.toordinal()):
+        a_start, a_end, b_start, b_end = b_start, b_end, a_start, a_end  # a starts first
+    days = (min(a_end, b_end) - b_start).days + 1
+    if days <= 0 or (days == 1 and a_start < b_start and a_end == b_start):
+        return 0
+    return days
+
+
+def movement_overlaps(movements, owner=None, limit=OVERLAP_REPORT_MAX):
+    """(pairs, total): the pairs of movements that overlap (shares_days), in date order, at
+    most `limit` of them with details, and how many there are in all. Each pair has both
+    movements (a started first), the shared first and last day, the number of shared days, and
+    which movements those days really count for ({id: days}, from assign_days, so a third
+    stay covering the same days is named)."""
+    owner = assign_days(movements) if owner is None else owner
+    spans = sorted(((parse_date(m["start_date"]), parse_date(m["end_date"]), m)
+                    for m in movements), key=lambda t: (t[0], -t[1].toordinal(), t[2]["id"]))
+    pairs, total = [], 0
+    for i, (a_start, a_end, a) in enumerate(spans):
+        for b_start, b_end, b in spans[i + 1:]:
+            if b_start > a_end:
+                break  # sorted by start: no later movement reaches back into a
+            days = shares_days(a_start, a_end, b_start, b_end)
+            if not days:
+                continue
+            total += 1
+            if len(pairs) >= limit:
+                continue
+            first, last = b_start, min(a_end, b_end)
+            counts = {}
+            d = first
+            while d <= last:
+                counts[owner[d]] = counts.get(owner[d], 0) + 1
+                d += timedelta(days=1)
+            pairs.append({"a": a, "b": b, "first": first, "last": last, "days": days,
+                          "owners": counts})
+    return pairs, total
+
+
+def overlap_report(year, pairs, movements, counted, total=None):
+    """The overlap alert's text: one numbered paragraph per pair, then the rule."""
+    total = len(pairs) if total is None else total
+    by_id = {m["id"]: m for m in movements}
+
+    def place(m):
+        return f"{m['city']}, {m['country']}"
+
+    def span(m):
+        return f"{m['start_date']} to {m['end_date']}"
+
+    lines = [f"Overlapping movements in {year} ({total})", ""]
+    for n, p in enumerate(pairs, 1):
+        a, b = p["a"], p["b"]
+        shared = (p["first"].isoformat() if p["days"] == 1
+                  else f"{p['first'].isoformat()} to {p['last'].isoformat()}")
+        owners = sorted(p["owners"].items(), key=lambda kv: (-kv[1], kv[0]))
+        if len(owners) == 1:
+            goes = f"They count for {place(by_id[owners[0][0]])}"
+        else:
+            goes = "They count for " + " and ".join(
+                f"{place(by_id[mid])} ({plural(days, 'day')})" for mid, days in owners)
+        losers = [m for m in (a, b) if counted.get(m["id"], 0) < stay_length(m)]
+        if losers:
+            goes += ", so " + " and ".join(
+                f"{place(m)} counts {counted.get(m['id'], 0)} of its {stay_length(m)} days"
+                for m in losers)
+        lines.append(f"{n}. {place(a)} ({span(a)}) and {place(b)} ({span(b)}) share "
+                     f"{plural(p['days'], 'day')}, {shared}. {goes}.")
+    if total > len(pairs):
+        lines.append(f"... and {total - len(pairs)} more.")
+    lines += ["", "A day in two movements counts once: for the movement that started later (on "
+                  "the same start day, the shorter one; with identical dates, the newest). A "
+                  "travel day, when one movement ends the day the next begins, is normal and not "
+                  "listed here. If you were not in both places, fix the dates."]
+    return "\n".join(lines)
+
+
+# The warning on save names at most this many overlapping stays: flash messages travel in the
+# session cookie, which browsers drop above 4 KB (signing the person out).
+OVERLAP_NOTES_MAX = 5
+
+
 def overlap_notes(year_id, data, exclude_id=None):
-    """Describe stays that overlap the given one by more than a single travel day."""
+    """Describe the stays that overlap the given one (shares_days: a travel day is not one),
+    in date order, at most OVERLAP_NOTES_MAX, then how many more."""
     rows = db.query("SELECT * FROM movements WHERE year_id = ? AND id IS NOT ? "
-                    "AND start_date <= ? AND end_date >= ?",
+                    "AND start_date <= ? AND end_date >= ? ORDER BY start_date, end_date, id",
                     (year_id, exclude_id, data["end_date"], data["start_date"]))
     notes = []
     for r in rows:
-        shared = (min(parse_date(r["end_date"]), parse_date(data["end_date"]))
-                  - max(parse_date(r["start_date"]), parse_date(data["start_date"]))).days + 1
-        if shared > 1:
-            notes.append(f"{r['city']} ({r['start_date']} to {r['end_date']}, {shared} shared days)")
+        shared = shares_days(parse_date(r["start_date"]), parse_date(r["end_date"]),
+                             parse_date(data["start_date"]), parse_date(data["end_date"]))
+        if shared:
+            notes.append(f"{r['city']} ({r['start_date']} to {r['end_date']}, "
+                         f"{plural(shared, 'shared day')})")
+    if len(notes) > OVERLAP_NOTES_MAX:
+        notes = notes[:OVERLAP_NOTES_MAX] + [f"{len(notes) - OVERLAP_NOTES_MAX} more"]
     return notes
 
 
@@ -2248,19 +2358,13 @@ def compute_stats(year_row, movements):
     # Countries are compared like the country search: case, accents, apostrophes and Unicode
     # forms are ignored, so "portugal", "Transnístria" and "Hawai’i" match their plain spelling.
     names = {base: base_name}
-    assigned = {}
-    assigned_mv = {}
-    # A shared day belongs to the stay that started later (the arrival). On the same start
-    # day the shorter stay wins, so a side trip is never hidden by the longer stay around it.
+    keys = {}
     for m in stay_order(movements):
         name = normalize_country(m["country"])
-        key = fold(name)
-        names.setdefault(key, name)
-        d, end = parse_date(m["start_date"]), parse_date(m["end_date"])
-        while d <= end:
-            assigned[d] = key
-            assigned_mv[d] = m["id"]
-            d += timedelta(days=1)
+        keys[m["id"]] = fold(name)
+        names.setdefault(keys[m["id"]], name)
+    assigned_mv = assign_days(movements)
+    assigned = {d: keys[mid] for d, mid in assigned_mv.items()}
 
     today = date.today()
     elapsed_end = min(today, last) if today >= first else first - timedelta(days=1)
@@ -2726,7 +2830,13 @@ def register_routes(app):
         pager = paginate(movements, request.args.get("page"), page_size(),
                          lambda n, size: dashboard_url(year, n, size))
         stats = compute_stats(year_row, movements)
+        # Every movement of the year, not only this page of the table.
+        overlaps, overlap_total = movement_overlaps(movements)
+        overlap_text = (overlap_report(year, overlaps, movements, stats["counted"], overlap_total)
+                        if overlaps else "")
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
+                               overlaps=overlaps, overlap_total=overlap_total,
+                               overlap_text=overlap_text,
                                per_page_options=PER_PAGE_OPTIONS,
                                years=years, stats=stats,
                                base_docs=base_docs, map=map_pins(year_row, movements, stats),

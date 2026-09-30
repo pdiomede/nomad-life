@@ -135,6 +135,7 @@
           <li><strong>A day in two movements</strong> (an overlap), such as a travel day, counts for the one that <strong>started later</strong>. If both start the same day, the shorter one wins; with identical dates, the newest.</li>
           <li><strong>A movement inside your base country</strong> counts for the base country.</li>
         </ol>
+        <p>When movements overlap by more than a travel day (one ends the day the next begins), a red triangle blinks next to the <strong>Movements</strong> title. Press it to read which movements share which days and where those days count, copy the report, and fix the dates if you were not in both places.</p>
 
         <section id="counting-example" class="doc-sub" data-doc-title="A worked example">
           <h3>A worked example</h3>
@@ -200,7 +201,7 @@
         <section id="movements-table" class="doc-sub" data-doc-title="The Movements table">
           <h3>The Movements table</h3>
           {{ shot('movements-table', 'The Movements table: Madrid, Spain, 4 days with "3 counted" under it, then Rome, Tokyo, Paris and Bangkok', 'A movement that shares a day shows how many of its days count.') }}
-          <p>Movements are listed by start date; the one you are in today is highlighted. Long lists are split into pages; choose {{ per_page_options | join(', ') }} rows with <strong>Show</strong> under the table.</p>
+          <p>Movements are listed by start date; the one you are in today is highlighted. A blinking red triangle next to the title means some movements overlap (see <a href="#counting">How days are counted</a>). Long lists are split into pages; choose {{ per_page_options | join(', ') }} rows with <strong>Show</strong> under the table.</p>
         </section>
         <section id="days-per-country" class="doc-sub" data-doc-title="Days per country">
           <h3>Days per country</h3>

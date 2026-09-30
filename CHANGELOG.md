@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.2] - 2026-10-01
+
+### Added
+
+- When movements of a year overlap, a red triangle blinks slowly next to the **Movements** title (still for people who ask their system for reduced motion). It opens a dialog with the report: which movements share which days, where those days really count (for example "They count for Sidney, Australia, so Vienna, Austria counts 7 of its 10 days"), and the counting rule. **Copy** puts the report on the clipboard and **Close** (or `Esc`) closes it. Every movement of the year is checked, not only the page of the table on screen. A travel day, when one movement ends the day the next begins, is normal and not reported, as in the warning shown when a movement is saved. The documentation explains the triangle.
+
+### Changed
+
+- The header shows Documentation, Contact support and the light or dark mode button first, then your name with its menu.
+- Who gets each day is worked out in one place for the day counts, the "N counted" notes, the map and the overlap report, so they always agree.
+
+### Fixed
+
+Found in the review of the overlap math and the new alert:
+
+- Two one day movements on the same day (one of them counting 0 days), or a one day stop inside a longer stay, were never reported, since only overlaps of more than one day were. Every shared day is reported now except a real travel day.
+- With many overlapping movements the report compared them day by day for every pair: a year of 1,000 overlapping stays took about 2 minutes to show. The report details the first 50 pairs and counts the rest ("... and 12 more."), and takes a fraction of a second.
+- The warning shown when a movement is saved listed every stay it overlapped. Messages travel in the session cookie, which browsers drop above 4 KB, so a stay overlapping dozens of others could sign the person out. It names at most five stays and says how many more.
+
 ## [1.5.1] - 2026-10-01
 
 ### Added

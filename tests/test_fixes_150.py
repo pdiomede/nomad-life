@@ -88,7 +88,7 @@ class DocsFixTests(AppTestCase):
         with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                "static", "css", "style.css"), encoding="utf-8") as fh:
             css = fh.read()
-        self.assertIn(".topnav .user-menu ~ .docs-btn { display: none; }", css)
+        self.assertIn(".topnav .docs-btn-app { display: none; }", css)
         # Documentation stays reachable from the menu there.
         self.signup()
         self.assertIn('class="user-menu-item menu-docs" href="/docs"',

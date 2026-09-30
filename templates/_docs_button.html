@@ -1,3 +1,3 @@
-<a class="icon-btn docs-btn" href="{{ url_for('docs') }}" data-tip="Documentation" aria-label="Documentation"{% if request.endpoint == 'docs' %} aria-current="page"{% endif %}>
+<a class="icon-btn docs-btn{% if current_user.is_authenticated %} docs-btn-app{% endif %}" href="{{ url_for('docs') }}" data-tip="Documentation" aria-label="Documentation"{% if request.endpoint == 'docs' %} aria-current="page"{% endif %}>
   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.5-2.7 4.1"/><path d="M12 17.6h.01" stroke-width="2.6"/></svg>
 </a>

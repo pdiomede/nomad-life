@@ -644,6 +644,65 @@
 
   // Flash messages: show the close button and remove the message when it is clicked.
   // Focus moves to the next message's button, or to the page content after the last one.
+  // Overlapping movements: the red triangle next to the Movements title opens the report, which
+  // can be copied. Without <dialog> support the report shows in the browser's own alert.
+  var overlapOpen = document.querySelector("[data-overlap-open]");
+  var overlapDialog = document.getElementById("overlap-dialog");
+  if (overlapOpen && overlapDialog) {
+    var overlapText = document.getElementById("overlap-text");
+    var overlapStatus = overlapDialog.querySelector("[data-overlap-status]");
+    var overlapCopied = overlapDialog.querySelector("[data-overlap-copied]");
+    var copiedTimer = null;
+    function overlapSay(text) {
+      overlapStatus.textContent = text;
+      overlapCopied.textContent = text;
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(function () { overlapCopied.textContent = ""; }, 2500);
+    }
+    function copyBySelection() {
+      var range = document.createRange();
+      range.selectNodeContents(overlapText);
+      var selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      var done = false;
+      try { done = document.execCommand("copy"); } catch (e) { done = false; }
+      overlapSay(done ? "Copied" : "Select the text and copy it");
+    }
+    overlapOpen.hidden = false;
+    overlapOpen.addEventListener("click", function () {
+      if (typeof overlapDialog.showModal === "function") {
+        overlapStatus.textContent = "";
+        overlapCopied.textContent = "";
+        overlapDialog.showModal();
+        overlapDialog.querySelector("[data-overlap-close]").focus();
+      } else {
+        window.alert(overlapText.textContent);
+      }
+    });
+    overlapDialog.querySelector("[data-overlap-close]").addEventListener("click", function () {
+      overlapDialog.close();
+    });
+    overlapDialog.querySelector("[data-overlap-copy]").addEventListener("click", function () {
+      var text = overlapText.textContent;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(function () { overlapSay("Copied"); }, copyBySelection);
+      } else {
+        copyBySelection();
+      }
+    });
+    // A click on the dimmed page around the dialog closes it too.
+    overlapDialog.addEventListener("click", function (e) {
+      if (e.target !== overlapDialog) return;
+      var r = overlapDialog.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) {
+        overlapDialog.close();
+      }
+    });
+    // Esc, Close or the backdrop: the focus goes back to the triangle.
+    overlapDialog.addEventListener("close", function () { overlapOpen.focus({ preventScroll: true }); });
+  }
+
   document.querySelectorAll("[data-dismiss-flash]").forEach(function (close) {
     close.hidden = false;
     close.addEventListener("click", function () {
