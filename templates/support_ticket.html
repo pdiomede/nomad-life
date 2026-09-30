@@ -52,7 +52,7 @@
         <button class="btn btn-ghost btn-sm" type="submit">Reopen without answering</button>
       </form>
     {% else %}
-      {% if ticket.status != 'open' %}<p class="muted small">This ticket is closed. Writing a message opens it again.</p>{% endif %}
+      {% if ticket.status != 'open' %}<p class="muted small">{% if at_cap %}This ticket is closed. You have reached the limit of open tickets, so writing here keeps it closed: close the solved ones to open it again.{% else %}This ticket is closed. Writing a message opens it again.{% endif %}</p>{% endif %}
       <form method="post" class="stack">
         {{ ui.csrf() }}
         <input type="hidden" name="action" value="reply">

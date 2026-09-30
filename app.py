@@ -41,7 +41,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -196,14 +196,23 @@ BLANK_LETTERS = {"\u115f", "\u1160", "\u3164", "\uffa0", "\u2800"}
 JOINERS = {"\u200c", "\u200d"}
 
 
+def visible(text):
+    """Text holds something one can read: a character that is not a space, an invisible
+    format or control character, a blank letter, or only a mark (a variation selector or
+    combining grapheme joiner alone draws nothing)."""
+    return any(unicodedata.category(ch)[0] not in "MZC" and ch not in BLANK_LETTERS
+               for ch in text)
+
+
 def clean_name(value):
     """A first or last name as typed: control and format characters removed (U+202E and the
-    like) except the joiners, blank letters removed, spaces collapsed. "" when nothing
-    visible is left."""
-    kept = "".join(ch for ch in value or "" if ch not in BLANK_LETTERS
+    like) except the joiners, blank letters removed, spaces collapsed, composed (NFC) so the
+    same name always compares equal. "" when nothing visible is left."""
+    value = unicodedata.normalize("NFC", value or "")
+    kept = "".join(ch for ch in value if ch not in BLANK_LETTERS
                    and (unicodedata.category(ch)[0] != "C" or ch.isspace() or ch in JOINERS))
     name = " ".join(kept.split())
-    return name if any(not ch.isspace() and ch not in JOINERS for ch in name) else ""
+    return name if visible(name) else ""
 
 
 def full_name(row):
@@ -433,6 +442,8 @@ def create_app(overrides=None):
             return redirect(login_url("login", next_url=request.url))
         return redirect(url_for("login"))
 
+    stamp_skipped = {}  # sid: when its last seen stamp was skipped (database busy)
+
     @login_manager.user_loader
     def load_user(session_id):
         session_id, _, sid = session_id.partition("/")
@@ -457,9 +468,16 @@ def create_app(overrides=None):
             # At most once an hour, and never a reason to fail the page: an UPDATE takes the
             # database write lock even when it changes nothing, so a page view would otherwise
             # wait for (and fail behind) any other request that is writing.
-            if seen["stale"]:
-                db.try_execute("UPDATE user_sessions SET last_seen_at = CURRENT_TIMESTAMP "
-                               "WHERE id = ?", (sid,))
+            # A stamp skipped because the database was busy waits a minute before the next try,
+            # so the following pages do not each wait for the lock again.
+            if seen["stale"] and time.monotonic() - stamp_skipped.get(sid, -60.0) >= 60:
+                if db.try_execute("UPDATE user_sessions SET last_seen_at = CURRENT_TIMESTAMP "
+                                  "WHERE id = ?", (sid,)) is None:
+                    if len(stamp_skipped) > 10000:
+                        stamp_skipped.clear()
+                    stamp_skipped[sid] = time.monotonic()
+                else:
+                    stamp_skipped.pop(sid, None)
         # Sessions from before 1.2.10 carry no sid; they end with the password or a
         # "Sign out everywhere else", as they always did.
         return User(row, sid or None)
@@ -472,6 +490,8 @@ def create_app(overrides=None):
     def request_size_limit():
         # MAX_CONTENT_LENGTH fits the largest plan; each request gets its sender's own cap, so
         # a Free user's oversized upload is still refused before the server reads it.
+        if request.endpoint == "static":  # no body, and no need to load the user
+            return
         request.max_content_length = receipt_limit() + MB
 
     # Registered after the size hook on purpose: the CSRF check reads the form, and before
@@ -485,7 +505,6 @@ def create_app(overrides=None):
             # Housekeeping only: when another request holds the write lock it waits for the
             # next round instead of failing the page that happened to trigger it.
             if purge_unverified(best_effort=True) is None:
-                last_purge[0] = 0.0
                 return
             db.try_execute("DELETE FROM audit_log WHERE created_at < datetime('now', ?)",
                            (f"-{AUDIT_DAYS} days",))
@@ -504,7 +523,7 @@ def create_app(overrides=None):
                                 else "frame-ancestors 'none'")
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
-        if current_user.is_authenticated and request.endpoint != "static":
+        if request.endpoint != "static" and current_user.is_authenticated:
             resp.headers["Cache-Control"] = "private, no-store"
         return resp
 
@@ -660,6 +679,10 @@ def serializer(salt="password-reset"):
     reset link can never confirm an account and a confirmation link can never reset one."""
     from flask import current_app
     return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt=salt)
+
+
+class LinkUsed(Exception):
+    """Raised inside db.transaction() to undo it when a one time link lost a race."""
 
 
 def purge_unverified(best_effort=False):
@@ -945,11 +968,19 @@ TICKET_SORTS = {
 def clean_ticket_body(value):
     """A message as typed: line breaks kept (as \\n), other control and invisible format
     characters removed, surrounding blank space dropped."""
-    value = (value or "").replace("\r\n", "\n").replace("\r", "\n")
+    value = unicodedata.normalize("NFC", value or "").replace("\r\n", "\n").replace("\r", "\n")
     value = "".join(ch for ch in value if ch not in BLANK_LETTERS and (
         ch in "\n\t" or unicodedata.category(ch)[0] != "C" or ch in JOINERS)).strip()
-    # Only joiners and spaces left: nothing anyone could read.
-    return value if any(not ch.isspace() and ch not in JOINERS for ch in value) else ""
+    return value if visible(value) else ""  # only spaces, joiners or marks: nothing to read
+
+
+def open_ticket_cap_reached(ticket):
+    """A closed ticket of a user who already has OPEN_TICKETS_MAX open ones: writing on it
+    will not reopen it."""
+    if ticket["status"] == "open":
+        return False
+    return db.query("SELECT COUNT(*) AS n FROM tickets WHERE user_id = ? AND status = 'open'",
+                    (ticket["user_id"],), one=True)["n"] >= OPEN_TICKETS_MAX
 
 
 def ticket_limit_key():
@@ -2229,15 +2260,24 @@ def register_routes(app):
             if problem:
                 flash(problem, "error")
             else:
-                # The link came by email, so it also confirms an account still waiting for it.
-                db.execute("UPDATE users SET password_hash = ?, verified_at = COALESCE(verified_at, "
-                           "CURRENT_TIMESTAMP) WHERE id = ?",
-                           (hash_password(password), row["id"]))
-                # Proving the mailbox ends a lock from wrong guesses (by anyone) on this account.
-                db.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key = ?",
-                           (f"email:{row['email']}",))
-                # The new password already ends every session; forget their rows too.
-                db.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
+                new_hash = hash_password(password)
+                with db.transaction() as conn:
+                    # The link came by email, so it also confirms an account still waiting for
+                    # it. Only while the password is still the one the link was made for: two
+                    # submits at once (two tabs) must not both succeed.
+                    used = conn.execute(
+                        "UPDATE users SET password_hash = ?, verified_at = COALESCE(verified_at, "
+                        "CURRENT_TIMESTAMP) WHERE id = ? AND password_hash = ?",
+                        (new_hash, row["id"], row["password_hash"])).rowcount
+                    if used:
+                        # Proving the mailbox ends a lock from wrong guesses (by anyone).
+                        conn.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key = ?",
+                                     (f"email:{row['email']}",))
+                        # The new password already ends every session; forget their rows too.
+                        conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
+                if not used:
+                    flash("This reset link has already been used.", "error")
+                    return redirect(url_for("forgot"))
                 if row["verified_at"] is None:
                     # The first password of an account still waiting for confirmation: this
                     # completes the sign up, it does not change anything the owner had.
@@ -2391,23 +2431,29 @@ def register_routes(app):
         form = request.form if request.method == "POST" else {}
         if request.method == "POST":
             data, err = validate_movement(request.form, year)
-            count = db.query("SELECT COUNT(*) AS n FROM movements WHERE year_id = ?",
-                             (year_row["id"],), one=True)["n"]
-            if not err and count >= MOVEMENTS_MAX:
-                err = f"A year can hold at most {MOVEMENTS_MAX} movements."
-            if err:
-                flash(err, "error")
-            else:
+            mid = None
+            if not err:
                 try:
-                    mid = db.execute(
-                        "INSERT INTO movements (year_id, city, country, start_date, end_date, "
-                        "notes) VALUES (?, ?, ?, ?, ?, ?)",
-                        (year_row["id"], data["city"], data["country"], data["start_date"],
-                         data["end_date"], data["notes"]))
+                    # Count and insert under one write lock, so parallel posts cannot pass the
+                    # limit together.
+                    with db.transaction() as conn:
+                        count = conn.execute("SELECT COUNT(*) FROM movements WHERE year_id = ?",
+                                             (year_row["id"],)).fetchone()[0]
+                        if count >= MOVEMENTS_MAX:
+                            err = f"A year can hold at most {MOVEMENTS_MAX} movements."
+                        else:
+                            mid = conn.execute(
+                                "INSERT INTO movements (year_id, city, country, start_date, "
+                                "end_date, notes) VALUES (?, ?, ?, ?, ?, ?)",
+                                (year_row["id"], data["city"], data["country"],
+                                 data["start_date"], data["end_date"], data["notes"])).lastrowid
                 except db.IntegrityError:  # the year was deleted meanwhile (another tab)
                     flash(f"The year {year} no longer exists, so the movement was not saved.",
                           "error")
                     return redirect(url_for("index"))
+            if err:
+                flash(err, "error")
+            else:
                 err = save_upload(request.files.get("file"), request.form.get("kind"),
                                   year_row["id"], mid, required=False)
                 if err:
@@ -2707,8 +2753,16 @@ def register_routes(app):
                 # the same address (anyone can start one) gives way, as it does on sign up.
                 conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL AND NOT "
                              "EXISTS (SELECT 1 FROM years WHERE years.user_id = users.id)", (new,))
-                conn.execute("UPDATE users SET email = ?, pending_email = NULL WHERE id = ?",
-                             (new, row["id"]))
+                # The checks above hold only if nothing changed meanwhile (the same link opened
+                # twice at once, by the user and a mail scanner, would apply and alert twice).
+                if not conn.execute("UPDATE users SET email = ?, pending_email = NULL WHERE id = ? "
+                                    "AND email = ? AND pending_email = ? AND password_hash = ?",
+                                    (new, row["id"], row["email"], new,
+                                     row["password_hash"])).rowcount:
+                    raise LinkUsed
+        except LinkUsed:
+            flash("This link is no longer valid. Please ask for the email change again.", "error")
+            return redirect(url_for("settings") if current_user.is_authenticated else url_for("login"))
         except db.IntegrityError:
             flash("Another account started using this email address in the meantime.", "error")
             return redirect(url_for("settings") if current_user.is_authenticated else url_for("login"))
@@ -2998,20 +3052,29 @@ def register_routes(app):
             else:
                 wait, scope, _attempt = take_attempt("ticket", ticket_limit_key())
                 err = too_many_message(wait, scope, "new tickets") if wait else None
+            ticket_id = None
+            if not err:
+                with db.transaction() as conn:
+                    # Counted again under the write lock: parallel posts cannot pass the cap.
+                    if conn.execute("SELECT COUNT(*) FROM tickets WHERE user_id = ? AND "
+                                    "status = 'open'", (current_user.id,)).fetchone()[0] \
+                            >= OPEN_TICKETS_MAX:
+                        err = (f"You already have {OPEN_TICKETS_MAX} open tickets. Please close "
+                               "the ones that are solved first.")
+                    else:
+                        ticket_id = conn.execute("INSERT INTO tickets (user_id, kind, subject) "
+                                                 "VALUES (?, ?, ?)",
+                                                 (current_user.id, kind, subject)).lastrowid
+                        message_id = conn.execute("INSERT INTO ticket_messages (ticket_id, "
+                                                  "author_id, body) VALUES (?, ?, ?)",
+                                                  (ticket_id, current_user.id, body)).lastrowid
+                        conn.execute("UPDATE tickets SET user_seen_id = ? WHERE id = ?",
+                                     (message_id, ticket_id))
             if err:
                 flash(err, "error")
                 return render_template("support_new.html", form=form, kinds=TICKET_KINDS,
                                        subject_max=TICKET_SUBJECT_MAX,
                                        body_max=TICKET_BODY_MAX), 400
-            with db.transaction() as conn:
-                ticket_id = conn.execute("INSERT INTO tickets (user_id, kind, subject) "
-                                         "VALUES (?, ?, ?)",
-                                         (current_user.id, kind, subject)).lastrowid
-                message_id = conn.execute("INSERT INTO ticket_messages (ticket_id, author_id, "
-                                          "body) VALUES (?, ?, ?)",
-                                          (ticket_id, current_user.id, body)).lastrowid
-                conn.execute("UPDATE tickets SET user_seen_id = ? WHERE id = ?",
-                             (message_id, ticket_id))
             audit("ticket_opened", current_user.id, current_user.email, f"#{ticket_id}")
             notify_admins(ticket_id, "new", current_user.email)
             flash(f"Ticket #{ticket_id} was sent. We will answer here and email you when we do.",
@@ -3066,7 +3129,8 @@ def register_routes(app):
                 return render_template("support_ticket.html", ticket=ticket,
                                        messages=ticket_messages(ticket_id), admin_view=False,
                                        kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
-                                       draft=request.form.get("body", "")), 400
+                                       draft=request.form.get("body", ""),
+                                       at_cap=open_ticket_cap_reached(ticket)), 400
             if action == "close":
                 closed = db.execute_rowcount(
                     "UPDATE tickets SET status = 'closed', closed_at = CURRENT_TIMESTAMP, "
@@ -3085,7 +3149,7 @@ def register_routes(app):
                        (messages[-1]["id"], ticket_id))
         return render_template("support_ticket.html", ticket=ticket, messages=messages,
                                admin_view=False, kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
-                               draft="")
+                               draft="", at_cap=open_ticket_cap_reached(ticket))
 
     def admin_support_url(**values):
         # "all" is the default of the filters only: a search for the word "all" is kept.
@@ -3120,8 +3184,8 @@ def register_routes(app):
                 params.append(int(number) if int(number) < 2 ** 63 else -1)
             else:
                 # casefold (registered in db.get_db) folds every script, not only A to Z,
-                # so "élodie" finds "Élodie".
-                like = ("%" + q.casefold().replace("\\", "\\\\").replace("%", "\\%")
+                # and composes accents, so "élodie" finds "Élodie" however it was typed.
+                like = ("%" + db.search_fold(q).replace("\\", "\\\\").replace("%", "\\%")
                         .replace("_", "\\_") + "%")
                 where.append("(casefold(u.email) LIKE ? ESCAPE '\\' OR casefold(u.first_name "
                              "|| ' ' || u.last_name) LIKE ? ESCAPE '\\')")
@@ -3214,6 +3278,8 @@ def register_routes(app):
                           current_user.email)
                     notify_user(ticket, "closed")
                     flash("The ticket is closed. The user gets an email.", "success")
+                else:
+                    flash("This ticket was already closed.", "info")
             elif action == "reopen":
                 if db.execute_rowcount(
                         "UPDATE tickets SET status = 'open', closed_at = NULL, closed_by = '', "
@@ -3222,6 +3288,8 @@ def register_routes(app):
                     audit("ticket_reopened", ticket["user_id"], ticket["email"],
                           f"#{ticket_id}", current_user.email)
                     flash("The ticket is open again.", "success")
+                else:
+                    flash("This ticket is already open.", "info")
             return redirect(back)
         messages = ticket_messages(ticket_id)
         if messages and messages[-1]["id"] > ticket["admin_seen_id"]:
@@ -3291,10 +3359,16 @@ def register_routes(app):
     @app.route("/documents/<int:doc_id>/delete", methods=["POST"])
     @login_required
     def document_delete(doc_id):
-        doc = get_document_or_404(doc_id)
+        get_document_or_404(doc_id)
         if delete_confirmed():
-            db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-            remove_files([doc])
+            # List and delete together, like the year delete: the file to remove is the one the
+            # row points to at the moment it goes (zip-receipts may have replaced it meanwhile).
+            with db.transaction() as conn:
+                docs = conn.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?",
+                                    (doc_id, current_user.id)).fetchall()
+                conn.execute("DELETE FROM documents WHERE id = ? AND user_id = ?",
+                             (doc_id, current_user.id))
+            remove_files(docs)
             flash("Document deleted.", "info")
         return redirect(request.referrer or url_for("index"))
 

@@ -1,6 +1,7 @@
 """Regression tests for the bugs found in the 1.3.1 review of database calls and support pages."""
 import os
 import sqlite3
+import time
 
 import app as appmod
 from tests.helpers import AppTestCase
@@ -69,3 +70,206 @@ class DatabaseFixTests(AppTestCase):
         with appmod.zipfile.ZipFile(os.path.join(folder, row["stored_name"])) as zf:
             self.assertEqual(zf.namelist(), ["Hotel Rome.pdf"])
             self.assertEqual(row["size"], os.path.getsize(zf.filename))
+
+
+class RaceFixTests(AppTestCase):
+    """Each test runs the competing request at the exact moment between a check and its write."""
+
+    def setUp(self):
+        super().setUp()
+        self.signup()
+
+    def patch(self, obj, name, make):
+        real = getattr(obj, name)
+        setattr(obj, name, make(real))
+        self.addCleanup(setattr, obj, name, real)
+
+    def test_a_reset_link_works_once_even_when_sent_twice_at_once(self):
+        self.age_emails()
+        anon = self.app.test_client()
+        anon.post("/forgot", data={"email": "a@example.com"})
+        link = self.last_link("a@example.com", kind="reset")
+        other = self.app.test_client()
+        done = []
+
+        def make(real):
+            def hash_first(password):
+                if not done:  # the other tab submits while this one hashes
+                    done.append(None)
+                    done[0] = other.post(link, data={"password": "secondpass2",
+                                                     "confirm": "secondpass2"})
+                return real(password)
+            return hash_first
+
+        self.patch(appmod, "hash_password", make)
+        self.outbox.clear()
+        resp = anon.post(link, data={"password": "firstpass1", "confirm": "firstpass1"})
+        self.assertEqual(done[0].headers["Location"], "/login")
+        self.assertEqual(resp.headers["Location"], "/forgot")
+        self.assertEqual(len([m for m in self.outbox if "reset" in m["text"]]), 1)
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM audit_log WHERE event = "
+                                          "'password_reset'").fetchone()[0], 1)
+
+    def after_count(self, table, insert):
+        """Insert a row right after the route counted the rows of table (the old code path)."""
+        fired = []
+
+        def make(real):
+            def query(sql, *args, **kwargs):
+                rows = real(sql, *args, **kwargs)
+                if sql.startswith("SELECT COUNT(*)") and f"FROM {table} " in sql and not fired:
+                    fired.append(True)
+                    with self.db() as conn:
+                        conn.execute(insert)
+                return rows
+            return query
+        self.patch(appmod.db, "query", make)
+
+    def test_the_movement_limit_holds_under_parallel_posts(self):
+        self.new_year(2026)
+        with self.db() as conn:
+            conn.executemany("INSERT INTO movements (year_id, city, country, start_date, "
+                             "end_date) VALUES (1, 'Rome', 'Italy', '2026-01-01', '2026-01-02')",
+                             [()] * (appmod.MOVEMENTS_MAX - 1))
+        self.after_count("movements", "INSERT INTO movements (year_id, city, country, "
+                         "start_date, end_date) VALUES (1, 'Oslo', 'Norway', '2026-02-01', "
+                         "'2026-02-02')")
+        self.client.post("/year/2026/movements/new", data={
+            "city": "Paris", "country": "France", "start_date": "2026-03-01",
+            "end_date": "2026-03-02"})
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM movements").fetchone()[0],
+                             appmod.MOVEMENTS_MAX)
+
+    def test_the_open_ticket_cap_holds_under_parallel_posts(self):
+        with self.db() as conn:
+            conn.executemany("INSERT INTO tickets (user_id, subject) VALUES (1, 'x')",
+                             [()] * (appmod.OPEN_TICKETS_MAX - 1))
+        self.after_count("tickets", "INSERT INTO tickets (user_id, subject) VALUES (1, 'y')")
+        resp = self.client.post("/support/new", data={"kind": "bug", "subject": "Help",
+                                                      "body": "text"})
+        self.assertEqual(resp.status_code, 400)
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM tickets WHERE status = 'open'")
+                             .fetchone()[0], appmod.OPEN_TICKETS_MAX)
+
+    def test_deleting_a_receipt_during_zip_receipts_leaves_no_file(self):
+        self.new_year(2026)
+        folder = os.path.join(self.app.config["UPLOAD_DIR"], "1")
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "old.pdf"), "wb") as fh:
+            fh.write(b"%PDF-1.4\n" + b"x" * 500)
+        with self.db() as conn:
+            conn.execute("INSERT INTO documents (user_id, year_id, kind, original_name, "
+                         "stored_name, mime, size, format, file_size) VALUES (1, 1, 'other', "
+                         "'Rent.pdf', 'old.pdf', 'application/pdf', 509, 'pdf', 509)")
+
+        def make(real):
+            def convert_first():
+                self.app.test_cli_runner().invoke(args=["zip-receipts"])
+                return real()
+            return convert_first
+
+        self.patch(appmod, "delete_confirmed", make)
+        self.client.post("/documents/1/delete", data={"confirm_delete": "2"})
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0], 0)
+        self.assertEqual(os.listdir(folder), [])
+
+    def test_an_email_change_link_opened_twice_at_once_applies_once(self):
+        self.age_emails()
+        self.client.post("/settings", data={"action": "email", "email": "new@example.com",
+                                            "current_password": "password1"})
+        link = self.last_link("new@example.com", kind="account/email")
+        scanner = self.app.test_client()
+        opened = []
+
+        def make(real):
+            def open_first():
+                if not opened:  # a mail scanner opens the same link at the same moment
+                    opened.append(None)
+                    opened[0] = scanner.get(link)
+                return real()
+            return open_first
+
+        self.patch(appmod.db, "transaction", make)
+        self.outbox.clear()
+        self.client.get(link)
+        self.assertEqual(len([m for m in self.outbox if m["to"] == "a@example.com"]), 1)
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM audit_log WHERE event = "
+                                          "'email_changed'").fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT email FROM users").fetchone()[0],
+                             "new@example.com")
+
+
+class BusyStampTests(AppTestCase):
+    def test_a_skipped_stamp_is_not_retried_on_every_page(self):
+        self.signup()
+        self.client.get("/plan")  # housekeeping done for this minute
+        with self.db() as conn:
+            conn.execute("UPDATE user_sessions SET last_seen_at = datetime('now', '-2 hours')")
+        conn = sqlite3.connect(self.app.config["DATABASE_PATH"], timeout=0)
+        self.addCleanup(conn.close)
+        conn.execute("BEGIN IMMEDIATE")
+        self.assertEqual(self.client.get("/plan").status_code, 200)  # waits once, then skips
+        started = time.monotonic()
+        self.assertEqual(self.client.get("/plan").status_code, 200)
+        self.assertEqual(self.client.get("/static/css/style.css").status_code, 200)
+        self.assertLess(time.monotonic() - started, 2)
+
+
+class SupportUiFixTests(AppTestCase):
+    def setUp(self):
+        super().setUp()
+        self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
+        self.signup()
+        self.admin = self.signup("admin@example.com", client=self.app.test_client())
+
+    def open_ticket(self, subject="Help", body="Please help"):
+        return self.client.post("/support/new", data={"kind": "bug", "subject": subject,
+                                                      "body": body})
+
+    def test_text_made_only_of_invisible_marks_is_refused(self):
+        for mark in ("͏", "️", "឴", "\U000e0100", "́́"):
+            self.assertEqual(self.open_ticket(subject=mark).status_code, 400, repr(mark))
+            self.assertEqual(self.open_ticket(body=mark).status_code, 400, repr(mark))
+        self.assertEqual(self.open_ticket(subject="👍️").status_code, 302)  # emoji stay
+
+    def test_names_typed_decomposed_are_found(self):
+        self.client.post("/settings", data={"action": "profile", "first_name": "Élodie",
+                                            "last_name": "Martin"})
+        self.open_ticket()
+        for q in ("Élodie", "élodie", "Élodie"):
+            html = self.admin.get("/admin/support", query_string={"q": q}).get_data(as_text=True)
+            self.assertIn("/admin/support/1", html, repr(q))
+
+    def test_closed_ticket_at_the_cap_does_not_promise_to_reopen(self):
+        self.open_ticket()
+        self.client.post("/support/1", data={"action": "close"})
+        html = self.client.get("/support/1").get_data(as_text=True)
+        self.assertIn("Writing a message opens it again.", html)
+        with self.db() as conn:
+            conn.executemany("INSERT INTO tickets (user_id, subject) VALUES (1, 'x')",
+                             [()] * appmod.OPEN_TICKETS_MAX)
+        html = self.client.get("/support/1").get_data(as_text=True)
+        self.assertNotIn("Writing a message opens it again.", html)
+        self.assertIn("writing here keeps it closed", html)
+
+    def test_admin_is_told_when_a_close_or_reopen_changed_nothing(self):
+        self.open_ticket()
+        self.client.post("/support/1", data={"action": "close"})
+        html = self.admin.post("/admin/support/1", data={"action": "close"},
+                               follow_redirects=True).get_data(as_text=True)
+        self.assertIn("This ticket was already closed.", html)
+        self.admin.post("/admin/support/1", data={"action": "reopen"})
+        html = self.admin.post("/admin/support/1", data={"action": "reopen"},
+                               follow_redirects=True).get_data(as_text=True)
+        self.assertIn("This ticket is already open.", html)
+
+    def test_long_subjects_and_emails_wrap_in_the_admin_table(self):
+        css = open(os.path.join(appmod.BASE_DIR, "static", "css", "style.css"),
+                   encoding="utf-8").read()
+        self.assertIn(".support-table td:nth-child(3), .support-table td:nth-child(4) "
+                      "{ overflow-wrap: anywhere; }", css)

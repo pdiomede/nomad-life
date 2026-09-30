@@ -1,6 +1,7 @@
 """SQLite storage for Nomad Life."""
 import os
 import sqlite3
+import unicodedata
 from contextlib import contextmanager
 
 from flask import current_app, g
@@ -141,6 +142,12 @@ CREATE INDEX IF NOT EXISTS idx_documents_movement ON documents(movement_id);
 """
 
 
+def search_fold(text):
+    """Lower case in every script, composed (NFC) before and after, so "Élodie" typed as one
+    character or as E plus an accent (common when pasted from a Mac) finds the other."""
+    return unicodedata.normalize("NFC", unicodedata.normalize("NFC", text).casefold())
+
+
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(current_app.config["DATABASE_PATH"])
@@ -148,7 +155,7 @@ def get_db():
         g.db.execute("PRAGMA foreign_keys = ON")
         # Unicode aware lower case for searches (SQLite's lower() only knows A to Z).
         g.db.create_function("casefold", 1,
-                             lambda v: v.casefold() if isinstance(v, str) else v,
+                             lambda v: search_fold(v) if isinstance(v, str) else v,
                              deterministic=True)
     return g.db
 

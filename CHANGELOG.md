@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.1] - 2026-09-30
+
+### Fixed
+
+Database calls:
+
+- A page view failed with an error after 10 seconds while another request was writing (for example renaming a large receipt): every page updated the session's "last seen" time and ran the minute cleanup, which both need the write lock. Both are now skipped when the database is busy, retried a minute later, and static files no longer load the user at all.
+- Renaming a receipt held the database write lock while rewriting its ZIP (about a second for a 50 MB receipt), stalling every other request. The ZIP is rewritten first and swapped in under the lock.
+- A password reset link submitted twice at once (two tabs) succeeded twice: both were told the password was set, only one worked, and the owner got two alerts.
+- An email change link opened twice at once (the user and a mail scanner) applied twice, with two alerts and two undo links.
+- Parallel requests could pass the 1000 stays per year limit and the 20 open tickets limit, since the count ran outside the write lock.
+- Deleting a receipt while `flask zip-receipts` converted it left the deleted receipt's ZIP on disk for good.
+
+Support pages:
+
+- A subject or message made only of invisible marks (such as U+034F or a lone variation selector) was accepted, leaving a blank ticket whose admin link could not be clicked.
+- The admin search did not find a name typed with a separate accent (as pasted from a Mac); names and messages are now stored composed, and the search compares both forms.
+- A closed ticket said "Writing a message opens it again" even when the user was at the open ticket limit, where writing keeps it closed.
+- An admin closing a ticket already closed (or reopening one already open) got no message at all.
+- One long subject or email without spaces pushed the status and date columns of the admin table off screen.
+
 ## [1.3.0] - 2026-09-30
 
 ### Added
