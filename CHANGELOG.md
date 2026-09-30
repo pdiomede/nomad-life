@@ -16,7 +16,9 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - The support button in the header is a chat bubble instead of a question mark. It glows slowly until the support pages have been opened once in this browser, and again whenever a ticket has a new reply. It stays still for people who ask their system for reduced motion.
-- Every "Back to ..." link (your tickets, all tickets, admin, accounts, your dashboard, my years, a year) is a rounded button, easier to see.
+- The ticket conversation is a chat with iMessage style bubbles: your messages on the right, the other side's on the left, the user's always blue and support's always purple (white text, at least 5:1 contrast in both themes), with a tail on the last bubble of a group. Messages of one side within 10 minutes are grouped, with the sender and time once under the group, and each day starts with its date. A legend names the two colors. Screen readers still hear the sender and time of every message.
+- Every "Back to ..." link (your tickets, all tickets, admin, accounts, your dashboard, my years, a year) is a rounded button in the inverted colors of the page (dark on the light theme, light on the dark theme), easier to see.
+- `scripts/backup.py` explains how to create the backup folder when it cannot write there (for example `/var/backups/nomad-life` not made yet), instead of stopping with a Python error.
 - "Close ticket, my problem is solved" (and the admin's "Close ticket") is a red button.
 - The account menu shows an icon next to each item: Settings, Support, Admin, Support tickets and Sign out. The icons are drawn in CSS and follow the theme.
 - The "Finish setting up your account" email (signing up again for an address waiting for confirmation) has a **Confirm my Account** button.

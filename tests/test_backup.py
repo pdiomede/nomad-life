@@ -121,6 +121,19 @@ class BackupTests(unittest.TestCase):
         self.assertFalse(os.path.exists(self.db))
         self.assertEqual(self.archives() if os.path.isdir(self.dest) else [], [])
 
+    @unittest.skipIf(os.geteuid() == 0, "root can write anywhere")
+    def test_a_folder_it_cannot_write_says_how_to_make_it(self):
+        locked = os.path.join(os.path.dirname(self.dest), "locked")
+        os.mkdir(locked, 0o500)
+        try:
+            self.dest = os.path.join(locked, "nomad-life")
+            code, out = self.run_backup()
+        finally:
+            os.chmod(locked, 0o700)
+        self.assertEqual(code, 1)
+        self.assertIn("cannot write to", out)
+        self.assertIn("sudo install -d", out)
+
     def test_receipt_removed_while_running_is_skipped(self):
         real_walk = os.walk
 

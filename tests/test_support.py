@@ -66,7 +66,7 @@ class UserTicketTests(SupportBase):
         self.assertIn("Report a bug", html)
         self.assertIn(">Open<", html)
         ticket_page = self.client.get(f"/support/{ref(1)}").get_data(as_text=True)
-        self.assertIn('<div class="message-body" dir="auto">Line 1\nLine 2</div>', ticket_page)
+        self.assertIn('<div class="bubble" dir="auto">Line 1\nLine 2</div>', ticket_page)
 
     def test_validation(self):
         cases = [({"kind": "spam", "subject": "a", "body": "b"}, "choose what the ticket"),

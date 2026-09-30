@@ -19,7 +19,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Upload receipts per movement (hotel or home rent, flight tickets) and documents for the base (rental contract).
 - Account page: change your password or email, or delete your account with all its data.
 - Protection against password guessing: failed sign ins and reset requests are limited.
-- Admin page for the operator: accounts, storage, per account quotas, disable or delete accounts.
+- Admin page for the operator: an accounts table with search and sorting, and a page per account to change its plan or quota, disable or delete it.
 - Support tickets: the chat bubble in the header (or "Support" in the menu) opens your tickets; write to support and follow the conversation (see [Support](#support)).
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
 - Plans: Free, Pro ($4 a month or $40 a year) and Nomad+ ($9 a month or $90 a year), each with its own storage and receipt limits. The menu under your email in the header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
@@ -27,6 +27,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Days per country for the year, with a 183 day indicator. Days without a stay count toward the base country once they have passed; logged stays count in full, also future ones.
 - Light and dark mode, inspired by the Aave color palette.
 - Everything stored locally: SQLite database in `data/`, files in `uploads/`.
+- "Contact Us" in the footer of every page writes to info@nomadlife.pro (`CONTACT_EMAIL` in `app.py`).
 
 ## Quick start
 
@@ -103,14 +104,19 @@ To run Nomad Life on a server (Ubuntu, gunicorn, nginx, HTTPS, backups), follow 
 
 Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their email, and in the footer) to `/admin`, which shows:
 
-- Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements.
-- Every account with its plan, sign up date, last sign in, number of years and storage used.
-- A storage quota per account (in MB; leave it empty for the quota of the account's plan).
-- The plan of each account (Free, Pro or Nomad+).
+- Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements (always for every account, also while searching).
 - The monthly and yearly price of Pro and Nomad+ ("Plans and prices"). Leave both fields empty to go back to the default prices in `PLANS`.
-- Disable or enable an account. Disabling signs it out everywhere and blocks sign in.
-- Delete an account with all its years, movements and receipts. It asks twice and needs the email typed.
+- The accounts table, 10 per page: account (name, email, and flags such as Admin, Two-factor on, Disabled, Email not confirmed, Over quota), plan, joined, last sign in, years and storage used. Search by part of an email or a name, and sort by account, joined, last sign in, years or storage.
 - Security activity: the last 100 events (sign ins, failed sign ins, password, email and two-factor changes, admin actions with the admin who made them), filterable by account email. Events are kept for 365 days.
+
+**View** (or the email in the table) opens the account's own page, `/admin/users/<id>`:
+
+- Details: joined, email confirmed, last sign in, two-factor, signed in devices, years, movements, receipts, storage, and its support tickets (linked).
+- The plan (Free, Pro or Nomad+) and a storage quota in MB (empty means the quota of the plan).
+- Disable or enable the account (disabling signs it out everywhere and blocks sign in), or delete it with all its years, movements and receipts (it asks twice and needs the email typed).
+- The account's recent security activity.
+
+**Back to accounts** returns to the same search, sort and page, also after saving.
 
 Admins also get **Support tickets** in the menu (`/admin/support`), see [Support](#support).
 
@@ -122,7 +128,7 @@ Signed in users get a chat bubble in the header ("Contact support") and a **Supp
 
 - The list of your tickets with their status (Open or Closed), opened, last updated and closed dates, filterable by status. A dot on the chat bubble and a count in the menu show tickets with a reply you have not read.
 - **Submit a ticket** opens a form with a type (Report a bug, Feature request, General question), a subject (up to 150 characters) and a description (up to 5000). You can have up to 20 open tickets, and open at most 5 tickets and write 30 messages every 15 minutes.
-- Each ticket is a conversation between you and support. You can close it, and writing on a closed ticket reopens it.
+- Each ticket is a conversation between you and support, shown as a chat: your messages on the right in blue, support's on the left in purple (in the admin view support is on the right, the colors stay), grouped when they follow each other within 10 minutes, with the day above. You can close it, and writing on a closed ticket reopens it.
 
 Admins open **Support tickets** in the menu (`/admin/support`): every ticket with its number, type, subject, user, status, opened, last updated and closed dates and number of messages. Filter by status and type, search by email, name or ticket number (`2026-3`), and sort by any column. Tickets are numbered per year: `2026-1`, `2026-2`, then `2027-1` from January. On a ticket an admin can answer, close, reopen, or reopen and answer at once. Times are shown in UTC.
 

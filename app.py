@@ -558,6 +558,7 @@ def create_app(overrides=None):
     app.add_template_filter(local_datetime, "localdatetime")
     app.add_template_filter(utc_datetime, "utcdatetime")
     app.add_template_filter(ticket_ref, "ticket_ref")
+    app.add_template_global(chat_rows, "chat_rows")
     app.add_template_filter(country_flag, "flag")
 
     @app.errorhandler(413)
@@ -1039,6 +1040,35 @@ def notify_user(ticket, event):
                                event=event, link=email_link("support_ticket",
                                                             **ticket_args(ticket))):
         current_app.logger.error("Could not email %s about ticket %s", owner["email"], ref)
+
+
+CHAT_GROUP_SECONDS = 600  # messages of one side closer than this share a bubble group
+
+
+def chat_rows(messages, admin_view, owner_name=""):
+    """Messages of a ticket laid out as a chat: whose side (mine: support in the admin view, the
+    user otherwise), the sender, and where a bubble group or a day (UTC) starts and ends."""
+    rows = []
+    for m in messages:
+        at = datetime.strptime(m["created_at"][:19], "%Y-%m-%d %H:%M:%S")
+        party = "support" if m["from_admin"] else "user"
+        if party == "support":
+            sender = "Nomad Life support"
+        else:
+            sender = (owner_name or "User") if admin_view else "You"
+        rows.append({"id": m["id"], "body": m["body"], "created_at": m["created_at"],
+                     "party": party, "mine": bool(m["from_admin"]) == bool(admin_view),
+                     "sender": sender, "at": at, "time": at.strftime("%H:%M"),
+                     "day": at.date(), "day_label": f"{at.day} {at:%b %Y}"})
+    for i, row in enumerate(rows):
+        prev = rows[i - 1] if i else None
+        nxt = rows[i + 1] if i + 1 < len(rows) else None
+        row["new_day"] = prev is None or prev["day"] != row["day"]
+        row["group_start"] = row["new_day"] or prev["party"] != row["party"] or \
+            (row["at"] - prev["at"]).total_seconds() > CHAT_GROUP_SECONDS
+        row["group_end"] = nxt is None or nxt["day"] != row["day"] or nxt["party"] != row["party"] \
+            or (nxt["at"] - row["at"]).total_seconds() > CHAT_GROUP_SECONDS
+    return rows
 
 
 def ticket_messages(ticket_id):

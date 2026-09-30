@@ -27,6 +27,9 @@
   --error: #F25A5A;
   --error-bg: #FBEAEA;
   --info: #0062D2;
+  /* Ticket chat: the user's bubbles and support's, white text on both (at least 5:1). */
+  --bubble-user: #0062D2;
+  --bubble-support: #A13A8C;
   --info-bg: #E5EFFB;
   /* Text colors that meet WCAG AA (4.5:1) on this theme's surfaces */
   --link: #A13A8C;
@@ -60,6 +63,8 @@
   --warning: #F2A43A;
   --error-bg: rgba(242, 90, 90, 0.14);
   --info: #6DB7FF;
+  --bubble-user: #0A6ED1;
+  --bubble-support: #9C3F89;
   --info-bg: rgba(109, 183, 255, 0.10);
   --link: #E58FD1;
   --success-text: #6BD26F;
@@ -91,6 +96,8 @@
     --warning: #F2A43A;
     --error-bg: rgba(242, 90, 90, 0.14);
     --info: #6DB7FF;
+    --bubble-user: #0A6ED1;
+    --bubble-support: #9C3F89;
     --info-bg: rgba(109, 183, 255, 0.10);
     --link: #E58FD1;
     --success-text: #6BD26F;
@@ -181,10 +188,10 @@ p { margin: 0; }
 /* "Back to ..." links look like a rounded button, so they are easy to find. */
 .back {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%; margin-bottom: 14px; padding: 6px 14px;
-  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--primary); border-radius: 999px; background: var(--primary); color: var(--primary-text);
   font-size: 14px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere;
 }
-.back:hover { background: var(--surface-2); text-decoration: none; }
+.back:hover { filter: brightness(0.9); text-decoration: none; }  /* darken, never fade */
 .back:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 
 /* Cards */
@@ -711,12 +718,37 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .ticket-main p { margin: 4px 0 0; }
 .ticket-subject { font-weight: 600; overflow-wrap: anywhere; }
 .ticket-state { display: flex; flex-wrap: wrap; gap: 6px; }
-.messages { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.message { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); max-width: 92%; }
-.message-user { justify-self: end; background: var(--surface-2); }
-.message-support { justify-self: start; border-color: var(--link); }
-.message-meta { margin: 0 0 6px; }
-.message-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+/* Ticket conversation as a chat: your messages on the right, the other side on the left; the
+   user's bubbles blue and support's purple in both views. Consecutive messages of one side
+   form a group (chat_rows in app.py): the sender, the time and the tail only on its last one. */
+.chat-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 14px; color: var(--muted); }
+.chat-key { display: inline-flex; align-items: center; gap: 6px; }
+.chat-key::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--bubble-user); }
+.chat-key.from-support::before { background: var(--bubble-support); }
+.chat { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.chat-day { align-self: center; margin: 10px 0 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.chat-day:first-child { margin-top: 0; }
+.chat-row { display: flex; flex-direction: column; max-width: 75%; min-width: 0; }
+.chat-row.is-mine { align-self: flex-end; align-items: flex-end; }
+.chat-row.is-theirs { align-self: flex-start; align-items: flex-start; }
+.chat-row.group-end { margin-bottom: 10px; }
+.chat-row.group-end:last-child { margin-bottom: 0; }
+.bubble {
+  position: relative; max-width: 100%; padding: 8px 14px; border: 1px solid transparent; border-radius: 18px;
+  color: #FFFFFF; font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.from-user .bubble { background: var(--bubble-user); }
+.from-support .bubble { background: var(--bubble-support); }
+.bubble::selection { background: rgba(255, 255, 255, 0.35); }
+/* The tail: a curve in the bubble's color, cut out by a curve in the card's color. */
+.group-end .bubble::before, .group-end .bubble::after { content: ""; position: absolute; bottom: -1px; height: 18px; }
+.group-end.is-mine .bubble::before { right: -7px; width: 18px; background: inherit; border-bottom-left-radius: 16px 14px; }
+.group-end.is-mine .bubble::after { right: -12px; width: 12px; background: var(--surface); border-bottom-left-radius: 10px; }
+.group-end.is-theirs .bubble::before { left: -7px; width: 18px; background: inherit; border-bottom-right-radius: 16px 14px; }
+.group-end.is-theirs .bubble::after { left: -12px; width: 12px; background: var(--surface); border-bottom-right-radius: 10px; }
+.bubble-meta { margin: 4px 6px 0; color: var(--muted); }
+@media (max-width: 600px) { .chat-row { max-width: 88%; } }
+@media (forced-colors: active) { .group-end .bubble::before, .group-end .bubble::after { display: none; } }
 .ticket-close { margin-top: 14px; }
 .support-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; margin-bottom: 14px; }
 .support-filters .field { min-width: 130px; }

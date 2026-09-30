@@ -23,11 +23,17 @@
 
   <section class="card" aria-labelledby="conversation-title">
     <h2 id="conversation-title" class="visually-hidden">Conversation</h2>
-    <ol class="messages">
-      {% for m in messages %}
-      <li class="message {{ 'message-support' if m.from_admin else 'message-user' }}">
-        <p class="message-meta small"><strong>{% if m.from_admin %}Nomad Life support{% elif admin_view %}User{% else %}You{% endif %}</strong> <span class="muted">{{ m.created_at | utcdatetime }}</span></p>
-        <div class="message-body" dir="auto">{{ m.body }}</div>
+    <p class="chat-legend small">
+      <span class="chat-key from-user">{{ (owner_name or 'User') if admin_view else 'You' }}</span>
+      <span class="chat-key from-support">Nomad Life support{% if admin_view %} (you){% endif %}</span>
+    </p>
+    <ol class="chat">
+      {% for m in chat_rows(messages, admin_view, owner_name or '') %}
+      {% if m.new_day %}<li class="chat-day" aria-hidden="true">{{ m.day_label }}</li>{% endif %}
+      <li class="chat-row from-{{ m.party }} {{ 'is-mine' if m.mine else 'is-theirs' }}{% if m.group_end %} group-end{% endif %}">
+        <span class="visually-hidden">{{ m.sender }}, {{ m.created_at | utcdatetime }}:</span>
+        <div class="bubble" dir="auto">{{ m.body }}</div>
+        {% if m.group_end %}<p class="bubble-meta small" aria-hidden="true"><span dir="auto">{{ m.sender }}</span> &middot; {{ m.time }} UTC</p>{% endif %}
       </li>
       {% endfor %}
     </ol>

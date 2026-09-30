@@ -140,7 +140,15 @@ def main(argv=None):
         return 1
 
     dest = os.path.abspath(os.path.expanduser(args.dest))
-    os.makedirs(dest, exist_ok=True)
+    try:
+        os.makedirs(dest, exist_ok=True)
+        if not os.access(dest, os.W_OK | os.X_OK):
+            raise PermissionError
+    except PermissionError:
+        # /var/backups belongs to root: the folder is made once, owned by the app's user.
+        print(f"backup: cannot write to {dest}. Create it once for this user, for example:\n"
+              f"  sudo install -d -o $(id -un) -g $(id -gn) -m 700 {dest}", file=sys.stderr)
+        return 1
     stale = remove_stale_partials(dest)
     name = f"nomadlife-{time.strftime('%Y-%m-%d_%H%M%S')}.tar.gz"
     fd, partial = tempfile.mkstemp(dir=dest, prefix=".nomadlife-", suffix=".partial")
