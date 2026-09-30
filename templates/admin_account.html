@@ -1,11 +1,7 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui with context %}
 {% block title %}{{ u.email }} | Admin | Nomad Life{% endblock %}
-{% macro list_state() %}
-  {% for key in ('search', 'sort', 'dir', 'page') %}
-    {% if state[key] and state[key] != {'sort': 'joined', 'dir': 'desc', 'page': 1}.get(key) %}<input type="hidden" name="{{ key }}" value="{{ state[key] }}">{% endif %}
-  {% endfor %}
-{% endmacro %}
+{% macro list_state() %}{% for k, v in admin_hidden(state) %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endmacro %}
 {% block content %}
 <a class="back" href="{{ back }}#accounts">&larr; Back to accounts</a>
 <div class="page-head">
@@ -105,14 +101,7 @@
     <a class="small" href="{{ history }}">Full history</a>
   </div>
   {% if activity %}
-  <ul class="activity-list">
-    {% for e in activity %}
-    <li>
-      <span>{{ e.label }}{% if e.detail %} <span class="muted small">({{ e.detail }})</span>{% endif %}{% if e.actor %} <span class="muted small">by {{ e.actor }}</span>{% endif %}</span>
-      <span class="muted small">{{ e.email }}{% if e.email %} &middot; {% endif %}{{ e.created_at }} UTC{% if e.ip %} &middot; {{ e.ip }}{% endif %}</span>
-    </li>
-    {% endfor %}
-  </ul>
+  {{ ui.activity_table(activity, 'Recent security activity of ' ~ u.email ~ ', newest first') }}
   {% else %}
   <p class="muted small">No events yet.</p>
   {% endif %}

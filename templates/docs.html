@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+{% block title %}Documentation | Nomad Life{% endblock %}
+{% block description %}How to use Nomad Life: set up a year and your base, log your stays, see how days are counted toward the 183 day line, keep receipts and download the accountant package.{% endblock %}
+{% block robots %}index, follow, max-image-preview:large{% endblock %}
+{% block og_url %}{{ docs_url }}{% endblock %}
+{% block head_extra %}
+  <link rel="canonical" href="{{ docs_url }}">
+{% endblock %}
+
+{# A screenshot in the light and the dark theme; the page shows the one of the current theme.
+   Made by scripts/docs_screenshots.py, sizes from static/img/docs/shots.json. #}
+{% macro shot(name, alt, caption=None) %}
+{% set size = shots.get(name, [1200, 800]) %}
+<figure class="doc-figure">
+  <img class="doc-shot doc-shot-light" src="{{ url_for('static', filename='img/docs/' ~ name ~ '-light.webp') }}" width="{{ size[0] }}" height="{{ size[1] }}" alt="{{ alt }}" loading="lazy" decoding="async">
+  <img class="doc-shot doc-shot-dark" src="{{ url_for('static', filename='img/docs/' ~ name ~ '-dark.webp') }}" width="{{ size[0] }}" height="{{ size[1] }}" alt="{{ alt }}" loading="lazy" decoding="async">
+  {% if caption %}<figcaption>{{ caption }}</figcaption>{% endif %}
+</figure>
+{% endmacro %}
+
+{% macro kinds() %}{% for label in document_kinds.values() %}<strong>{{ label }}</strong>{{ ', ' if not loop.last and loop.revindex > 2 else (' or ' if not loop.last else '') }}{% endfor %}{% endmacro %}
+
+{% block content %}
+<div class="docs">
+  <div class="docs-head">
+    <div>
+      <p class="eyebrow">Documentation</p>
+      <h1>How to use Nomad Life</h1>
+      <p class="muted docs-lead">Track the days you spend in each country, keep the receipts that prove it, and hand your accountant one package.</p>
+    </div>
+    <div class="docs-search" role="search" data-docs-search hidden>
+      <label for="docs-q" class="visually-hidden">Search the documentation</label>
+      <svg class="docs-search-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M13 13l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="docs-q" type="search" placeholder="Search the documentation" autocomplete="off" spellcheck="false"
+             role="combobox" aria-expanded="false" aria-controls="docs-results" aria-autocomplete="list" aria-describedby="docs-q-hint">
+      <kbd class="docs-kbd" id="docs-q-hint" aria-label="Press slash to search">/</kbd>
+      <ul class="docs-results" id="docs-results" role="listbox" aria-label="Search results" hidden></ul>
+      <p class="visually-hidden" aria-live="polite" data-docs-status></p>
+    </div>
+  </div>
+
+  <div class="docs-layout">
+    <nav class="docs-toc" aria-label="Documentation contents" data-docs-toc>
+      <button class="btn btn-ghost btn-sm docs-toc-toggle" type="button" aria-expanded="false" aria-controls="docs-toc-list" hidden>Contents</button>
+      <ol class="docs-toc-list" id="docs-toc-list">
+        {% for id, title, subs in toc %}
+        <li>
+          <a href="#{{ id }}">{{ title }}</a>
+          {% if subs %}
+          <ol>
+            {% for sub_id, sub_title in subs %}<li><a href="#{{ sub_id }}">{{ sub_title }}</a></li>{% endfor %}
+          </ol>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </nav>
+
+    <article class="docs-body">
+
+      <section id="getting-started" class="doc-section" data-doc-title="Getting started">
+        <h2>Getting started</h2>
+        <section id="sign-up" class="doc-sub" data-doc-title="Create your account">
+          <h3>Create your account</h3>
+          <ol class="doc-flow" aria-label="Sign up in four steps">
+            <li><span class="doc-flow-n" aria-hidden="true">1</span> <span>Press <strong>Launch app</strong>, then <strong>Create an account</strong> (or <strong>Start free</strong> under Plans on the home page).</span></li>
+            <li><span class="doc-flow-n" aria-hidden="true">2</span> <span>Type your email and a password of at least 8 characters.</span></li>
+            <li><span class="doc-flow-n" aria-hidden="true">3</span> <span>Open the email we send and press <strong>Confirm my account</strong> on the page it opens.</span></li>
+            <li><span class="doc-flow-n" aria-hidden="true">4</span> <span>Sign in.</span></li>
+          </ol>
+          <p>Confirm within <strong>{{ verify_minutes }} minutes</strong>. After that the unconfirmed account is removed and you can simply sign up again.</p>
+          <p class="doc-note">Opening the link alone does nothing: you must press the button. This stops company mail scanners, which open every link, from confirming accounts nobody asked for.</p>
+        </section>
+        <section id="sign-in" class="doc-sub" data-doc-title="Sign in and passwords">
+          <h3>Sign in and passwords</h3>
+          <ul>
+            <li><strong>Remember me</strong> keeps this browser signed in for {{ remember_days }} days.</li>
+            <li><strong>Forgot password?</strong> on the sign in page emails you a link to choose a new one. It works for {{ reset_minutes }} minutes. Setting the new password signs out every device; then sign in with it.</li>
+            <li>After {{ fail_limit }} wrong passwords in {{ limit_minutes }} minutes, signing in pauses and the page says how many minutes to wait. A browser you signed in with before has its own count, so strangers guessing your password cannot lock you out there.</li>
+            <li>New passwords that appear in known data breaches are refused.</li>
+          </ul>
+        </section>
+      </section>
+
+      <section id="years" class="doc-section" data-doc-title="Years and your base">
+        <h2>Years and your base</h2>
+        <p>Nomad Life counts in <strong>solar years</strong>, 1 January to 31 December. Each year is its own workspace with a <strong>base</strong>: the city and country you live in, usually where you pay tax.</p>
+        <section id="create-year" class="doc-sub" data-doc-title="Create a year">
+          <h3>Create a year</h3>
+          <p>Your first sign in opens <strong>Set up your year</strong>. Later years start from the <strong>+ Year</strong> tab on the dashboard.</p>
+          {{ shot('year-new', 'The Set up your year form with Year 2027, Base country Portugal and Base city Lisbon filled in', 'Example: 2027 with the base in Lisbon, Portugal.') }}
+          <p>You can have one workspace per year. The tabs next to <strong>+ Year</strong> switch between them.</p>
+        </section>
+        <section id="base" class="doc-sub" data-doc-title="Change your base or delete a year">
+          <h3>Change your base or delete a year</h3>
+          <p>On the dashboard, <strong>Manage base and contract</strong> (on the Base card) lets you change the base city and country, upload your rental contract, or delete the year. Deleting a year removes its movements and receipts and asks you to type the year to confirm.</p>
+        </section>
+      </section>
+
+      <section id="movements" class="doc-section" data-doc-title="Movements">
+        <h2>Movements</h2>
+        <p>A <strong>movement</strong> is a stay away from your base: a trip, a month in another city, a flight day. Log each one with its country, city and dates.</p>
+        <section id="add-movement" class="doc-sub" data-doc-title="Add a movement">
+          <h3>Add a movement</h3>
+          {{ shot('movement-new', 'The New movement form: after typing "ita" in Country, the list offers Italy, Mauritania and United Kingdom; numbered markers point at Country, the To date and the Add movement button', '1 Pick the country, 2 set the dates, 3 press Add movement. A receipt can be attached right away.') }}
+          <ul>
+            <li>Press <strong>+ Add movement</strong> on the dashboard.</li>
+            <li><strong>Both dates count.</strong> From 1 March to 3 March is 3 days.</li>
+            <li>The dates must fall inside the year. A trip over New Year is two movements: 28 to 31 December in one year, 1 to 5 January in the next.</li>
+            <li>Notes are optional, up to {{ '{:,}'.format(notes_max) }} characters, and only you see them (the accountant package leaves them out unless you ask).</li>
+          </ul>
+        </section>
+        <section id="country-picker" class="doc-sub" data-doc-title="The country picker">
+          <h3>The country picker</h3>
+          <p>Type part of a name, a two letter code or a common name: <kbd>ita</kbd> finds Italy, <kbd>JP</kbd> finds Japan, <kbd>Holland</kbd> finds Netherlands. Accents do not matter. Use the arrow keys and <kbd>Enter</kbd>, or tap a country.</p>
+          <p>A place that is not in the list can be typed as it is. It is counted as its own country and listed under the map.</p>
+        </section>
+        <section id="edit-movement" class="doc-sub" data-doc-title="Edit or delete a movement">
+          <h3>Edit or delete a movement</h3>
+          <p>Press the city in the Movements table, or <strong>Edit</strong>. <strong>Delete</strong> removes the movement and its receipts after two confirmations.</p>
+          {{ shot('delete-dialog', 'The delete confirmation dialog on step 2 of 2: "Are you sure? This permanently deletes the movement to Madrid and its 2 receipt(s)." with Cancel and Yes, delete permanently', 'Every delete asks twice. The second step says what will be removed.') }}
+          <p>Limits: city and country up to {{ place_max }} characters, and up to {{ '{:,}'.format(movements_max) }} movements a year.</p>
+        </section>
+      </section>
+
+      <section id="counting" class="doc-section" data-doc-title="How days are counted">
+        <h2>How days are counted</h2>
+        <p>Every day of the year goes to one country at most. Four rules decide which one:</p>
+        <ol class="doc-rules">
+          <li><strong>Movements count in full</strong>, planned future ones too.</li>
+          <li><strong>Days without a movement count for your base</strong>, but only once they have passed (today included). Empty future days count nowhere yet.</li>
+          <li><strong>A day in two movements</strong> (an overlap), such as a travel day, counts for the one that <strong>started later</strong>. If both start the same day, the shorter one wins; with identical dates, the newest.</li>
+          <li><strong>A movement inside your base country</strong> counts for the base country.</li>
+        </ol>
+
+        <section id="counting-example" class="doc-sub" data-doc-title="A worked example">
+          <h3>A worked example</h3>
+          <p>Base Lisbon, Portugal. Today is 10 March. Spain from 3 to 6 March, Italy from 6 to 8 March, and a trip to Thailand planned for 13 and 14 March.</p>
+          <figure class="doc-figure doc-diagram">
+            <svg viewBox="0 0 720 214" role="img" aria-labelledby="timeline-title timeline-desc" class="doc-timeline">
+              <title id="timeline-title">How 14 days of March are counted</title>
+              <desc id="timeline-desc">Days 1 and 2 count for Portugal, the base. Spain covers days 3 to 6 and Italy days 6 to 8; day 6 goes to Italy, which started later. Days 9 and 10 count for Portugal. Days 11 and 12 are in the future without a movement and count nowhere yet. Thailand, days 13 and 14, counts because it is planned.</desc>
+              {% set cells = ['base', 'base', 'es', 'es', 'es', 'it', 'it', 'it', 'base', 'base', 'none', 'none', 'th', 'th'] %}
+              {% set x0, w = 22, 48 %}
+              {# Movement bars #}
+              <g class="tl-bars">
+                <rect class="tl-stay" x="{{ x0 + 2 * w + 3 }}" y="14" width="{{ 4 * w - 6 }}" height="22" rx="6"/>
+                <text class="tl-bar-label" x="{{ x0 + 2 * w + 12 }}" y="29">Spain, 3 to 6</text>
+                <rect class="tl-stay tl-stay-2" x="{{ x0 + 5 * w + 3 }}" y="42" width="{{ 3 * w - 6 }}" height="22" rx="6"/>
+                <text class="tl-bar-label" x="{{ x0 + 5 * w + 12 }}" y="57">Italy, 6 to 8</text>
+                <rect class="tl-stay tl-stay-3" x="{{ x0 + 12 * w + 3 }}" y="14" width="{{ 2 * w - 6 }}" height="22" rx="6"/>
+                <text class="tl-bar-label" x="{{ x0 + 12 * w + 10 }}" y="29">Thailand</text>
+              </g>
+              {# Day cells #}
+              {% for c in cells %}
+                {% set x = x0 + loop.index0 * w %}
+                <rect class="tl-cell tl-{{ c }}" x="{{ x + 2 }}" y="76" width="{{ w - 4 }}" height="44" rx="6"/>
+                <text class="tl-day{% if c != 'none' %} tl-day-on{% endif %}" x="{{ x + w / 2 }}" y="103" text-anchor="middle">{{ loop.index }}</text>
+                <text class="tl-code" x="{{ x + w / 2 }}" y="140" text-anchor="middle">{{ {'base': 'PT', 'es': 'ES', 'it': 'IT', 'th': 'TH', 'none': '-'}[c] }}</text>
+              {% endfor %}
+              {# Shared day and today #}
+              <path class="tl-mark" d="M{{ x0 + 5 * w + w / 2 }} 66 v8"/>
+              <text class="tl-note" x="{{ x0 + 5 * w + w / 2 }}" y="162" text-anchor="middle">shared: Italy</text>
+              <path class="tl-today" d="M{{ x0 + 10 * w - 1 }} 70 v76"/>
+              <text class="tl-note tl-today-label" x="{{ x0 + 10 * w - 4 }}" y="162" text-anchor="end">today</text>
+              {# Legend #}
+              <g class="tl-legend" transform="translate(22 186)">
+                <rect class="tl-cell tl-base" width="14" height="14" rx="3"/><text x="20" y="12">Base (Portugal)</text>
+                <rect class="tl-cell tl-es" x="150" width="14" height="14" rx="3"/><text x="170" y="12">Movements</text>
+                <rect class="tl-cell tl-none" x="270" width="14" height="14" rx="3"/><text x="290" y="12">Not counted yet</text>
+              </g>
+            </svg>
+            <figcaption>Result for these 14 days: Portugal 4, Spain 3, Italy 3, Thailand 2 (on the dashboard, the passed days of January and February count for Portugal too). Spain lasts 4 days but shows <strong>3 counted</strong> in the Movements table, because 6 March went to Italy.</figcaption>
+          </figure>
+        </section>
+
+        <section id="threshold" class="doc-sub" data-doc-title="The 183 day line">
+          <h3>The {{ threshold }} day line</h3>
+          <p>Many countries treat you as a tax resident once you spend {{ threshold }} days or more there in a year. The <strong>Days in base country</strong> card marks that line: it says <strong>At least {{ threshold }} days</strong>, or how many days you are short. In <strong>Days per country</strong> a bar turns red when another country reaches {{ threshold }} days.</p>
+          <p class="doc-note">Nomad Life counts days; it does not give tax advice. Rules differ by country (some count partial days or look at other ties), so check yours with an accountant.</p>
+        </section>
+      </section>
+
+      <section id="dashboard" class="doc-section" data-doc-title="Your dashboard">
+        <h2>Your dashboard</h2>
+        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in base country 248 of 365, At least 183 days; Days abroad 34; Year elapsed 274 of 365. Numbered markers point at + Year, + Add movement and Manage base and contract', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
+        <section id="cards" class="doc-sub" data-doc-title="The four cards">
+          <h3>The four cards</h3>
+          <ul>
+            <li><strong>Base</strong>: your base city and country, and the link to manage them.</li>
+            <li><strong>Days in base country</strong>: days counted for your base, out of the days in the year, with the {{ threshold }} day marker.</li>
+            <li><strong>Days abroad</strong>: days counted for every other country.</li>
+            <li><strong>Year elapsed</strong>: how far into the year today is.</li>
+          </ul>
+        </section>
+        <section id="movements-table" class="doc-sub" data-doc-title="The Movements table">
+          <h3>The Movements table</h3>
+          {{ shot('movements-table', 'The Movements table: Madrid, Spain, 4 days with "3 counted" under it, then Rome, Tokyo, Paris and Bangkok', 'A movement that shares a day shows how many of its days count.') }}
+          <p>Movements are listed by start date; the one you are in today is highlighted. Long lists are split into pages; choose {{ per_page_options | join(', ') }} rows with <strong>Show</strong> under the table.</p>
+        </section>
+        <section id="days-per-country" class="doc-sub" data-doc-title="Days per country">
+          <h3>Days per country</h3>
+          <p>Each country with its total for the year and, in brackets, the days so far. The total includes movements you have planned.</p>
+        </section>
+        <section id="map" class="doc-sub" data-doc-title="The map">
+          <h3>The map</h3>
+          {{ shot('map', 'The world map with a base pin of 248 days in Portugal and stay pins in Spain, France, Italy, Japan and Thailand; the Italy tooltip shows its flag, Rome and 3 days', 'Point at a pin, tap it or reach it with Tab to see the country, its cities and its days.') }}
+          <ul>
+            <li>One pin per country, with its number of days. Your base has the bigger, differently colored pin.</li>
+            <li><strong>+</strong> and <strong>-</strong> zoom up to 8 times; the frame button shows the whole world again. While zoomed, drag the map to move around.</li>
+            <li>Places the map cannot show, such as a country typed as free text, are listed under it.</li>
+          </ul>
+        </section>
+      </section>
+
+      <section id="receipts" class="doc-section" data-doc-title="Receipts">
+        <h2>Receipts</h2>
+        <p>Keep the proof of where you were: rental contracts, hotel bills, flight tickets.</p>
+        <section id="upload" class="doc-sub" data-doc-title="Upload a receipt">
+          <h3>Upload a receipt</h3>
+          {{ shot('receipts', 'The Receipts card of a movement: a type menu set to Flight ticket, a chosen file named flight-lis-bcn.pdf and the Upload button, above two saved receipts', 'Choose the type and the file, then press Upload.') }}
+          <ul>
+            <li>Upload on a movement's page, or on the base page for your rental contract.</li>
+            <li>Types: {{ kinds() }}.</li>
+            <li>Files: PDF, PNG, JPG, HEIC or WebP. Files are checked by their content, so a web page renamed to <code>.pdf</code> is refused.</li>
+            <li>Big JPG, PNG and WebP photos (over {{ photo_megapixels }} megapixels or {{ photo_shrink_mb }} MB) are resized to at most about {{ photo_megapixels }} megapixels and saved as JPEG without their metadata, which removes the location a phone stores in a photo. They are never made narrower than {{ '{:,}'.format(photo_min_side) }} pixels, so long screenshots stay readable. HEIC files, smaller photos and photos over {{ photo_max_megapixels }} megapixels are stored as they are, metadata included.</li>
+          </ul>
+        </section>
+        <section id="manage-receipts" class="doc-sub" data-doc-title="Download, rename or delete">
+          <h3>Download, rename or delete</h3>
+          <p><strong>Download ZIP</strong> gives the receipt inside a ZIP file. <strong>Rename or change type</strong> opens a small form under its name. <strong>Delete</strong> asks twice.</p>
+        </section>
+        <section id="storage" class="doc-sub" data-doc-title="Storage">
+          <h3>Storage</h3>
+          <p>The <strong>Receipt storage</strong> card shows the space left, shared by all your years. Your plan sets the total and the largest single receipt (see <a href="#plans">Plans</a>). When storage is full, delete receipts you no longer need, or upgrade.</p>
+        </section>
+      </section>
+
+      <section id="package" class="doc-section" data-doc-title="Accountant package">
+        <h2>Accountant package</h2>
+        <p>One ZIP per year for your accountant, from the <strong>Pro</strong> plan on. Press <strong>Download accountant package</strong> on the dashboard. Tick <strong>Include my notes</strong> to add your notes to <code>timeline.csv</code>.</p>
+        {{ shot('package', 'The Accountant package card with the Include my notes box and the Download accountant package button, under the Receipt storage card', 'The package is built when you press the button; it does not use your storage.') }}
+        <figure class="doc-figure">
+          <pre class="doc-tree" aria-label="Files in the package"><span class="doc-tree-dir">NomadLife-2026-accountant-package/</span>
+  README.txt           <span class="muted">what each file is</span>
+  summary.pdf          <span class="muted">days per country, timeline, rules, receipt index</span>
+  timeline.csv         <span class="muted">one row per movement</span>
+  country-totals.csv   <span class="muted">one row per country</span>
+  manifest.csv         <span class="muted">every other file with its SHA-256 checksum</span>
+  <span class="doc-tree-dir">receipts/</span>
+    <span class="doc-tree-dir">base/</span>                <span class="muted">rental contract</span>
+    <span class="doc-tree-dir">01_2026-03-03_Madrid_Spain/</span></pre>
+          <figcaption>What the ZIP holds for 2026.</figcaption>
+        </figure>
+      </section>
+
+      <section id="plans" class="doc-section" data-doc-title="Plans">
+        <h2>Plans</h2>
+        <div class="table-wrap">
+          <table class="table doc-plans">
+            <caption class="visually-hidden">Plans with their price, storage and features</caption>
+            <thead>
+              <tr><th scope="col">Plan</th><th scope="col">Price</th><th scope="col" class="num">Storage</th><th scope="col" class="num">Per receipt</th><th scope="col">Accountant package</th></tr>
+            </thead>
+            <tbody>
+              {% for p in plans %}
+              <tr>
+                <th scope="row">{{ p.name }}</th>
+                <td>{% if p.price_cents %}${{ p.price }} a month or ${{ p.year }} a year{% else %}Free{% endif %}</td>
+                <td class="num">{{ p.quota_bytes | filesize('down') }}</td>
+                <td class="num">{{ p.receipt_bytes | filesize('down') }}</td>
+                <td>{{ 'Yes' if p.package else 'No' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p>Prices are in US dollars. Your plan is in the menu under your name. Online payment is coming soon.</p>
+      </section>
+
+      <section id="settings" class="doc-section" data-doc-title="Settings">
+        <h2>Settings</h2>
+        <p>Open <strong>Settings</strong> from the menu under your name.</p>
+        <section id="profile" class="doc-sub" data-doc-title="Name, password and email">
+          <h3>Name, password and email</h3>
+          <ul>
+            <li><strong>Profile</strong>: your first and last name, shown in the menu, in emails and on the accountant package.</li>
+            <li><strong>Change password</strong>: needs your current password. You stay signed in here; other devices are signed out.</li>
+            <li><strong>Change email</strong>: we send a link to the new address, valid {{ email_change_minutes }} minutes, and nothing changes until you open it. Your old address gets an alert with an <strong>Undo this change</strong> link, valid {{ revert_days }} days, in case it was not you.</li>
+          </ul>
+        </section>
+        <section id="two-factor" class="doc-sub" data-doc-title="Two-factor sign in">
+          <h3>Two-factor sign in</h3>
+          {{ shot('two-factor', 'The Two-factor sign in card with a QR code (blurred here), three setup steps, the Code from the app and Current password fields and the Turn on two-factor sign in button', 'Scan the code with your authenticator app, then type the 6 digit code it shows.') }}
+          <ol>
+            <li>In an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden) add an account by scanning the QR code, or type the setup key.</li>
+            <li>Type the 6 digit code the app shows, and your password.</li>
+            <li>Press <strong>Turn on two-factor sign in</strong>.</li>
+          </ol>
+          <p>From then on, signing in asks for a code after your password. Lost your phone? See <a href="#lost-phone">Troubleshooting</a>.</p>
+        </section>
+        <section id="devices" class="doc-sub" data-doc-title="Devices and activity">
+          <h3>Devices and activity</h3>
+          <p><strong>Sign out everywhere else</strong> ends every other session at once, remembered ones too. A browser unused for {{ idle_days }} days is signed out by itself. <strong>Recent security activity</strong> lists your sign ins and account changes with their time and network address.</p>
+        </section>
+        <section id="delete-account" class="doc-sub" data-doc-title="Delete your account">
+          <h3>Delete your account</h3>
+          <p><strong>Delete my account</strong> removes the account with all its years, movements and receipts. It needs your password, two confirmations and your email typed. It cannot be undone, so download your accountant packages first.</p>
+        </section>
+      </section>
+
+      <section id="support" class="doc-section" data-doc-title="Support">
+        <h2>Support</h2>
+        <p>Found a bug, have a question or want a feature? Press the chat bubble in the header (or <strong>Support</strong> in the menu), then <strong>Submit a ticket</strong>: choose the type, write a subject and describe it.</p>
+        {{ shot('support-ticket', 'A support ticket as a chat: the user message in blue on the right, the support answer in purple on the left, and a box to write a message', 'Your messages are on the right, support answers on the left.') }}
+        <ul>
+          <li>When support answers, we email you a link to the ticket (never the text), and the chat bubble glows until you open it.</li>
+          <li><strong>Close ticket, my problem is solved</strong> closes it. Writing again reopens it, unless you already have {{ open_tickets_max }} open tickets.</li>
+          <li>Tickets are numbered by year, like <strong>#2026-4</strong>. Mention the number if you write to us by email.</li>
+        </ul>
+      </section>
+
+      <section id="troubleshooting" class="doc-section" data-doc-title="Troubleshooting">
+        <h2>Troubleshooting</h2>
+        <section id="no-email" class="doc-sub" data-doc-title="No confirmation email">
+          <h3>No confirmation email, or the link expired</h3>
+          <p>Check your spam folder. Signing in with your email and password sends a new link. Emails go out at most once a minute per account. If {{ verify_minutes }} minutes have passed, sign up again with the same address.</p>
+        </section>
+        <section id="too-many" class="doc-sub" data-doc-title="Too many failed sign in attempts">
+          <h3>"Too many failed sign in attempts"</h3>
+          <p>Wait the minutes the message says, then try again, or use <strong>Forgot password?</strong>. The pause protects your account from password guessing.</p>
+        </section>
+        <section id="lost-phone" class="doc-sub" data-doc-title="Lost phone with the authenticator app">
+          <h3>Lost the phone with your authenticator app</h3>
+          <p>Write to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a> from your account's email address. Once we have checked it is you, we remove two-factor sign in so you can sign in with your password and turn it on again.</p>
+        </section>
+        <section id="refused" class="doc-sub" data-doc-title="A receipt is refused">
+          <h3>A receipt is refused</h3>
+          <p>Only PDF, PNG, JPG, HEIC and WebP files are accepted, up to the per receipt size of your plan. Export other formats (Word, Pages, a web page) to PDF first. If the message says your storage is full, delete old receipts or upgrade.</p>
+        </section>
+        <section id="numbers" class="doc-sub" data-doc-title="The day count looks wrong">
+          <h3>The day count looks wrong</h3>
+          <p>Look for "counted" under a movement in the table: it shares days with another one. Remember that empty future days count nowhere yet, and that both the first and the last day of a movement count. See <a href="#counting">How days are counted</a>.</p>
+        </section>
+      </section>
+
+      <section id="shortcuts" class="doc-section" data-doc-title="Keyboard shortcuts">
+        <h2>Keyboard shortcuts</h2>
+        <div class="table-wrap">
+          <table class="table doc-keys">
+            <caption class="visually-hidden">Keyboard shortcuts</caption>
+            <thead><tr><th scope="col">Keys</th><th scope="col">Where</th><th scope="col">What</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>/</kbd></td><td>This page</td><td>Search the documentation</td></tr>
+              <tr><td><kbd>Esc</kbd></td><td>This page</td><td>Close the results; press again to clear the search</td></tr>
+              <tr><td><kbd>+</kbd> <kbd>-</kbd> <kbd>0</kbd></td><td>Map</td><td>Zoom in, zoom out, whole world</td></tr>
+              <tr><td><kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>&rarr;</kbd> <kbd>&darr;</kbd></td><td>Map, zoomed</td><td>Move around</td></tr>
+              <tr><td><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>Enter</kbd></td><td>Country picker</td><td>Choose a country</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted small">The map keys work once the map card has the keyboard focus (press <kbd>Tab</kbd> until a map button is highlighted).</p>
+      </section>
+
+      <p class="docs-foot muted small">Still stuck? {% if current_user.is_authenticated %}<a href="{{ url_for('support_new') }}">Submit a ticket</a> or write{% else %}Write{% endif %} to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
+    </article>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='js/docs.js', v=asset_version) }}"></script>
+{% endblock %}

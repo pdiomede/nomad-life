@@ -1,12 +1,13 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.4.1**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.5.0**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
 ## Features
 
 - A simple landing page that explains the app, with a "Launch app" button to sign in.
+- Documentation at `/docs` (see [Documentation](#documentation)), opened from the question mark in the header, the menu under your name or the footer.
 - Share buttons for X, LinkedIn, Facebook, WhatsApp, Telegram and Reddit, with a link preview image.
 - A friendly 404 page for wrong links.
 - One private workspace per user with sign up, sign in and password reset by email (Gmail). New accounts confirm their email with a link and a "Confirm my account" button on the page it opens (so company mail scanners, which open every link, cannot confirm an account for someone), and accounts not confirmed within 20 minutes are deleted.
@@ -107,7 +108,7 @@ Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their
 - Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements (always for every account, also while searching).
 - The monthly and yearly price of Pro and Nomad+ ("Plans and prices"). Leave both fields empty to go back to the default prices in `PLANS`.
 - The accounts table, 10 per page: account (name, email, and flags such as Admin, Two-factor on, Disabled, Email not confirmed, Over quota), plan, joined, last sign in, last known IP (the address of the last sign in, marked "at last sign in", or the sign up address, marked "at sign up", for an account that never signed in; accounts from before 1.4.0 have no sign up IP), years and storage used. Search by part of an email, a name or an IP (`185.220.` lists every account from that network), and sort by account, joined, last sign in, years or storage.
-- Security activity: the last 100 events (sign ins, failed sign ins, password, email and two-factor changes, admin actions with the admin who made them), filterable by account email. Events are kept for 365 days.
+- Security activity: a table of every event (sign ins, failed sign ins, password, email and two-factor changes, admin actions with the admin who made them), 20 a page, sortable by time, event, account and IP (IPs sort by number), filterable by account email; an account's email links to its whole history, also from before an email change. Both tables keep each other's search, sort and page. Events are kept for 365 days.
 
 **View** (or the email in the table) opens the account's own page, `/admin/users/<id>`:
 
@@ -130,7 +131,7 @@ Bots sign other people's work addresses up on many websites at once (to flood th
 ./checkFakeUsers.sh --min-age-hours 72   # only accounts older than 3 days (default 24)
 ```
 
-It lists only accounts that are confirmed, never signed in, hold nothing (no years, receipts or tickets), are not admins, not disabled, have no plan or quota set by an admin, and joined at least a day ago. For each one it shows how soon after sign up it was confirmed ("4 s, scanner" when under 2 minutes, which no person manages) and the confirming and sign up IPs. It then asks which to delete (all, some by number such as `1,3,5-7`, or none) and to type `DELETE`. Each deletion is checked again at that moment, so an account that signs in meanwhile is kept, and each is recorded in the security history as deleted by `check-fake-users`. Take a backup first (`scripts/backup.py`). It is the same as `.venv/bin/flask --app app check-fake-users`.
+It lists only accounts that are confirmed, never signed in, hold nothing (no years, receipts or tickets), are not admins, not disabled, have no plan or quota set by an admin, and joined at least a day ago. For each one it shows how soon after sign up it was confirmed ("4 s, likely scanner" when under 2 minutes: typical of a scanner, though not proof on its own; a confirming IP in a cloud network such as Microsoft or Amazon settles it) and the confirming and sign up IPs. It then asks which to delete (all, some by number such as `1,3,5-7`, or none) and to type `DELETE`. Each deletion is checked again at that moment, so an account that signs in meanwhile is kept, and each is recorded in the security history as deleted by `check-fake-users`. Take a backup first (`scripts/backup.py`). It is the same as `.venv/bin/flask --app app check-fake-users`.
 
 The admin page needs **two-factor sign in**: an admin without it is sent to the Settings page to turn it on first. Admins cannot disable or delete their own account or another admin's (remove it from `ADMIN_EMAILS` first), and nobody can become an admin from inside the app. Everyone else gets "Page not found" at `/admin`.
 
@@ -184,6 +185,17 @@ Your notes are left out unless you tick "Include my notes". The package is built
 
 Dependencies in `requirements.txt` are pinned to exact versions. The GitHub Action in `.github/workflows/security.yml` runs the tests and `pip-audit` (known vulnerabilities) on every push and every Monday. To check locally: `.venv/bin/pip install pip-audit && .venv/bin/pip-audit -r requirements.txt`.
 
+## Documentation
+
+`/docs` explains how to use the app in short sections with examples: getting started, years and the base, movements, how days are counted (with a diagram), the dashboard and map, receipts, the accountant package, plans, settings, support, troubleshooting and keyboard shortcuts. A search box at the top (press `/`) finds any section, ignoring accents and case, and the contents on the left follow the reading position. Limits, durations and plan prices on the page come from the app's own settings, so they never contradict it.
+
+The screenshots, in the light and the dark theme, are made by a script from a demo account on a scratch copy of the app (your data and config.env are never touched). It needs Node 22 or newer and Google Chrome; run it again after changing a page that the documentation shows:
+
+```bash
+.venv/bin/python scripts/docs_screenshots.py          # all screenshots
+.venv/bin/python scripts/docs_screenshots.py map      # only the ones named
+```
+
 ## Link previews and 404 page
 
 Social networks read the preview image and text from `APP_BASE_URL`, so set it to your public address (for example `https://nomadlife.example.com`) once the app is online. Previews cannot work on `localhost`.
@@ -192,7 +204,7 @@ The 404 page is a standalone file, `static/404.html`. The app already serves it 
 
 ## SEO
 
-The landing page is ready for search engines: keyword title and description, canonical URL, Open Graph and Twitter card tags, structured data (JSON-LD), `robots.txt` and `sitemap.xml`. Sign in and app pages are marked `noindex` so private pages stay out of search results. Set `APP_BASE_URL` to your public HTTPS address before going live, because the canonical URL, sitemap and previews are built from it.
+The landing page and the documentation (`/docs`) are ready for search engines: keyword title and description, canonical URL, Open Graph and Twitter card tags, structured data (JSON-LD), `robots.txt` and `sitemap.xml`. Sign in and app pages are marked `noindex` so private pages stay out of search results. Set `APP_BASE_URL` to your public HTTPS address before going live, because the canonical URL, sitemap and previews are built from it.
 
 ## Disclaimer
 

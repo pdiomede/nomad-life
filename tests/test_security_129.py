@@ -251,10 +251,10 @@ class AuditTests(AppTestCase):
         self.assertEqual(events[2][0], "admin_price")
         html = self.client.get("/admin?q=user@example.com").get_data(as_text=True)
         self.assertIn("Plan changed by an admin", html)
-        self.assertIn("by admin@example.com", html)
+        self.assertIn("by <bdi>admin@example.com</bdi>", html)
         listed = html.split('id="activity"', 1)[1]
-        self.assertIn("user@example.com &middot;", listed)
-        self.assertNotIn("admin@example.com &middot;", listed)  # filtered to that account
+        self.assertIn('dir="auto">user@example.com</a></td>', listed)
+        self.assertNotIn('dir="auto">admin@example.com</a></td>', listed)  # filtered to that account
 
     def test_account_page_shows_own_activity_only(self):
         self.signup()

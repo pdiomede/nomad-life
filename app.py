@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import io
+import json
 import math
 import mimetypes
 import os
@@ -41,7 +42,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.5.0"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -103,6 +104,39 @@ SHARE_TEXT = "Track the days you spend in each country and keep your travel rece
 SEO_TITLE = "Digital nomad day tracker and receipt vault | Nomad Life"
 SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and keep rental contracts, "
                    "hotel bills and flight tickets in one place. Free for digital nomads.")
+# Table of contents of /docs: (id, title, [(id, title) of the subsections]), in page order.
+# tests/test_docs.py checks it against the sections of templates/docs.html.
+DOCS_TOC = [
+    ("getting-started", "Getting started", [("sign-up", "Create your account"),
+                                            ("sign-in", "Sign in and passwords")]),
+    ("years", "Years and your base", [("create-year", "Create a year"),
+                                      ("base", "Change your base or delete a year")]),
+    ("movements", "Movements", [("add-movement", "Add a movement"),
+                                ("country-picker", "The country picker"),
+                                ("edit-movement", "Edit or delete a movement")]),
+    ("counting", "How days are counted", [("counting-example", "A worked example"),
+                                          ("threshold", "The 183 day line")]),
+    ("dashboard", "Your dashboard", [("cards", "The four cards"),
+                                     ("movements-table", "The Movements table"),
+                                     ("days-per-country", "Days per country"),
+                                     ("map", "The map")]),
+    ("receipts", "Receipts", [("upload", "Upload a receipt"),
+                              ("manage-receipts", "Download, rename or delete"),
+                              ("storage", "Storage")]),
+    ("package", "Accountant package", []),
+    ("plans", "Plans", []),
+    ("settings", "Settings", [("profile", "Name, password and email"),
+                              ("two-factor", "Two-factor sign in"),
+                              ("devices", "Devices and activity"),
+                              ("delete-account", "Delete your account")]),
+    ("support", "Support", []),
+    ("troubleshooting", "Troubleshooting", [("no-email", "No confirmation email"),
+                                            ("too-many", "Too many failed sign in attempts"),
+                                            ("lost-phone", "Lost phone with the authenticator app"),
+                                            ("refused", "A receipt is refused"),
+                                            ("numbers", "The day count looks wrong")]),
+    ("shortcuts", "Keyboard shortcuts", []),
+]
 # Paths that need an account. Kept out of search engines via robots.txt.
 PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin",
                  "/account", "/settings", "/plan", "/support"]
@@ -141,7 +175,7 @@ NAME_MAX = 60
 MOVEMENTS_MAX = 1000
 # Security history kept on the admin and Settings pages.
 AUDIT_DAYS = 365
-ADMIN_AUDIT_ROWS = 100
+ADMIN_AUDIT_PER_PAGE = 20
 # Two-factor sign in (TOTP, RFC 6238): 6 digits every 30 seconds, one step of clock drift
 # either way, and this long to type the code after the password.
 TOTP_STEP_SECONDS = 30
@@ -533,7 +567,7 @@ def create_app(overrides=None):
     # CSS and JS are cached for a week, so their URLs change whenever their content does,
     # also between releases.
     digest = hashlib.sha256()
-    for name in ("css/style.css", "js/theme.js", "js/theme-init.js"):
+    for name in ("css/style.css", "js/theme.js", "js/theme-init.js", "js/docs.js"):
         with open(os.path.join(app.static_folder, name), "rb") as fh:
             digest.update(fh.read())
     asset_version = digest.hexdigest()[:10]
@@ -693,7 +727,7 @@ def create_app(overrides=None):
         head = ("#", "Email", "Joined (UTC)", "Confirmed after", "Confirm IP", "Sign up IP")
         table = [head] + [
             (str(i), r["email"], r["created_at"][:16],
-             short_duration(r["confirm_seconds"]) + (", scanner" if r["scanner"] else ""),
+             short_duration(r["confirm_seconds"]) + (", likely scanner" if r["scanner"] else ""),
              r["confirm_ip"] or "not recorded", r["signup_ip"] or "not recorded")
             for i, r in enumerate(rows, 1)]
         widths = [max(len(line[c]) for line in table) for c in range(len(head))]
@@ -703,8 +737,9 @@ def create_app(overrides=None):
         click.echo(f"\n{len(rows)} account{'' if len(rows) == 1 else 's'} confirmed but never "
                    f"signed in, with no data, joined over {min_age_hours} hours ago. "
                    f"{scanners} {'was' if scanners == 1 else 'were'} confirmed within "
-                   f"{SCANNER_SECONDS // 60} minutes of signing up, the mark of a mail scanner "
-                   "opening the link.")
+                   f"{SCANNER_SECONDS // 60} minutes of signing up. That is typical of a mail "
+                   "scanner opening the link, not proof: check the Confirm IP (a cloud network "
+                   "such as Microsoft or Amazon, not a home or office line).")
         if dry_run:
             click.echo("Dry run: nothing deleted.")
             return
@@ -754,7 +789,7 @@ def create_app(overrides=None):
 # ---------- helpers ----------
 
 FAKE_MIN_AGE_HOURS = 24  # check-fake-users leaves newer accounts alone: they may sign in yet
-SCANNER_SECONDS = 120  # confirmed this soon after sign up: a mail scanner opened the link
+SCANNER_SECONDS = 120  # confirmed this soon after sign up: likely a mail scanner opening the link
 
 # An account check-fake-users may list and delete: confirmed, never signed in, holding nothing
 # (no years, so no stays or receipts, and no tickets), and never touched by an admin: a disabled
@@ -1115,13 +1150,13 @@ TICKETS_PER_PAGE = 25
 TICKET_SORTS = {
     # Type sorts by the name shown (Feature request, General question, Report a bug).
     "id": "t.ref_year, t.ref_seq", "kind": "CASE t.kind WHEN 'feature' THEN 1 WHEN 'question' THEN 2 ELSE 3 END",
-    "subject": "t.subject COLLATE NOCASE", "messages": "messages",
-    "user": "u.email COLLATE NOCASE", "status": "t.status", "created": "t.created_at",
+    "subject": "sort_fold(t.subject)", "messages": "messages",
+    "user": "sort_fold(u.email)", "status": "t.status", "created": "t.created_at",
     "updated": "t.updated_at", "closed": "t.closed_at IS NULL, t.closed_at",
 }
 # Sortable columns of the admin accounts table. Accounts that never signed in go last.
 ADMIN_USER_SORTS = {
-    "email": "u.email COLLATE NOCASE", "joined": "u.created_at",
+    "email": "sort_fold(u.email)", "joined": "u.created_at",
     "last": "u.last_login_at IS NULL, u.last_login_at", "years": "years", "used": "used",
 }
 ADMIN_ACCOUNT_AUDIT_ROWS = 20
@@ -1270,6 +1305,23 @@ AUDIT_LABELS = {
     "admin_enable": "Account enabled by an admin",
     "admin_delete": "Account deleted by an admin",
     "admin_price": "Plan prices changed",
+}
+
+
+def _sql_text(value):
+    return "'" + value.replace("'", "''") + "'"
+
+
+# Sortable columns of the admin Security activity table: (kept first in both directions, key).
+# Ids grow with time, so Time sorts by id. Event sorts by the label shown; events without an
+# account email or an IP (command line events) go last either way.
+AUDIT_SORTS = {
+    "time": ("", "a.id"),
+    "event": ("", "CASE a.event " + " ".join(
+        f"WHEN {_sql_text(k)} THEN {_sql_text(v)}" for k, v in AUDIT_LABELS.items())
+        + " ELSE a.event END COLLATE NOCASE"),
+    "account": ("a.email = ''", "sort_fold(a.email)"),
+    "ip": ("ip_sort_key(a.ip) IS NULL", "ip_sort_key(a.ip)"),  # 9.x before 10.x
 }
 
 
@@ -2032,12 +2084,20 @@ def page_window(page, pages):
 def paginate(items, page, per_page, url):
     """Slice a list for display. Invalid or out of range pages are clamped, never an error.
     `url(page, per_page)` builds the link for a page."""
-    total = len(items)
+    pager = paged(len(items), page, per_page, url)
+    start = (pager["page"] - 1) * per_page
+    pager["rows"] = items[start:start + per_page]
+    return pager
+
+
+def paged(total, page, per_page, url):
+    """The pager of paginate() for `total` items whose rows the caller loads itself (with
+    LIMIT per_page OFFSET (page - 1) * per_page), for tables too big to load whole."""
     pages = max(1, -(-total // per_page))
     page = min(max(to_int(page, 1), 1), pages)
     start = (page - 1) * per_page
     return {
-        "rows": items[start:start + per_page], "page": page, "pages": pages, "total": total,
+        "rows": [], "page": page, "pages": pages, "total": total,
         "per_page": per_page, "first": start + 1 if total else 0,
         "last": min(start + per_page, total),
         "prev": page - 1 if page > 1 else None, "next": page + 1 if page < pages else None,
@@ -2520,6 +2580,34 @@ def register_routes(app):
     def landing():
         return render_template("landing.html", plans=plan_catalog())
 
+    docs_shots_file = os.path.join(app.static_folder, "img", "docs", "shots.json")
+    try:
+        with open(docs_shots_file, encoding="utf-8") as fh:
+            docs_shots = json.load(fh)  # {name: [width, height]}, from scripts/docs_screenshots.py
+    except (OSError, ValueError):
+        docs_shots = {}
+
+    @app.route("/docs")
+    def docs():
+        """How to use the app, public and indexable like the landing page. Every number on it
+        comes from the settings below, so it never contradicts the app."""
+        return render_template(
+            "docs.html", toc=DOCS_TOC, shots=docs_shots,
+            docs_url=app.config["APP_BASE_URL"].rstrip("/") + url_for("docs"),
+            plans=plan_catalog(), threshold=RESIDENCE_THRESHOLD,
+            verify_minutes=VERIFY_MINUTES, notes_max=NOTES_MAX, place_max=PLACE_MAX,
+            movements_max=MOVEMENTS_MAX, per_page_options=PER_PAGE_OPTIONS,
+            fail_limit=LIMITS[("fail", "email")], limit_minutes=LIMIT_WINDOW_MINUTES,
+            code_limit=LIMITS[("code", "email")],
+            remember_days=app.config["REMEMBER_COOKIE_DURATION"].days,
+            reset_minutes=RESET_TOKEN_MAX_AGE // 60, email_change_minutes=EMAIL_CHANGE_MAX_AGE // 60,
+            revert_days=EMAIL_REVERT_MAX_AGE // 86400, idle_days=SESSION_IDLE_DAYS,
+            photo_megapixels=PHOTO_MAX_AREA // 1_000_000, photo_min_side=PHOTO_MIN_SIDE,
+            photo_shrink_mb=PHOTO_SHRINK_BYTES // MB, photo_max_megapixels=PHOTO_MAX_PIXELS // 1_000_000,
+            document_kinds=DOCUMENT_KINDS,
+            open_tickets_max=OPEN_TICKETS_MAX, ticket_body_max=TICKET_BODY_MAX,
+            ticket_kinds=TICKET_KINDS, audit_days=AUDIT_DAYS)
+
     @app.route("/robots.txt")
     def robots_txt():
         base = app.config["APP_BASE_URL"].rstrip("/")
@@ -2530,13 +2618,18 @@ def register_routes(app):
     @app.route("/sitemap.xml")
     def sitemap_xml():
         base = app.config["APP_BASE_URL"].rstrip("/")
-        landing_file = os.path.join(app.root_path, app.template_folder, "landing.html")
-        lastmod = date.fromtimestamp(os.path.getmtime(landing_file)).isoformat()
+        # The two public pages: the landing page and the documentation.
+        urls = []
+        for endpoint, template, priority in (("landing", "landing.html", "1.0"),
+                                             ("docs", "docs.html", "0.8")):
+            path = os.path.join(app.root_path, app.template_folder, template)
+            lastmod = date.fromtimestamp(os.path.getmtime(path)).isoformat()
+            urls.append(f"  <url><loc>{escape(base + url_for(endpoint))}</loc>"
+                        f"<lastmod>{lastmod}</lastmod><changefreq>monthly</changefreq>"
+                        f"<priority>{priority}</priority></url>\n")
         xml = ('<?xml version="1.0" encoding="UTF-8"?>\n'
                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-               f"  <url><loc>{escape(base + url_for('landing'))}</loc><lastmod>{lastmod}</lastmod>"
-               "<changefreq>monthly</changefreq><priority>1.0</priority></url>\n"
-               "</urlset>\n")
+               + "".join(urls) + "</urlset>\n")
         return Response(xml, mimetype="application/xml")
 
     @app.route("/app")
@@ -3063,26 +3156,40 @@ def register_routes(app):
             flash("Turn on two-factor sign in to use the admin page.", "info")
             abort(redirect(url_for("settings")))  # no anchor: the message stays in view
 
+    # Everything the admin page keeps in its address: the accounts table (search, sort, dir,
+    # page) and the Security activity table (q, the account filter, and asort, adir, apage).
+    admin_defaults = {"search": "", "sort": "joined", "dir": "desc", "page": 1,
+                      "q": "", "asort": "time", "adir": "desc", "apage": 1}
+
     def admin_args(values):
         """URL arguments without the defaults, so plain /admin stays plain."""
-        return {k: v for k, v in values.items() if v not in (None, "", 1)
-                and not (k == "sort" and v == "joined") and not (k == "dir" and v == "desc")}
+        return {k: v for k, v in values.items() if v not in (None, "")
+                and v != admin_defaults.get(k)}
 
     def admin_url(**values):
-        # The accounts search, sort and page, and the activity filter (q), stay while paging,
-        # on the account page and after saving an account's settings.
+        # Both tables' state stays while paging, sorting or filtering the other one, on the
+        # account page and after saving an account's settings.
         return url_for("admin", **admin_args(values))
 
     def admin_account_url(user_id, state):
         return url_for("admin_account", user_id=user_id, **admin_args(state))
 
+    def admin_hidden(state, *skip):
+        """(name, value) of the state a form must carry as hidden fields, defaults left out."""
+        return [(k, v) for k, v in admin_args(state).items() if k not in skip]
+
     def admin_list_state(source):
-        """Search, sort and page of the accounts table, from the query string or a form."""
+        """State of both admin tables, from the query string or a form."""
         sort = source.get("sort", "joined")
+        asort = source.get("asort", "time")
         return {"search": source.get("search", "").strip()[:254],
                 "sort": sort if sort in ADMIN_USER_SORTS else "joined",
                 "dir": "asc" if source.get("dir") == "asc" else "desc",
-                "page": max(to_int(source.get("page"), 1), 1)}
+                "page": max(to_int(source.get("page"), 1), 1),
+                "q": source.get("q", "").strip().lower()[:254],
+                "asort": asort if asort in AUDIT_SORTS else "time",
+                "adir": "asc" if source.get("adir") == "asc" else "desc",
+                "apage": max(to_int(source.get("apage"), 1), 1)}
 
     def admin_accounts(where="1 = 1", params=(), order="u.created_at DESC"):
         """Accounts with their plan, quota, storage and years, ready for the admin pages."""
@@ -3104,20 +3211,40 @@ def register_routes(app):
                      is_admin=u["email"] in app.config["ADMIN_EMAILS"], full_name=full_name(u))
                 for u in rows]
 
-    def account_activity(email, limit):
+    def activity_where(email):
         """Events of an account (or all, for an empty email): its whole history, also from
         before an email change, and what it did as an admin."""
-        return audit_rows(db.query(
-            "SELECT * FROM audit_log WHERE (? = '' OR email = ? OR actor = ? OR user_id = "
-            "(SELECT id FROM users WHERE email = ?)) ORDER BY id DESC LIMIT ?",
-            (email, email, email, email, limit)))
+        return ("(? = '' OR a.email = ? OR a.actor = ? OR a.user_id = "
+                "(SELECT id FROM users WHERE email = ?))", (email,) * 4)
+
+    def account_activity(email, limit):
+        where, params = activity_where(email)
+        return audit_rows(db.query(f"SELECT a.* FROM audit_log a WHERE {where} "
+                                   "ORDER BY a.id DESC LIMIT ?", (*params, limit)))
+
+    def activity_page(state):
+        """One page of the Security activity table, sorted and paged in SQL: a year of failed
+        sign ins by bots is far too much to load for 20 rows."""
+        where, params = activity_where(state["q"])
+        total = db.query(f"SELECT COUNT(*) AS n FROM audit_log a WHERE {where}", params,
+                         one=True)["n"]
+        pager = paged(total, state["apage"], ADMIN_AUDIT_PER_PAGE,
+                      lambda n, _size: admin_url(**dict(state, apage=n)) + "#activity")
+        fixed, key = AUDIT_SORTS[state["asort"]]
+        order = ", ".join(filter(None, [fixed, f"{key} {state['adir'].upper()}", "a.id DESC"]))
+        # current_email: the account's address now, so its link shows the whole history also
+        # for an event recorded before an email change.
+        pager["rows"] = audit_rows(db.query(
+            "SELECT a.*, u.email AS current_email FROM audit_log a "
+            f"LEFT JOIN users u ON u.id = a.user_id WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+            (*params, ADMIN_AUDIT_PER_PAGE, (pager["page"] - 1) * ADMIN_AUDIT_PER_PAGE)))
+        return pager
 
     @app.route("/admin")
     @login_required
     def admin():
         require_admin()
         state = admin_list_state(request.args)
-        activity_q = request.args.get("q", "").strip().lower()[:254]
         where, params = "1 = 1", []
         if state["search"]:
             # casefold (registered in db.get_db) folds every script and composes accents.
@@ -3141,17 +3268,16 @@ def register_routes(app):
             "movements": db.query("SELECT COUNT(*) AS n FROM movements", one=True)["n"],
             "documents": db.query("SELECT COUNT(*) AS n FROM documents", one=True)["n"],
         }
-        list_state = {k: v for k, v in state.items() if k != "page"}
         pager = paginate(users, state["page"], ADMIN_USERS_PER_PAGE,
-                         lambda n, _size: admin_url(**list_state, page=n, q=activity_q) + "#accounts")
+                         lambda n, _size: admin_url(**dict(state, page=n)) + "#accounts")
         state["page"] = pager["page"]
-        activity = account_activity(activity_q, ADMIN_AUDIT_ROWS)
+        activity = activity_page(state)
+        state["apage"] = activity["page"]
         return render_template("admin.html", pager=pager, totals=totals, state=state,
-                               admin_url=admin_url,
+                               admin_url=admin_url, admin_hidden=admin_hidden,
                                account_url=admin_account_url,
                                default_quota=app.config["USER_QUOTA_BYTES"],
-                               plans=plan_catalog(), activity=activity, activity_q=activity_q,
-                               activity_limit=ADMIN_AUDIT_ROWS, audit_days=AUDIT_DAYS)
+                               plans=plan_catalog(), activity=activity, audit_days=AUDIT_DAYS)
 
     @app.route("/admin/users/<int:user_id>")
     @login_required
@@ -3171,11 +3297,11 @@ def register_routes(app):
             {"id": user_id}, one=True)
         state = admin_list_state(request.args)
         return render_template("admin_account.html", u=u, counts=counts, state=state,
-                               admin_url=admin_url,
+                               admin_url=admin_url, admin_hidden=admin_hidden,
                                back=admin_url(**state), plans=plan_catalog(),
                                activity=account_activity(u["email"], ADMIN_ACCOUNT_AUDIT_ROWS),
                                activity_limit=ADMIN_ACCOUNT_AUDIT_ROWS,
-                               history=admin_url(q=u["email"]) + "#activity",
+                               history=admin_url(**dict(state, q=u["email"], apage=1)) + "#activity",
                                tickets_url=url_for("admin_support", q=u["email"]))
 
     @app.route("/admin/plans/<key>", methods=["POST"])

@@ -84,7 +84,7 @@ class UiFixTests(AppTestCase):
     def test_layout_rules(self):
         css = self.read("static", "css", "style.css")
         self.assertIn(".plan-card .btn-block { white-space: normal;", css)
-        self.assertIn(".table td.num .small { overflow-wrap: normal; }", css)
+        self.assertIn(".table td.num .small { overflow-wrap: normal; white-space: nowrap; }", css)
 
     def test_landing_does_not_claim_the_app_runs_on_your_computer(self):
         self.assertNotIn(b"Runs on your own computer", self.client.get("/").data)

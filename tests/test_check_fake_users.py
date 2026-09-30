@@ -52,9 +52,9 @@ class CheckFakeUsersTests(AppTestCase):
         for email in ("real@example.com", "new@example.com", "boss@example.com",
                       "year@example.com", "ticket@example.com"):
             self.assertNotIn(email, out)
-        self.assertIn("4 s, scanner", out)
+        self.assertIn("4 s, likely scanner", out)
         self.assertIn("1 h", out)
-        self.assertNotIn("1 h, scanner", out)
+        self.assertNotIn("1 h, likely scanner", out)
         self.assertIn("not recorded", out)
         self.assertIn("72.145.83.93", out)
         self.assertIn("198.51.100.9", out)

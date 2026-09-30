@@ -31,7 +31,7 @@ class SupportBase(AppTestCase):
 class NavigationTests(SupportBase):
     def test_icon_and_menu_only_when_signed_in(self):
         html = self.client.get("/settings").get_data(as_text=True)
-        self.assertIn('title="Contact support"', html)
+        self.assertIn('data-tip="Contact support"', html)  # tooltip since 1.5.0
         self.assertIn('aria-label="Contact support"', html)
         header = html.split("</header>", 1)[0]
         self.assertLess(header.index("support-btn"), header.index('id="theme-toggle"'))

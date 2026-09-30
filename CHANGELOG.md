@@ -2,6 +2,47 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.0] - 2026-10-01
+
+### Added
+
+- Documentation at `/docs`, public and in search results: how to create an account, set up a year and a base, log movements, how days are counted (with a diagram and a worked example), the dashboard and map, receipts, the accountant package, plans, settings, support, troubleshooting and keyboard shortcuts. A search box at the top (press `/` anywhere on the page) finds any section, ignoring case and accents, with the match marked and arrow keys to choose. The contents on the left follow the reading position and fold into a Contents button on phones. Screenshots of the real app, in the light and the dark theme, show each operation (the country list open, the delete dialog on its second step, a map tooltip, numbered markers on the buttons to press). Limits, durations and plan prices on the page come from the app's settings.
+- A question mark button next to the chat bubble opens the documentation, with a "Documentation" tooltip on hover and keyboard focus (the chat bubble now has a matching "Contact support" tooltip). The menu under your name, the footer of every page and the 404 page link to it too. On phones the signed in header leaves it to the menu, so your name keeps its room.
+- `scripts/docs_screenshots.py` remakes the screenshots from a demo account on a scratch copy of the app, with Google Chrome headless (Node 22, nothing installed).
+
+### Changed
+
+- The admin **Security activity** is a table with Time (UTC), Event, Account and IP columns, 20 events a page, sortable by every column (IP addresses by number, so 9.x comes before 10.x; events without an account or IP last). Every event of the last 365 days can be reached, instead of only the last 100. The account filter box is full width (its placeholder was cut to "All accour"), has a Clear button, and each email in the table filters to that account. The accounts table and the activity table keep each other's search, sort and page. The account page's recent activity uses the same table.
+- `checkFakeUsers.sh` marks a confirmation within 2 minutes as "likely scanner" and says it is typical of a mail scanner, not proof, pointing to the confirming IP (a cloud network such as Microsoft or Amazon) to settle it.
+
+### Fixed
+
+Security activity:
+
+- Emails with an accent (élodie@...) sorted after z in the activity table, and also in the admin accounts and support ticket tables (email, user and subject columns): alphabetical columns now ignore case and accents.
+- An email in the activity recorded before the account changed its address linked to that old address, which showed only part of the account's history; it now links to the account's full history.
+
+Documentation, found in its review before release:
+
+- Step 1 of creating an account named a "Sign up" button that does not exist; the sign in page offers **Create an account** (or **Start free** on the home page).
+- Photos: the page said every big photo loses its metadata and location. HEIC photos, photos over 24 megapixels and smaller photos are stored as they are, with their metadata; only big JPG, PNG and WebP photos are resized.
+- A password reset was said to sign out "every other device"; it signs out every device and you sign in again.
+- The worked example read like the dashboard total; it is the result for its 14 days (January and February add to the base on the dashboard).
+- `Esc` was said to clear the search; the first press closes the results, the second clears.
+- "Include my notes" adds them to `timeline.csv`, not to the PDF timeline; `manifest.csv` lists every other file, not itself.
+- The troubleshooting for a missing confirmation email left out the quickest fix: signing in sends a new link.
+- Three contents entries had other names than their sections, so the contents and the search results disagreed.
+- The numbered sign up steps spread bold words apart ("Launch app ,"), since each word became its own flex item.
+- Searching "overlap", the word the app itself uses ("This stay overlaps"), found nothing.
+- Search results cut their text in the middle of a word.
+- Two screenshot descriptions did not match their pictures (the country list and the example year).
+- On phones about 375 pixels wide the new header button left no room for your name in the header.
+
+Other:
+
+- "3 counted" under a movement's days split over two lines on wider screens, although it was meant to stay whole.
+- `checkFakeUsers.sh` needed `.venv/bin/flask`, so its test failed in GitHub Actions, where the app runs without a `.venv`. It now uses `$PYTHON`, the active virtual environment, the app's `.venv` or `python3`, in that order, with `python -m flask`.
+
 ## [1.4.1] - 2026-10-01
 
 ### Added

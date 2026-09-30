@@ -1,0 +1,42 @@
+{
+ "dashboard": [
+  1120,
+  273
+ ],
+ "delete-dialog": [
+  496,
+  272
+ ],
+ "map": [
+  689,
+  392
+ ],
+ "movement-new": [
+  792,
+  536
+ ],
+ "movements-table": [
+  689,
+  587
+ ],
+ "package": [
+  442,
+  432
+ ],
+ "receipts": [
+  792,
+  393
+ ],
+ "support-ticket": [
+  792,
+  374
+ ],
+ "two-factor": [
+  792,
+  530
+ ],
+ "year-new": [
+  792,
+  423
+ ]
+}

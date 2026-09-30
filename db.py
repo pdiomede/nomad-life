@@ -1,4 +1,5 @@
 """SQLite storage for Nomad Life."""
+import ipaddress
 import os
 import sqlite3
 import unicodedata
@@ -169,6 +170,30 @@ def search_like(text):
             .replace("_", "\\_") + "%")
 
 
+def sort_fold(value):
+    """A text key for alphabetical order: case and accents ignored, so "élodie@" sorts with the
+    e's instead of after z (COLLATE NOCASE only folds A to Z)."""
+    if not isinstance(value, str):
+        return value
+    text = unicodedata.normalize("NFKD", value.casefold())
+    return "".join(ch for ch in text if not unicodedata.combining(ch))
+
+
+def ip_sort_key(value):
+    """A text key that sorts IP addresses by number (9.1.1.1 before 10.0.0.1), IPv4 before
+    IPv6 (an IPv4 address written as ::ffff:1.2.3.4 counts as IPv4), anything else after
+    them as typed. Empty stays NULL, for tables that put it last."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        ip = ipaddress.ip_address(value.strip())
+    except ValueError:
+        return "9:" + value
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return f"4:{int(ip):08x}" if ip.version == 4 else f"6:{int(ip):032x}"
+
+
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(current_app.config["DATABASE_PATH"])
@@ -178,6 +203,8 @@ def get_db():
         g.db.create_function("casefold", 1,
                              lambda v: search_fold(v) if isinstance(v, str) else v,
                              deterministic=True)
+        g.db.create_function("ip_sort_key", 1, ip_sort_key, deterministic=True)
+        g.db.create_function("sort_fold", 1, sort_fold, deterministic=True)
     return g.db
 
 

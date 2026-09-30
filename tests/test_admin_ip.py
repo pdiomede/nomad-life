@@ -60,6 +60,7 @@ class AdminIpTests(AppTestCase):
                           ("c@example.com", "192.0.2.5")):
             self.signup(email, client=self.client_from(ip))
         html = self.admin.get("/admin?search=198.51.100.").get_data(as_text=True)
+        html = html.split('id="activity"', 1)[0]  # the accounts table only
         self.assertIn(">a@example.com</a>", html)
         self.assertIn(">b@example.com</a>", html)
         self.assertNotIn(">c@example.com</a>", html)

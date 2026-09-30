@@ -134,3 +134,42 @@
   {{ caller() if caller }}
 </div>
 {% endmacro %}
+
+{# Security history as a table (admin page and admin account page). With `href(key, dir)` and
+   `state` ({sort, dir}) the headers sort; `filter_href(email)` links an account to its history.
+   On phones the account and IP move under the event. #}
+{% macro activity_table(rows, caption, state=None, href=None, filter_href=None) %}
+<div class="table-wrap">
+  <table class="table activity-table">
+    <caption class="visually-hidden">{{ caption }}</caption>
+    <thead>
+      <tr>
+        {% if href %}
+          {{ sort_th(state, 'time', 'Time (UTC)', href) }}
+          {{ sort_th(state, 'event', 'Event', href) }}
+          {{ sort_th(state, 'account', 'Account', href, 'hide-sm') }}
+          {{ sort_th(state, 'ip', 'IP', href, 'hide-sm') }}
+        {% else %}
+          <th scope="col">Time (UTC)</th>
+          <th scope="col">Event</th>
+          <th scope="col" class="hide-sm">Account</th>
+          <th scope="col" class="hide-sm">IP</th>
+        {% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in rows %}
+      {% set account %}{% if e.email and filter_href %}<a href="{{ filter_href(e.current_email or e.email) }}" dir="auto">{{ e.email }}</a>{% elif e.email %}<bdi>{{ e.email }}</bdi>{% else %}<span class="muted">none</span>{% endif %}{% endset %}
+      <tr>
+        <td class="small activity-time"><span class="nowrap">{{ e.created_at[:10] }}</span> <span class="nowrap">{{ e.created_at[11:19] }}</span></td>
+        <td class="activity-event">{{ e.label }}{% if e.detail %} <span class="muted small"><bdi>({{ e.detail }})</bdi></span>{% endif %}{% if e.actor %} <span class="muted small">by <bdi>{{ e.actor }}</bdi></span>{% endif %}
+          <span class="activity-sub small show-sm">{{ account }}{% if e.ip %} &middot; <span class="muted">{{ e.ip }}</span>{% endif %}</span>
+        </td>
+        <td class="small activity-account hide-sm">{{ account }}</td>
+        <td class="small activity-ip hide-sm">{% if e.ip %}{{ e.ip }}{% else %}<span class="muted">none</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}

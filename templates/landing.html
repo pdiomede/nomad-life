@@ -9,6 +9,7 @@
 {% endblock %}
 
 {% block topnav %}
+  {% include "_docs_button.html" %}
   {% include "_theme_toggle.html" %}
   <a class="btn btn-launch" href="{{ url_for('login') }}">Launch app</a>
 {% endblock %}

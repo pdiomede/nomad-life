@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui with context %}
 {% block title %}Admin | Nomad Life{% endblock %}
-{% macro sort_href(key, dir) %}{{ admin_url(search=state.search, sort=key, dir=dir, q=activity_q) }}#accounts{% endmacro %}
+{% macro sort_href(key, dir) %}{{ admin_url(**dict(state, sort=key, dir=dir, page=1)) }}#accounts{% endmacro %}
+{% macro activity_href(key, dir) %}{{ admin_url(**dict(state, asort=key, adir=dir, apage=1)) }}#activity{% endmacro %}
+{% macro activity_filter_href(email) %}{{ admin_url(**dict(state, q=email, apage=1)) }}#activity{% endmacro %}
+{% macro hidden(skip) %}{% for k, v in admin_hidden(state, *skip) %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endmacro %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -64,12 +67,10 @@
       <label for="users-search">Search accounts</label>
       <input id="users-search" name="search" type="search" value="{{ state.search }}" placeholder="Email, name or IP" maxlength="254">
     </div>
-    <input type="hidden" name="sort" value="{{ state.sort }}">
-    <input type="hidden" name="dir" value="{{ state.dir }}">
-    {% if activity_q %}<input type="hidden" name="q" value="{{ activity_q }}">{% endif %}
+    {{ hidden(('search', 'page')) }}
     <div class="support-filter-actions">
       <button class="btn btn-primary btn-sm" type="submit">Search</button>
-      {% if state.search %}<a class="btn btn-ghost btn-sm" href="{{ admin_url(sort=state.sort, dir=state.dir, q=activity_q) }}#accounts">Clear</a>{% endif %}
+      {% if state.search %}<a class="btn btn-ghost btn-sm" href="{{ admin_url(**dict(state, search='', page=1)) }}#accounts">Clear</a>{% endif %}
     </div>
   </form>
 
@@ -128,27 +129,28 @@
 <section class="card" id="activity" aria-labelledby="activity-title">
   <div class="card-head">
     <h2 id="activity-title">Security activity</h2>
-    <p class="muted small">The last {{ activity_limit }} events{% if activity_q %} for &ldquo;{{ activity_q }}&rdquo;{% endif %}, kept for {{ audit_days }} days.</p>
+    <p class="muted small">Sign ins, account changes and admin actions, kept for {{ audit_days }} days.</p>
   </div>
-  <form method="get" action="{{ url_for('admin') }}#activity" class="row admin-quota">
-    {% for key in ('search', 'sort', 'dir', 'page') %}
-      {% if state[key] and state[key] != {'sort': 'joined', 'dir': 'desc', 'page': 1}.get(key) %}<input type="hidden" name="{{ key }}" value="{{ state[key] }}">{% endif %}
-    {% endfor %}
-    <label for="activity-q" class="small">Account email</label>
-    <input id="activity-q" name="q" type="search" value="{{ activity_q }}" placeholder="All accounts">
-    <button class="btn btn-ghost btn-sm" type="submit">Filter</button>
+  <form method="get" action="{{ url_for('admin') }}#activity" class="support-filters">
+    <div class="field grow">
+      <label for="activity-q">Account email</label>
+      <input id="activity-q" name="q" type="search" value="{{ state.q }}" placeholder="All accounts" maxlength="254" autocomplete="off">
+    </div>
+    {{ hidden(('q', 'apage')) }}
+    <div class="support-filter-actions">
+      <button class="btn btn-primary btn-sm" type="submit">Filter</button>
+      {% if state.q %}<a class="btn btn-ghost btn-sm" href="{{ admin_url(**dict(state, q='', apage=1)) }}#activity">Clear</a>{% endif %}
+    </div>
   </form>
-  {% if activity %}
-  <ul class="activity-list">
-    {% for e in activity %}
-    <li>
-      <span>{{ e.label }}{% if e.detail %} <span class="muted small">({{ e.detail }})</span>{% endif %}{% if e.actor %} <span class="muted small">by {{ e.actor }}</span>{% endif %}</span>
-      <span class="muted small">{{ e.email }}{% if e.email %} &middot; {% endif %}{{ e.created_at }} UTC{% if e.ip %} &middot; {{ e.ip }}{% endif %}</span>
-    </li>
-    {% endfor %}
-  </ul>
+  {% if activity.rows %}
+  {% set sort_label = {'time': 'time', 'event': 'event', 'account': 'account', 'ip': 'IP'}[state.asort] %}
+  {{ ui.activity_table(activity.rows, 'Security activity, sorted by ' ~ sort_label ~ (', newest first' if state.asort == 'time' and state.adir == 'desc' else ', oldest first' if state.asort == 'time' else ', ascending' if state.adir == 'asc' else ', descending'), {'sort': state.asort, 'dir': state.adir}, activity_href, activity_filter_href) }}
+  <div class="table-foot">
+    <p class="muted small">Showing {{ '{:,}'.format(activity.first) }} to {{ '{:,}'.format(activity.last) }} of {{ '{:,}'.format(activity.total) }} event{{ '' if activity.total == 1 else 's' }}{% if state.q %} for &ldquo;{{ state.q }}&rdquo;{% endif %}</p>
+    {% if activity.pages > 1 %}{{ ui.pagination(activity, 'Security activity pages') }}{% endif %}
+  </div>
   {% else %}
-  <p class="muted small">No events yet.</p>
+  <p class="empty">{% if state.q %}No events for &ldquo;{{ state.q }}&rdquo;.{% else %}No events yet.{% endif %}</p>
   {% endif %}
 </section>
 {% endblock %}
