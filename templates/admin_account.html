@@ -16,7 +16,9 @@
       {% if u.disabled %}<span class="pill pill-error">Disabled</span>{% endif %}
       {% if not u.verified_at %}<span class="pill pill-warn">Email not confirmed</span>{% endif %}
       {% if u.used > u.quota %}<span class="pill pill-warn">Over quota</span>{% endif %}
+      {% if u.suspect %}<span class="pill pill-error chip-fake">Likely fake</span>{% endif %}
     </p>
+    {% if u.suspect %}<p class="muted small admin-fake-note">{{ u.fake_reason }} Delete it under Access, or all such accounts at once with <code>./checkFakeUsers.sh</code> on the server.</p>{% endif %}
   </div>
 </div>
 

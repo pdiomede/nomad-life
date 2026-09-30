@@ -43,13 +43,13 @@ class PlanTests(AppTestCase):
     def test_plan_page_shows_current_and_next_tier(self):
         html = self.page("/plan")
         self.assertIn("Your plan", html)
-        self.assertIn("Upgrade to Pro, $4 / month ($40 / year)", html)
+        self.assertIn("Upgrade to Pro, $0.99 / month ($9.99 / year)", html)
         self.assertIn("Online payment is coming soon.", html)
         self.assertIn("5 GB of receipt storage", html)
 
     def test_pro_sees_nomad_plus(self):
         self.set_plan("pro")
-        self.assertIn("Upgrade to Nomad+, $9 / month ($90 / year)", self.page("/plan"))
+        self.assertIn("Upgrade to Nomad+, $1.99 / month ($19.99 / year)", self.page("/plan"))
 
     def test_top_plan(self):
         self.set_plan("plus")
@@ -70,7 +70,7 @@ class PlanTests(AppTestCase):
     def test_landing_lists_every_tier(self):
         self.client.post("/logout")
         html = self.page("/")
-        for text in ('id="pricing"', ">Free<", ">Pro<", ">Nomad+<", "$4", "$9",
+        for text in ('id="pricing"', ">Free<", ">Pro<", ">Nomad+<", "$0.99", "$1.99",
                      "25 GB of receipt storage", "Priority support"):
             self.assertIn(text, html)
 
@@ -154,8 +154,8 @@ class PlanBugTests(AppTestCase):
                                     html, re.S).group(1))
         app_node = next(n for n in data["@graph"] if n["@type"] == "WebApplication")
         offers = {o["name"]: (o["price"], o["priceCurrency"]) for o in app_node["offers"]}
-        self.assertEqual(offers, {"Free": ("0", "USD"), "Pro": ("4", "USD"),
-                                  "Nomad+": ("9", "USD")})
+        self.assertEqual(offers, {"Free": ("0", "USD"), "Pro": ("0.99", "USD"),
+                                  "Nomad+": ("1.99", "USD")})
 
 
 class AdminPlanTests(AppTestCase):
@@ -195,8 +195,8 @@ class AdminPlanSelectorTests(AppTestCase):
         html = self.client.get(f"/admin/users/{self.uid}").get_data(as_text=True)
         self.assertIn(f'id="plan-{self.uid}"', html)
         self.assertIn('<option value="free" selected>Free (free)</option>', html)
-        self.assertIn('<option value="pro">Pro ($4 / month, $40 / year)</option>', html)
-        self.assertIn('<option value="plus">Nomad+ ($9 / month, $90 / year)</option>', html)
+        self.assertIn('<option value="pro">Pro ($0.99 / month, $9.99 / year)</option>', html)
+        self.assertIn('<option value="plus">Nomad+ ($1.99 / month, $19.99 / year)</option>', html)
 
     def test_admin_changes_the_plan(self):
         html = self.set_plan("pro")
@@ -250,10 +250,10 @@ class PlanFeatureTests(unittest.TestCase):
         self.assertNotIn("Accountant package", cards["Nomad+"])
         self.assertIn("Accountant package", cards["Pro"])
         self.assertNotIn("Accountant package", cards["Free"])
-        self.assertIn("<strong>$40 / year</strong>", cards["Pro"])
-        self.assertIn("<strong>$90 / year</strong>", cards["Nomad+"])
-        self.assertIn("Save $8 a year", cards["Pro"])
-        self.assertIn("Save $18 a year", cards["Nomad+"])
+        self.assertIn("<strong>$9.99 / year</strong>", cards["Pro"])
+        self.assertIn("<strong>$19.99 / year</strong>", cards["Nomad+"])
+        self.assertIn("Save $1.89 a year", cards["Pro"])
+        self.assertIn("Save $3.89 a year", cards["Nomad+"])
         self.assertNotIn("Save $", cards["Free"])
         self.assertNotIn("/ year", cards["Free"])
 
@@ -313,8 +313,8 @@ class AdminPriceTests(AppTestCase):
     def test_empty_fields_restore_the_default(self):
         self.price("plus", "12", "100")
         html = self.price("plus", "", "").get_data(as_text=True)
-        self.assertIn("Nomad+ is back to its default prices ($9 / month, $90 / year).", html)
-        self.assertIn("$9 <span", self.app.test_client().get("/").get_data(as_text=True))
+        self.assertIn("Nomad+ is back to its default prices ($1.99 / month, $19.99 / year).", html)
+        self.assertIn("$1.99 <span", self.app.test_client().get("/").get_data(as_text=True))
 
     def test_bad_prices_are_refused(self):
         for month, year in (("abc", "40"), ("4", ""), ("0", "40"), ("-4", "40"), ("4.555", "40"),

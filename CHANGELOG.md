@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.1] - 2026-10-01
+
+### Added
+
+- The admin accounts table marks accounts that look fake with a red **Likely fake** chip, in a column right after Account. The rule is the one `./checkFakeUsers.sh` uses (confirmed, never signed in, no years, receipts or tickets, not disabled, no plan or quota set by an admin, not an admin, joined over 24 hours ago), shared in one place so the chip, the filter and the tool always agree. The reason shows on hover or keyboard focus, for example "Confirmed 4 s after sign up, likely by a mail scanner; never signed in, no data after 24 hours."; on phones it is written under the email. The account page shows the chip with the reason too.
+- Next to the "Users" title, **All accounts**, **Suspected fake** (with their count) and **Hide suspected** filter the table. The choice stays with the search, sort and page, on the account page and after its actions.
+
+### Changed
+
+- The accounts table no longer has a Years column (the account page still shows it).
+- New default prices: Pro $0.99 a month or $9.99 a year, Nomad+ $1.99 a month or $19.99 a year (landing page, plan page, documentation, search engine data). Prices are now kept in cents. Prices set on the admin page still win; clear both fields there to follow the defaults.
+- Documentation: help goes to support@nomadlife.pro ("Still stuck?" and the lost phone paragraph), and every main section ends with a **Back to the top** link.
+- The light and dark mode button has a "Light or dark mode" tooltip, like the other header buttons.
+- More space between the light and dark mode button and **Launch app** on the landing page.
+
+### Fixed
+
+- Dismissing a message at the top of a page (such as "Movement updated.") made the page jump: the message vanished at once, pulling everything up, and the focus then moved to the whole page area in a way that could scroll it. The message now folds away smoothly (at once for people who ask their system for reduced motion) and the focus moves without scrolling.
+
+Found in the review of this release:
+
+- On phones the new Check column squeezed the Account column, breaking emails in the middle ("user12@exampl e.test") and making the table scroll sideways. There the chip and its reason now sit under the email.
+- The chip's reason, although invisible, still took room to the right of the chip, so the accounts table could scroll sideways. It now takes no room until shown.
+- On phones the three filter buttons wrapped into a broken row. They are now three equal buttons across the card, each wrapping its own label.
+- The landing page header was wider than phones between 361 and 400 pixels (since the Documentation button in 1.5.0, and more with the new space), so the page scrolled sideways, and at 320 pixels **Launch app** touched the edge. The header is more compact on phones and fits from 320 pixels.
+
 ## [1.5.0] - 2026-10-01
 
 ### Added

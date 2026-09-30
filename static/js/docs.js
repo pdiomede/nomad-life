@@ -26,7 +26,7 @@
   var entries = [];
   document.querySelectorAll("[data-doc-title]").forEach(function (el) {
     var copy = el.cloneNode(true);
-    copy.querySelectorAll("[data-doc-title], h2, h3, svg, .doc-shot").forEach(function (n) { n.remove(); });
+    copy.querySelectorAll("[data-doc-title], h2, h3, svg, .doc-shot, .doc-top").forEach(function (n) { n.remove(); });
     var text = copy.textContent.replace(/\s+/g, " ").trim();
     var parent = el.parentElement.closest("[data-doc-title]");
     var title = el.getAttribute("data-doc-title");

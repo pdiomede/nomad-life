@@ -126,3 +126,25 @@ class DocsPageTests(AppTestCase):
         finally:
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(original)
+
+
+class DocsTouchesTests(AppTestCase):
+    def test_support_address_back_to_top_and_theme_tooltip(self):
+        html = self.app.test_client().get("/docs").get_data(as_text=True)
+        self.assertIn('Write to <a href="mailto:support@nomadlife.pro">support@nomadlife.pro</a> '
+                      "from your account's email address.", html)
+        self.assertIn('Still stuck? Write to <a href="mailto:support@nomadlife.pro">'
+                      'support@nomadlife.pro</a></p>', html)
+        self.assertNotIn("mailto:info@nomadlife.pro\">info@nomadlife.pro</a> from", html)
+        # One "Back to the top" at the end of every main section, to the page's top.
+        self.assertEqual(html.count('<p class="doc-top"><a href="#top">'), len(appmod.DOCS_TOC))
+        self.assertIn('<div class="docs-head" id="top">', html)
+        for section in re.findall(r'<section id="[^"]+" class="doc-section".*?\n      </section>',
+                                  html, re.S):
+            self.assertIn('Back to the top</a></p>\n      </section>', section[-80:])
+        self.assertIn('id="theme-toggle" type="button" aria-label="Toggle light or dark mode" '
+                      'data-tip="Light or dark mode"', html)
+        self.assertNotIn('title="Toggle theme"', html)
+        # The plans table shows the default prices.
+        self.assertIn("$0.99 a month or $9.99 a year", html)
+        self.assertIn("$1.99 a month or $19.99 a year", html)

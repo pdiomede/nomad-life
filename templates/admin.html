@@ -4,6 +4,9 @@
 {% macro sort_href(key, dir) %}{{ admin_url(**dict(state, sort=key, dir=dir, page=1)) }}#accounts{% endmacro %}
 {% macro activity_href(key, dir) %}{{ admin_url(**dict(state, asort=key, adir=dir, apage=1)) }}#activity{% endmacro %}
 {% macro activity_filter_href(email) %}{{ admin_url(**dict(state, q=email, apage=1)) }}#activity{% endmacro %}
+{# The red chip of a likely fake account, with its reason for hover, focus, taps and screen
+   readers. On phones it moves under the email. #}
+{% macro fake_chip(u) %}<span class="pill pill-error chip-fake" tabindex="0" data-tip="{{ u.fake_reason }}">Likely fake<span class="visually-hidden">: {{ u.fake_reason }}</span></span>{% endmacro %}
 {% macro hidden(skip) %}{% for k, v in admin_hidden(state, *skip) %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endmacro %}
 {% block content %}
 <div class="page-head">
@@ -61,7 +64,14 @@
 </section>
 
 <section class="card admin-users" id="accounts" aria-labelledby="users-title">
-  <div class="card-head"><h2 id="users-title">Users</h2></div>
+  <div class="card-head">
+    <h2 id="users-title">Users</h2>
+    <nav class="admin-filter" aria-label="Show accounts">
+      {% for key, label in (('', 'All accounts'), ('only', 'Suspected fake'), ('hide', 'Hide suspected')) %}
+      <a href="{{ admin_url(**dict(state, fake=key, page=1)) }}#accounts"{% if state.fake == key %} aria-current="true"{% endif %}{% if key == 'only' %} class="admin-filter-fake"{% endif %}>{{ label }}{% if key == 'only' %} <span class="admin-filter-count">{{ totals.suspects }}</span>{% endif %}</a>
+      {% endfor %}
+    </nav>
+  </div>
   <form method="get" action="{{ url_for('admin') }}#accounts" class="support-filters">
     <div class="field grow">
       <label for="users-search">Search accounts</label>
@@ -80,11 +90,11 @@
       <thead>
         <tr>
           {{ ui.sort_th(state, 'email', 'Account', sort_href) }}
+          <th scope="col" class="admin-check hide-sm"><span aria-hidden="true">Check</span><span class="visually-hidden">Fake account check</span></th>
           <th scope="col" class="hide-sm">Plan</th>
           {{ ui.sort_th(state, 'joined', 'Joined', sort_href, 'hide-sm') }}
           {{ ui.sort_th(state, 'last', 'Last sign in', sort_href) }}
           <th scope="col" class="hide-sm">Last known IP</th>
-          {{ ui.sort_th(state, 'years', 'Years', sort_href, 'num hide-sm') }}
           {{ ui.sort_th(state, 'used', 'Storage', sort_href, 'num hide-sm') }}
           <th scope="col" class="hide-sm"><span class="visually-hidden">Actions</span></th>
         </tr>
@@ -95,6 +105,7 @@
           <td>
             {% if u.full_name %}<p class="admin-name" dir="auto">{{ u.full_name }}</p>{% endif %}
             <p class="admin-email"><a href="{{ account_url(u.id, state) }}" dir="auto">{{ u.email }}</a></p>
+            {% if u.suspect %}<p class="admin-fake-sm show-sm"><span class="pill pill-error chip-fake">Likely fake</span> <span class="muted small">{{ u.fake_reason }}</span></p>{% endif %}
             {% if u.is_admin or u.has_2fa or u.disabled or not u.verified_at or u.used > u.quota %}
             <p class="admin-flags">
               {% if u.is_admin %}<span class="tag">Admin</span>{% endif %}
@@ -105,11 +116,11 @@
             </p>
             {% endif %}
           </td>
+          <td class="admin-check hide-sm">{% if u.suspect %}{{ fake_chip(u) }}{% endif %}</td>
           <td class="small nowrap hide-sm"><span class="tag">{{ u.plan_name }}</span>{% if u.quota_bytes is not none %}<br><span class="muted">custom quota</span>{% endif %}</td>
           <td class="small nowrap hide-sm">{{ u.created_at | localdate }}</td>
           <td class="small nowrap">{{ (u.last_login_at | localdate) if u.last_login_at else 'Never' }}</td>
           <td class="small admin-ip hide-sm">{% if u.last_login_ip %}{{ u.last_login_ip }}<br><span class="muted">at last sign in</span>{% elif u.signup_ip %}{{ u.signup_ip }}<br><span class="muted">at sign up</span>{% else %}<span class="muted">not recorded</span>{% endif %}</td>
-          <td class="num hide-sm">{{ u.years }}</td>
           <td class="num small nowrap hide-sm">{{ u.used | filesize('down') }} / {{ u.quota | filesize('down') }}</td>
           <td class="admin-view hide-sm"><a class="btn btn-ghost btn-sm" href="{{ account_url(u.id, state) }}" aria-label="View {{ u.email }}">View</a></td>
         </tr>
@@ -118,11 +129,11 @@
     </table>
   </div>
   <div class="table-foot">
-    <p class="muted small">Showing {{ pager.first }} to {{ pager.last }} of {{ pager.total }} account{{ '' if pager.total == 1 else 's' }}{% if state.search %} matching &ldquo;{{ state.search }}&rdquo;{% endif %}</p>
+    <p class="muted small">Showing {{ pager.first }} to {{ pager.last }} of {{ pager.total }}{% if state.fake == 'only' %} suspected{% endif %} account{{ '' if pager.total == 1 else 's' }}{% if state.fake == 'hide' %} not suspected of being fake{% endif %}{% if state.search %} matching &ldquo;{{ state.search }}&rdquo;{% endif %}</p>
     {% if pager.pages > 1 %}{{ ui.pagination(pager, 'Account pages') }}{% endif %}
   </div>
   {% else %}
-  <p class="empty">No accounts match.</p>
+  <p class="empty">{% if state.fake == 'only' and not state.search %}No accounts look fake.{% else %}No accounts match.{% endif %}</p>
   {% endif %}
 </section>
 

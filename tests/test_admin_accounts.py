@@ -76,7 +76,7 @@ class AdminAccountsTests(AppTestCase):
         # The header links keep the search and flip the direction of the active column.
         html = self.client.get("/admin?search=user&sort=email&dir=asc").get_data(as_text=True)
         self.assertIn('href="/admin?search=user&amp;sort=email#accounts"', html)
-        self.assertIn('href="/admin?search=user&amp;sort=years#accounts"', html)
+        self.assertIn('href="/admin?search=user&amp;sort=used#accounts"', html)
 
     def test_search_and_activity_filter_keep_each_other(self):
         html = self.client.get("/admin?search=user&q=admin@example.com").get_data(as_text=True)

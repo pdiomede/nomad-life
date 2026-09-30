@@ -252,6 +252,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .flash-error { background: var(--error-bg); color: var(--error-text); border-color: rgba(242, 90, 90, 0.3); }
 .flash-info, .flash-message { background: var(--info-bg); color: var(--info); border-color: rgba(0, 98, 210, 0.2); }
 .flash-text { flex: 1; min-width: 0; }
+/* A dismissed message folds away (theme.js), and so does the box of the last one. */
+.flash.is-collapsing, .flashes.is-collapsing { transition: height 0.2s ease, margin 0.2s ease, padding 0.2s ease, opacity 0.15s ease, border-width 0.2s ease; opacity: 0; margin-bottom: 0; }
+.flash.is-collapsing { padding-top: 0; padding-bottom: 0; border-width: 0; }
+.flashes.is-collapsing { margin-top: 0; }
+main:focus { outline: none; }
 .flash-close {
   flex: none; width: 24px; height: 24px; margin: -3px -6px -3px auto; display: grid; place-items: center;
   border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; opacity: 0.8;
@@ -472,7 +477,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .doc-edit-form .field:not(.grow) { width: 170px; }
 
 /* Landing page */
-.btn-launch { background: #FFFFFF; color: #1B2030; }
+.btn-launch { background: #FFFFFF; color: #1B2030; margin-left: 8px; }
+@media (max-width: 420px) {
+  /* The landing header (Documentation, theme, Launch app) fits phones from 320 px. */
+  .btn-launch { padding: 6px 8px; font-size: 13px; margin-left: 0; }
+  .topnav:has(.btn-launch) { gap: 4px; }
+  .topnav:has(.btn-launch) .icon-btn { width: 32px; height: 32px; }
+}
 .btn-launch:hover { opacity: 0.9; }
 .btn-lg { padding: 12px 22px; font-size: 15px; }
 .hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 56px; align-items: center; padding: 36px 0 64px; }
@@ -622,7 +633,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
   .topnav { gap: 6px; }
   .brand { gap: 7px; font-size: 17px; }
   .icon-btn { width: 32px; height: 32px; }
-  .btn-launch { padding: 6px 10px; font-size: 13px; }
+  .btn-launch { padding: 6px 8px; font-size: 13px; margin-left: 0; }
+  .topnav:has(.btn-launch) { gap: 4px; }
+  .topnav:has(.btn-launch) .icon-btn { width: 30px; height: 30px; }
 }
 @media (max-width: 330px) {
   /* The plan chip, Sign out and the theme button must still fit beside the name. */
@@ -790,6 +803,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 .icon-btn[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
 .icon-btn[aria-current="page"] { background: rgba(255, 255, 255, 0.14); }
 @media (prefers-reduced-motion: reduce) { .icon-btn[data-tip]::after { transition: none; } }
+/* The theme button is the last one in the header: its tooltip ends at its right edge, so it
+   never runs past the window. */
+#theme-toggle[data-tip]::after { left: auto; right: 0; transform: translate(0, -2px); }
+@media (hover: hover) { #theme-toggle[data-tip]:hover::after { transform: translate(0, 0); } }
+#theme-toggle[data-tip]:focus-visible::after { transform: translate(0, 0); }
 .ticket-close .btn { white-space: normal; max-width: 100%; text-align: left; }
 .page-head > div { min-width: 0; }
 .ticket-from { overflow-wrap: anywhere; }
@@ -897,6 +915,8 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .doc-plans th[scope="row"] { font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--text); padding-left: 20px; }
 .doc-plans td, .doc-keys td { vertical-align: top; }
 .docs-foot { padding-top: 24px; border-top: 1px solid var(--border); }
+.doc-top { margin: 18px 0 0 !important; font-size: 13px; }
+.docs-head { scroll-margin-top: 16px; }
 @media (max-width: 900px) {
   .docs-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .docs-toc { position: static; max-height: none; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
@@ -909,3 +929,36 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
   .doc-diagram { padding: 10px; }
   .doc-plans th[scope="row"] { padding-left: 16px; }
 }
+
+/* Likely fake accounts on the admin pages: a red chip whose reason shows beside it on hover,
+   keyboard focus or a tap (to the right, so it stays inside the table in every row). */
+.chip-fake { position: relative; border: 1px solid var(--error-text); white-space: nowrap; cursor: help; }
+.chip-fake:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.chip-fake[data-tip]::after {
+  content: attr(data-tip); position: absolute; left: calc(100% + 8px); top: 50%; z-index: 30;
+  transform: translate(-2px, -50%); width: max-content; max-width: 260px; white-space: normal;
+  padding: 6px 9px; border-radius: 6px; background: var(--primary); color: var(--primary-text);
+  font-size: 12px; font-weight: 500; line-height: 1.35; box-shadow: var(--shadow);
+  pointer-events: none;
+  display: none;  /* not just transparent: a hidden box would still widen the table */
+}
+@media (hover: hover) { .chip-fake[data-tip]:hover::after { display: block; } }
+.chip-fake[data-tip]:focus::after { display: block; }
+.admin-users-table .admin-check { width: 1%; white-space: nowrap; }
+.admin-fake-note { margin-top: 8px; max-width: 640px; }
+
+/* Show all accounts, only the likely fake ones, or hide them: next to the Users title. */
+.admin-filter { display: inline-flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--input-border); border-radius: 8px; overflow: hidden; font-size: 13px; }
+.admin-filter a { padding: 5px 12px; color: var(--text); font-weight: 500; }
+.admin-filter a + a { border-left: 1px solid var(--input-border); }
+.admin-filter a:hover { text-decoration: none; background: var(--surface-2); }
+.admin-filter a:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+.admin-filter a[aria-current] { background: var(--primary); color: var(--primary-text); }
+@media (max-width: 600px) {
+  /* Three equal buttons across the card; a long label wraps inside its own button. */
+  .admin-filter { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+  .admin-filter a { padding: 6px 8px; text-align: center; line-height: 1.3; }
+  .admin-fake-sm.show-sm { display: block; margin: 6px 0 0; }
+  .admin-fake-sm .muted { display: block; margin-top: 4px; }
+}
+.admin-filter-count { display: inline-block; min-width: 20px; margin-left: 4px; padding: 0 6px; border-radius: 999px; background: var(--error-bg); color: var(--error-text); font-size: 12px; font-weight: 700; text-align: center; }

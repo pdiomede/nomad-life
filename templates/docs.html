@@ -22,7 +22,7 @@
 
 {% block content %}
 <div class="docs">
-  <div class="docs-head">
+  <div class="docs-head" id="top">
     <div>
       <p class="eyebrow">Documentation</p>
       <h1>How to use Nomad Life</h1>
@@ -80,6 +80,7 @@
             <li>New passwords that appear in known data breaches are refused.</li>
           </ul>
         </section>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="years" class="doc-section" data-doc-title="Years and your base">
@@ -95,6 +96,7 @@
           <h3>Change your base or delete a year</h3>
           <p>On the dashboard, <strong>Manage base and contract</strong> (on the Base card) lets you change the base city and country, upload your rental contract, or delete the year. Deleting a year removes its movements and receipts and asks you to type the year to confirm.</p>
         </section>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="movements" class="doc-section" data-doc-title="Movements">
@@ -121,6 +123,7 @@
           {{ shot('delete-dialog', 'The delete confirmation dialog on step 2 of 2: "Are you sure? This permanently deletes the movement to Madrid and its 2 receipt(s)." with Cancel and Yes, delete permanently', 'Every delete asks twice. The second step says what will be removed.') }}
           <p>Limits: city and country up to {{ place_max }} characters, and up to {{ '{:,}'.format(movements_max) }} movements a year.</p>
         </section>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="counting" class="doc-section" data-doc-title="How days are counted">
@@ -179,6 +182,7 @@
           <p>Many countries treat you as a tax resident once you spend {{ threshold }} days or more there in a year. The <strong>Days in base country</strong> card marks that line: it says <strong>At least {{ threshold }} days</strong>, or how many days you are short. In <strong>Days per country</strong> a bar turns red when another country reaches {{ threshold }} days.</p>
           <p class="doc-note">Nomad Life counts days; it does not give tax advice. Rules differ by country (some count partial days or look at other ties), so check yours with an accountant.</p>
         </section>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="dashboard" class="doc-section" data-doc-title="Your dashboard">
@@ -211,6 +215,7 @@
             <li>Places the map cannot show, such as a country typed as free text, are listed under it.</li>
           </ul>
         </section>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="receipts" class="doc-section" data-doc-title="Receipts">
@@ -234,6 +239,7 @@
           <h3>Storage</h3>
           <p>The <strong>Receipt storage</strong> card shows the space left, shared by all your years. Your plan sets the total and the largest single receipt (see <a href="#plans">Plans</a>). When storage is full, delete receipts you no longer need, or upgrade.</p>
         </section>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="package" class="doc-section" data-doc-title="Accountant package">
@@ -252,6 +258,7 @@
     <span class="doc-tree-dir">01_2026-03-03_Madrid_Spain/</span></pre>
           <figcaption>What the ZIP holds for 2026.</figcaption>
         </figure>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="plans" class="doc-section" data-doc-title="Plans">
@@ -276,6 +283,7 @@
           </table>
         </div>
         <p>Prices are in US dollars. Your plan is in the menu under your name. Online payment is coming soon.</p>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="settings" class="doc-section" data-doc-title="Settings">
@@ -307,6 +315,7 @@
           <h3>Delete your account</h3>
           <p><strong>Delete my account</strong> removes the account with all its years, movements and receipts. It needs your password, two confirmations and your email typed. It cannot be undone, so download your accountant packages first.</p>
         </section>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="support" class="doc-section" data-doc-title="Support">
@@ -318,6 +327,7 @@
           <li><strong>Close ticket, my problem is solved</strong> closes it. Writing again reopens it, unless you already have {{ open_tickets_max }} open tickets.</li>
           <li>Tickets are numbered by year, like <strong>#2026-4</strong>. Mention the number if you write to us by email.</li>
         </ul>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="troubleshooting" class="doc-section" data-doc-title="Troubleshooting">
@@ -332,7 +342,7 @@
         </section>
         <section id="lost-phone" class="doc-sub" data-doc-title="Lost phone with the authenticator app">
           <h3>Lost the phone with your authenticator app</h3>
-          <p>Write to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a> from your account's email address. Once we have checked it is you, we remove two-factor sign in so you can sign in with your password and turn it on again.</p>
+          <p>Write to <a href="mailto:{{ support_email }}">{{ support_email }}</a> from your account's email address. Once we have checked it is you, we remove two-factor sign in so you can sign in with your password and turn it on again.</p>
         </section>
         <section id="refused" class="doc-sub" data-doc-title="A receipt is refused">
           <h3>A receipt is refused</h3>
@@ -342,6 +352,7 @@
           <h3>The day count looks wrong</h3>
           <p>Look for "counted" under a movement in the table: it shares days with another one. Remember that empty future days count nowhere yet, and that both the first and the last day of a movement count. See <a href="#counting">How days are counted</a>.</p>
         </section>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
       <section id="shortcuts" class="doc-section" data-doc-title="Keyboard shortcuts">
@@ -360,9 +371,10 @@
           </table>
         </div>
         <p class="muted small">The map keys work once the map card has the keyboard focus (press <kbd>Tab</kbd> until a map button is highlighted).</p>
+        <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
-      <p class="docs-foot muted small">Still stuck? {% if current_user.is_authenticated %}<a href="{{ url_for('support_new') }}">Submit a ticket</a> or write{% else %}Write{% endif %} to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
+      <p class="docs-foot muted small">Still stuck? {% if current_user.is_authenticated %}<a href="{{ url_for('support_new') }}">Submit a ticket</a> or write{% else %}Write{% endif %} to <a href="mailto:{{ support_email }}">{{ support_email }}</a></p>
     </article>
   </div>
 </div>

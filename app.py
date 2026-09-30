@@ -42,10 +42,12 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.5.1"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
+# Where the documentation sends people who need help (a lost phone, questions).
+SUPPORT_EMAIL = "support@nomadlife.pro"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -80,13 +82,13 @@ RESIDENCE_THRESHOLD = 183
 # Plans, cheapest first. Free takes its limits from config.env (USER_QUOTA_MB, MAX_RECEIPT_MB);
 # a paid plan is never below Free. There is no payment yet: a plan changes in the database.
 PLANS = OrderedDict([
-    # "year" is the price for a year paid at once (two months free); "package" is the
-    # accountant package, from Pro on.
-    ("free", {"name": "Free", "price": 0, "year": 0, "quota_mb": None, "receipt_mb": None,
+    # Prices in US cents: "price_cents" a month, "year_cents" for a year paid at once (about
+    # two months free); "package" is the accountant package, from Pro on.
+    ("free", {"name": "Free", "price_cents": 0, "year_cents": 0, "quota_mb": None, "receipt_mb": None,
               "package": False, "extras": []}),
-    ("pro", {"name": "Pro", "price": 4, "year": 40, "quota_mb": 5 * 1024, "receipt_mb": 25,
+    ("pro", {"name": "Pro", "price_cents": 99, "year_cents": 999, "quota_mb": 5 * 1024, "receipt_mb": 25,
              "package": True, "extras": ["Accountant package (PDF, spreadsheets, receipts)"]}),
-    ("plus", {"name": "Nomad+", "price": 9, "year": 90, "quota_mb": 25 * 1024, "receipt_mb": 50,
+    ("plus", {"name": "Nomad+", "price_cents": 199, "year_cents": 1999, "quota_mb": 25 * 1024, "receipt_mb": 50,
               "package": True, "extras": ["Priority support"]}),
 ])
 PLAN_CURRENCY, PLAN_SYMBOL = "USD", "$"
@@ -764,9 +766,10 @@ def create_app(overrides=None):
         for r in picked:
             # The same conditions again in the DELETE itself: an account that signed in or
             # added data since the report stays (and an admin is never touched).
+            fake_sql, fake_params = fake_user_sql(admins, min_age_hours)
             gone = r["email"] not in admins and db.execute_rowcount(
                 f"DELETE FROM users WHERE id = ? AND id IN (SELECT u.id FROM users u WHERE "
-                f"{FAKE_USER_WHERE}) AND email = ?", (r["id"], r["email"]))
+                f"{fake_sql}) AND email = ?", (r["id"], *fake_params, r["email"]))
             if not gone:
                 kept.append(r["email"])
                 continue
@@ -804,29 +807,59 @@ FAKE_USER_WHERE = (
     "AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.user_id = u.id)")
 
 
+def fake_user_sql(admins, min_age_hours=FAKE_MIN_AGE_HOURS):
+    """(sql, params): the condition on `users u` for an account that looks fake. The one rule
+    behind check-fake-users, its DELETE, and the "Likely fake" chip and filter of the admin
+    table: FAKE_USER_WHERE, joined at least min_age_hours ago, and not an admin."""
+    sql = f"({FAKE_USER_WHERE} AND u.created_at <= datetime('now', ?)"
+    params = [f"-{int(min_age_hours)} hours"]
+    if admins:
+        sql += f" AND u.email NOT IN ({', '.join('?' * len(admins))})"
+        params += sorted(admins)
+    return sql + ")", params
+
+
+def fake_reason(created_at, confirmed_at):
+    """Why an account looks fake, for the chip: how soon after sign up it was confirmed (a
+    mail scanner when under SCANNER_SECONDS), then the common part."""
+    seconds = confirm_delay(created_at, confirmed_at)
+    if seconds is not None and 0 <= seconds < SCANNER_SECONDS:
+        first = f"Confirmed {short_duration(seconds)} after sign up, likely by a mail scanner"
+    elif seconds is not None and seconds >= 0:
+        first = f"Confirmed {short_duration(seconds)} after sign up"
+    else:
+        first = "Confirmed"
+    return f"{first}; never signed in, no data after {FAKE_MIN_AGE_HOURS} hours."
+
+
+def confirm_delay(created_at, confirmed_at):
+    """Seconds between sign up and email confirmation, or None when unknown."""
+    if not created_at or not confirmed_at:
+        return None
+    try:
+        return (datetime.strptime(confirmed_at[:19], "%Y-%m-%d %H:%M:%S")
+                - datetime.strptime(created_at[:19], "%Y-%m-%d %H:%M:%S")).total_seconds()
+    except ValueError:
+        return None
+
+
 def fake_user_candidates(min_age_hours, admins):
     """Accounts that look fake, oldest first, with the evidence: when and from where the email
     was confirmed (the first account_confirmed event) and the sign up IP. Admins never."""
+    fake_sql, fake_params = fake_user_sql(admins, min_age_hours)
     rows = db.query(
         "SELECT u.id, u.email, u.created_at, u.signup_ip, "
         "(SELECT a.created_at FROM audit_log a WHERE a.user_id = u.id "
         " AND a.event = 'account_confirmed' ORDER BY a.id LIMIT 1) AS confirmed_at, "
         "(SELECT a.ip FROM audit_log a WHERE a.user_id = u.id "
         " AND a.event = 'account_confirmed' ORDER BY a.id LIMIT 1) AS confirm_ip "
-        f"FROM users u WHERE {FAKE_USER_WHERE} AND u.created_at <= datetime('now', ?) "
-        "ORDER BY u.created_at, u.id", (f"-{int(min_age_hours)} hours",))
+        f"FROM users u WHERE {fake_sql} "
+        "ORDER BY u.created_at, u.id", fake_params)
     out = []
     for r in rows:
         if r["email"] in admins:
             continue
-        seconds = None
-        if r["confirmed_at"]:
-            try:
-                seconds = (datetime.strptime(r["confirmed_at"][:19], "%Y-%m-%d %H:%M:%S")
-                           - datetime.strptime(r["created_at"][:19], "%Y-%m-%d %H:%M:%S")
-                           ).total_seconds()
-            except ValueError:
-                seconds = None
+        seconds = confirm_delay(r["created_at"], r["confirmed_at"])
         out.append(dict(r, confirm_seconds=seconds,
                         scanner=seconds is not None and 0 <= seconds < SCANNER_SECONDS))
     return out
@@ -1157,8 +1190,10 @@ TICKET_SORTS = {
 # Sortable columns of the admin accounts table. Accounts that never signed in go last.
 ADMIN_USER_SORTS = {
     "email": "sort_fold(u.email)", "joined": "u.created_at",
-    "last": "u.last_login_at IS NULL, u.last_login_at", "years": "years", "used": "used",
+    "last": "u.last_login_at IS NULL, u.last_login_at", "used": "used",
 }
+# The accounts filter of the admin table: every account, only the likely fake ones, or all but.
+ADMIN_FAKE_FILTERS = ("", "only", "hide")
 ADMIN_ACCOUNT_AUDIT_ROWS = 20
 
 
@@ -1614,13 +1649,13 @@ def plan_catalog(config=None):
         if prev and quota // prev["quota_bytes"] >= 2:
             storage += f" ({quota // prev['quota_bytes']}x {prev['name']})"
         limits = [storage, f"Receipts up to {format_size(receipt, 'down')} each"]
-        month_cents, year_cents = (p["price"] * 100, p["year"] * 100) if key == "free" else \
-            overrides.get(key, (p["price"] * 100, p["year"] * 100))
+        defaults = (p["price_cents"], p["year_cents"])
+        month_cents, year_cents = defaults if key == "free" else overrides.get(key, defaults)
         saving = max(month_cents * 12 - year_cents, 0)
         plans.append({"key": key, "name": p["name"], "price_cents": month_cents,
                       "year_cents": year_cents, "price": money(month_cents),
                       "year": money(year_cents), "year_saving": money(saving) if saving else "",
-                      "default_price": money(p["price"] * 100), "default_year": money(p["year"] * 100),
+                      "default_price": money(p["price_cents"]), "default_year": money(p["year_cents"]),
                       "custom_price": key in overrides,
                       "package": p["package"],
                       "quota_bytes": quota, "receipt_bytes": receipt,
@@ -2592,7 +2627,7 @@ def register_routes(app):
         """How to use the app, public and indexable like the landing page. Every number on it
         comes from the settings below, so it never contradicts the app."""
         return render_template(
-            "docs.html", toc=DOCS_TOC, shots=docs_shots,
+            "docs.html", toc=DOCS_TOC, shots=docs_shots, support_email=SUPPORT_EMAIL,
             docs_url=app.config["APP_BASE_URL"].rstrip("/") + url_for("docs"),
             plans=plan_catalog(), threshold=RESIDENCE_THRESHOLD,
             verify_minutes=VERIFY_MINUTES, notes_max=NOTES_MAX, place_max=PLACE_MAX,
@@ -3158,7 +3193,7 @@ def register_routes(app):
 
     # Everything the admin page keeps in its address: the accounts table (search, sort, dir,
     # page) and the Security activity table (q, the account filter, and asort, adir, apage).
-    admin_defaults = {"search": "", "sort": "joined", "dir": "desc", "page": 1,
+    admin_defaults = {"search": "", "sort": "joined", "dir": "desc", "page": 1, "fake": "",
                       "q": "", "asort": "time", "adir": "desc", "apage": 1}
 
     def admin_args(values):
@@ -3182,24 +3217,31 @@ def register_routes(app):
         """State of both admin tables, from the query string or a form."""
         sort = source.get("sort", "joined")
         asort = source.get("asort", "time")
+        fake = source.get("fake", "")
         return {"search": source.get("search", "").strip()[:254],
                 "sort": sort if sort in ADMIN_USER_SORTS else "joined",
                 "dir": "asc" if source.get("dir") == "asc" else "desc",
                 "page": max(to_int(source.get("page"), 1), 1),
+                "fake": fake if fake in ADMIN_FAKE_FILTERS else "",
                 "q": source.get("q", "").strip().lower()[:254],
                 "asort": asort if asort in AUDIT_SORTS else "time",
                 "adir": "asc" if source.get("adir") == "asc" else "desc",
                 "apage": max(to_int(source.get("apage"), 1), 1)}
 
     def admin_accounts(where="1 = 1", params=(), order="u.created_at DESC"):
-        """Accounts with their plan, quota, storage and years, ready for the admin pages."""
+        """Accounts with their plan, quota, storage and years, ready for the admin pages, and
+        whether they look fake (suspect, with the reason for the chip)."""
+        fake_sql, fake_params = fake_user_sql(app.config["ADMIN_EMAILS"])
         rows = db.query(
             "SELECT u.id, u.email, u.created_at, u.last_login_at, u.disabled, u.quota_bytes, "
             "u.verified_at, u.plan, u.totp_secret IS NOT NULL AS has_2fa, u.first_name, u.last_name, "
             "u.signup_ip, u.last_login_ip, "
             "(SELECT COUNT(*) FROM years y WHERE y.user_id = u.id) AS years, "
-            "(SELECT COALESCE(SUM(size), 0) FROM documents d WHERE d.user_id = u.id) AS used "
-            f"FROM users u WHERE {where} ORDER BY {order}", params)
+            "(SELECT COALESCE(SUM(size), 0) FROM documents d WHERE d.user_id = u.id) AS used, "
+            f"CASE WHEN {fake_sql} THEN 1 ELSE 0 END AS suspect, "
+            "(SELECT a.created_at FROM audit_log a WHERE a.user_id = u.id "
+            " AND a.event = 'account_confirmed' ORDER BY a.id LIMIT 1) AS confirmed_at "
+            f"FROM users u WHERE {where} ORDER BY {order}", (*fake_params, *params))
         plans = {p["key"]: p for p in plan_catalog()}
         # Without a custom quota an account gets the quota of its plan.
         return [dict(u, plan_name=plans.get(u["plan"], plans["free"])["name"],
@@ -3208,7 +3250,9 @@ def register_routes(app):
                      else plans.get(u["plan"], plans["free"])["quota_bytes"],
                      quota_mb=f"{u['quota_bytes'] / MB:.1f}".removesuffix(".0")
                      if u["quota_bytes"] is not None else "",
-                     is_admin=u["email"] in app.config["ADMIN_EMAILS"], full_name=full_name(u))
+                     is_admin=u["email"] in app.config["ADMIN_EMAILS"], full_name=full_name(u),
+                     fake_reason=fake_reason(u["created_at"], u["confirmed_at"])
+                     if u["suspect"] else "")
                 for u in rows]
 
     def activity_where(email):
@@ -3253,6 +3297,10 @@ def register_routes(app):
                      "|| u.last_name) LIKE ? ESCAPE '\\' OR u.signup_ip LIKE ? ESCAPE '\\' "
                      "OR u.last_login_ip LIKE ? ESCAPE '\\')")
             params = [db.search_like(state["search"])] * 4
+        fake_sql, fake_params = fake_user_sql(app.config["ADMIN_EMAILS"])
+        if state["fake"]:
+            where = f"{where} AND {'NOT ' if state['fake'] == 'hide' else ''}{fake_sql}"
+            params = [*params, *fake_params]
         direction = state["dir"].upper()
         order = ", ".join(f"{part} {direction}" if not part.endswith("IS NULL") else part
                           for part in ADMIN_USER_SORTS[state["sort"]].split(", "))
@@ -3267,6 +3315,9 @@ def register_routes(app):
             "years": db.query("SELECT COUNT(*) AS n FROM years", one=True)["n"],
             "movements": db.query("SELECT COUNT(*) AS n FROM movements", one=True)["n"],
             "documents": db.query("SELECT COUNT(*) AS n FROM documents", one=True)["n"],
+            # Likely fake accounts, whatever the search: the count on the filter.
+            "suspects": db.query(f"SELECT COUNT(*) AS n FROM users u WHERE {fake_sql}",
+                                 fake_params, one=True)["n"],
         }
         pager = paginate(users, state["page"], ADMIN_USERS_PER_PAGE,
                          lambda n, _size: admin_url(**dict(state, page=n)) + "#accounts")
@@ -3318,8 +3369,8 @@ def register_routes(app):
             db.execute("DELETE FROM plan_prices WHERE plan = ?", (key,))
             p = PLANS[key]
             audit("admin_price", None, "", f"{name}: default prices", current_user.email)
-            flash(f"{name} is back to its default prices (${p['price']} / month, "
-                  f"${p['year']} / year).", "success")
+            flash(f"{name} is back to its default prices (${money(p['price_cents'])} / month, "
+                  f"${money(p['year_cents'])} / year).", "success")
             return redirect(back)
         month, year = parse_price(raw_month), parse_price(raw_year)
         if not month or not year or month > MAX_PRICE_CENTS or year > MAX_PRICE_CENTS:

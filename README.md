@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.5.0**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.5.1**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -23,7 +23,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Admin page for the operator: an accounts table with search and sorting, and a page per account to change its plan or quota, disable or delete it.
 - Support tickets: the chat bubble in the header (or "Support" in the menu) opens your tickets; write to support and follow the conversation (see [Support](#support)).
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
-- Plans: Free, Pro ($4 a month or $40 a year) and Nomad+ ($9 a month or $90 a year), each with its own storage and receipt limits. The menu under your email in the header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
+- Plans: Free, Pro ($0.99 a month or $9.99 a year) and Nomad+ ($1.99 a month or $19.99 a year), each with its own storage and receipt limits. The menu under your email in the header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
 - A world map under the movements with a pin for each country of the year (the base in its own color) showing its number of days; hovering or focusing a pin shows the flag, country, cities and days.
 - Days per country for the year, with a 183 day indicator. Days without a stay count toward the base country once they have passed; logged stays count in full, also future ones.
 - Light and dark mode, inspired by the Aave color palette.
@@ -107,7 +107,7 @@ Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their
 
 - Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements (always for every account, also while searching).
 - The monthly and yearly price of Pro and Nomad+ ("Plans and prices"). Leave both fields empty to go back to the default prices in `PLANS`.
-- The accounts table, 10 per page: account (name, email, and flags such as Admin, Two-factor on, Disabled, Email not confirmed, Over quota), plan, joined, last sign in, last known IP (the address of the last sign in, marked "at last sign in", or the sign up address, marked "at sign up", for an account that never signed in; accounts from before 1.4.0 have no sign up IP), years and storage used. Search by part of an email, a name or an IP (`185.220.` lists every account from that network), and sort by account, joined, last sign in, years or storage.
+- The accounts table, 10 per page: account (name, email, and flags such as Admin, Two-factor on, Disabled, Email not confirmed, Over quota), a red **Likely fake** chip for accounts that look fake (the same rule as `./checkFakeUsers.sh`, see [Fake accounts](#fake-accounts); the reason shows on hover or focus, and under the email on phones), plan, joined, last sign in, last known IP (the address of the last sign in, marked "at last sign in", or the sign up address, marked "at sign up", for an account that never signed in; accounts from before 1.4.0 have no sign up IP) and storage used. Search by part of an email, a name or an IP (`185.220.` lists every account from that network), and sort by account, joined, last sign in or storage. Next to the Users title, **All accounts**, **Suspected fake** (with their count) and **Hide suspected** filter the table; the choice stays with the search, sort and page.
 - Security activity: a table of every event (sign ins, failed sign ins, password, email and two-factor changes, admin actions with the admin who made them), 20 a page, sortable by time, event, account and IP (IPs sort by number), filterable by account email; an account's email links to its whole history, also from before an email change. Both tables keep each other's search, sort and page. Events are kept for 365 days.
 
 **View** (or the email in the table) opens the account's own page, `/admin/users/<id>`:
@@ -152,8 +152,8 @@ Emails are notifications only: admins get one for each new ticket or message, th
 | Plan | Price | Receipt storage | Per receipt |
 | --- | --- | --- | --- |
 | Free | 0 | `USER_QUOTA_MB` (500 MB) | `MAX_RECEIPT_MB` (10 MB) |
-| Pro | $4 a month ($40 a year) | 5 GB | 25 MB |
-| Nomad+ | $9 a month ($90 a year) | 25 GB | 50 MB, plus priority support |
+| Pro | $0.99 a month ($9.99 a year) | 5 GB | 25 MB |
+| Nomad+ | $1.99 a month ($19.99 a year) | 25 GB | 50 MB, plus priority support |
 
 Paid plans never get less than Free, and a quota set on the admin page wins over the plan's. Plans are defined in `PLANS` in `app.py`. There is no payment yet, so an admin moves an account to another plan with the plan selector on the [admin page](#admin-page). Without an admin, change the database (`free`, `pro` or `plus`):
 

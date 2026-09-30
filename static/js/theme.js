@@ -648,17 +648,45 @@
     close.hidden = false;
     close.addEventListener("click", function () {
       var flash = close.closest(".flash");
+      if (flash.classList.contains("is-closing")) return;
       var list = flash.parentNode;
-      var sibling = flash.nextElementSibling || flash.previousElementSibling;
-      list.removeChild(flash);
-      if (sibling) {
-        sibling.querySelector("[data-dismiss-flash]").focus();
-        return;
+      // The next message still shown (else the one before) gets the focus afterwards.
+      var open = [].filter.call(list.children, function (f) {
+        return f !== flash && !f.classList.contains("is-closing");
+      });
+      var sibling = open.filter(function (f) {
+        return flash.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING;
+      })[0] || open[open.length - 1] || null;
+      // The last message takes its whole box (and its margin) with it.
+      var box = sibling ? flash : list;
+      var done = false;
+      function finish() {
+        if (done) return;
+        done = true;
+        if (box.parentNode) box.parentNode.removeChild(box);
+        if (box !== list && !list.children.length && list.parentNode) list.parentNode.removeChild(list);
+        // Focus moves on without scrolling the page: the next message's close button, or the
+        // page itself (no outline, see .main:focus).
+        if (sibling) {
+          sibling.querySelector("[data-dismiss-flash]").focus({ preventScroll: true });
+          return;
+        }
+        var main = document.querySelector("main");
+        if (!main) return;
+        main.setAttribute("tabindex", "-1");
+        main.focus({ preventScroll: true });
       }
-      var main = list.parentNode;
-      main.removeChild(list);
-      main.setAttribute("tabindex", "-1");
-      main.focus();
+      // The message folds away instead of vanishing, so the page below slides up smoothly
+      // rather than jumping (skipped for people who ask for reduced motion).
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { finish(); return; }
+      flash.classList.add("is-closing");
+      box.style.height = box.offsetHeight + "px";
+      box.style.overflow = "hidden";
+      void box.offsetHeight;
+      box.classList.add("is-collapsing");
+      box.style.height = "0px";
+      box.addEventListener("transitionend", function (e) { if (e.target === box && e.propertyName === "height") finish(); });
+      setTimeout(finish, 400);  // in case the transition never ends (hidden tab)
     });
   });
 })();
