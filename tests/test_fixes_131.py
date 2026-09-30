@@ -273,3 +273,65 @@ class SupportUiFixTests(AppTestCase):
                    encoding="utf-8").read()
         self.assertIn(".support-table td:nth-child(3), .support-table td:nth-child(4) "
                       "{ overflow-wrap: anywhere; }", css)
+
+
+class SessionReviewTests(AppTestCase):
+    """Bugs found in the review of what 1.3.1 added (admin accounts, ticket numbers, chat)."""
+
+    def setUp(self):
+        super().setUp()
+        self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
+        self.app.config["ADMIN_REQUIRE_2FA"] = False
+        self.signup("a@example.com")
+        self.admin = self.app.test_client()
+        self.signup("admin@example.com", client=self.admin)
+
+    def test_storage_sums_use_an_index(self):
+        # Without it the admin accounts table read every receipt once per account (2 s for
+        # 2000 accounts and 60000 receipts), blocking every write meanwhile.
+        with self.db() as conn:
+            plan = " ".join(str(r[-1]) for r in conn.execute(
+                "EXPLAIN QUERY PLAN SELECT COALESCE(SUM(size), 0) FROM documents WHERE user_id = 1"))
+        self.assertIn("idx_documents_user", plan)
+
+    def test_ticket_pages_load_while_another_request_writes(self):
+        self.client.post("/support/new", data={"kind": "bug", "subject": "S", "body": "B"})
+        self.admin.post(f"/admin/support/{ref(1)}", data={"action": "reply", "body": "Answer"})
+        self.client.post(f"/support/{ref(1)}", data={"action": "reply", "body": "More"})
+        self.app.config["PROPAGATE_EXCEPTIONS"] = False
+        conn = sqlite3.connect(self.app.config["DATABASE_PATH"], timeout=0)
+        conn.execute("BEGIN IMMEDIATE")  # another request in the middle of a write
+        try:
+            self.assertEqual(self.admin.get(f"/admin/support/{ref(1)}").status_code, 200)
+        finally:
+            conn.rollback()
+            conn.close()
+        # The new message still counts as unread, and is marked seen on the next view.
+        with self.db() as c:
+            seen = c.execute("SELECT admin_seen_id FROM tickets").fetchone()[0]
+            last = c.execute("SELECT MAX(id) FROM ticket_messages").fetchone()[0]
+        self.assertLess(seen, last)
+        self.admin.get(f"/admin/support/{ref(1)}")
+        with self.db() as c:
+            self.assertEqual(c.execute("SELECT admin_seen_id FROM tickets").fetchone()[0], last)
+
+    def test_disabling_is_all_or_nothing(self):
+        with self.db() as conn:
+            conn.execute("CREATE TRIGGER fail_session_delete BEFORE DELETE ON user_sessions "
+                         "BEGIN SELECT RAISE(ABORT, 'disk full'); END")
+        self.app.config["PROPAGATE_EXCEPTIONS"] = False
+        resp = self.admin.post("/admin/users/1", data={"action": "disable"})
+        self.assertEqual(resp.status_code, 500)
+        with self.db() as conn:
+            # Before, the account stayed disabled with its sessions left behind.
+            self.assertEqual(conn.execute("SELECT disabled FROM users WHERE id = 1").fetchone()[0], 0)
+            conn.execute("DROP TRIGGER fail_session_delete")
+        self.admin.post("/admin/users/1", data={"action": "disable"})
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT disabled FROM users WHERE id = 1").fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM user_sessions WHERE user_id = 1")
+                             .fetchone()[0], 0)
+
+    def test_the_404_page_has_contact_us(self):
+        html = self.app.test_client().get("/no-such-page").get_data(as_text=True)
+        self.assertIn(f'href="mailto:{appmod.CONTACT_EMAIL}">Contact Us</a>', html)

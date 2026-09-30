@@ -135,8 +135,24 @@ Create `/etc/nginx/sites-available/nomad-life`:
 ```nginx
 server {
     listen 80;
-    # No root: nginx only forwards to gunicorn and never serves files from /var/www/nomad-life.
+    # No root: nginx forwards to gunicorn and serves nothing from /var/www/nomad-life except the
+    # 404 page below (the app sends it itself for its own wrong addresses).
     server_name nomad.example.com;
+
+    # For the 404s nginx makes itself (the blocked paths below): the app's own page.
+    error_page 404 /404.html;
+    location = /404.html {
+        root /var/www/nomad-life/static;
+        internal;
+    }
+
+    # Never forward probes for dotfiles (.env, .git) or config, log and backup files.
+    location ~ /\.(?!well-known) {
+        deny all; access_log off; log_not_found off; return 404;
+    }
+    location ~* \.(env|ini|log|conf|sql|bak|save|md)$ {
+        deny all; access_log off; log_not_found off; return 404;
+    }
 
     # The largest receipt of the biggest plan (Nomad+, 50 MB) plus the form around it.
     # If you raise MAX_RECEIPT_MB above 50, raise this to MAX_RECEIPT_MB + 2.
@@ -158,6 +174,12 @@ server {
 sudo ln -s /etc/nginx/sites-available/nomad-life /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
+```
+
+Check both kinds of 404 once HTTPS works (section 8): each line should end with `Page not found | Nomad Life` and `404`. If `/.env` shows nginx's plain page instead, nginx (`www-data`) cannot read `static/404.html`: check the folders with `namei -l /var/www/nomad-life/static/404.html`.
+
+```bash
+for u in /this-page-does-not-exist /.env; do curl -s -w " %{http_code}\n" https://nomad.example.com$u | grep -oE "<title>[^<]*|[0-9]{3}$" | tr '\n' ' '; echo; done
 ```
 
 The app already sends its own security headers (Content-Security-Policy, X-Frame-Options, nosniff, Referrer-Policy, no-store for private pages), so nginx does not need to add them. Do not serve the `uploads` folder through nginx: receipts must only be reachable through the app, which checks who is signed in.
@@ -234,22 +256,61 @@ To restore: stop the service, unpack an archive (`tar -xzf nomadlife-....tar.gz`
 
 Nobody has to be signed out for an upgrade. Sessions live in the signed cookie (`data/.secret_key`) and in the `user_sessions` table, so everyone is still signed in after the restart. Requests already running are allowed to finish (`--graceful-timeout`, section 6), and new ones get a 502 from nginx for the few seconds the app takes to start again.
 
-To avoid restarting in the middle of someone's upload or package download, first check that no pages were requested in the last few minutes (no output means nobody is using the app). Do not use `user_sessions.last_seen_at` for this: it is stamped at most once an hour.
+Upgrade step by step, as `paolo`:
 
-```bash
-journalctl -u nomad-life --since "-5 min" --no-pager | grep -E '"(GET|POST) ' | grep -v '/static/'
-```
+1. Go to the app and make sure nothing was changed on the server (no output means clean; if files are listed, check them before going on):
 
-Then upgrade:
+   ```bash
+   cd /var/www/nomad-life && git status --short
+   ```
 
-```bash
-cd /var/www/nomad-life
-.venv/bin/python scripts/backup.py --dest /var/backups/nomad-life --keep 14   # a fresh backup first
-git pull
-.venv/bin/pip install -r requirements.txt
-sudo systemctl restart nomad-life
-systemctl status nomad-life --no-pager && curl -sI http://127.0.0.1:5050/ | head -1   # "active (running)", then 200 OK
-```
+2. Check that nobody is using the app. This lists the pages requested in the last 5 minutes:
+
+   ```bash
+   sudo journalctl -u nomad-life --since "-5 min" --no-pager -q | grep -E '"(GET|POST) ' | grep -v '/static/'
+   ```
+
+   - No output, or only `/`, `/robots.txt`, `/sitemap.xml` and bots (bingbot, Googlebot): nobody is working in the app, go on.
+   - `/app`, `/year/...`, `/support...`, `/settings`, `/admin` or any `POST`: someone is active. Wait a few minutes and run it again.
+
+   Do not use `user_sessions.last_seen_at` for this: it is stamped at most once an hour. Without `sudo`, journalctl adds a "Hint" about other users' messages; the app's lines are shown anyway, since the app runs as you.
+
+3. Back up the database and note the archive it prints (until `/var/backups/nomad-life` exists, section 11, any folder you own works, for example `/home/paolo/backups/nomad-life`):
+
+   ```bash
+   .venv/bin/python scripts/backup.py --dest /var/backups/nomad-life --keep 14
+   ```
+
+4. Get the new code and its packages. The running app is not touched yet; `--ff-only` refuses to pull if the history does not match instead of merging:
+
+   ```bash
+   git pull --ff-only
+   .venv/bin/pip install -r requirements.txt
+   ```
+
+5. Check the last minute once more, right before the restart:
+
+   ```bash
+   sudo journalctl -u nomad-life --since "-1 min" --no-pager -q | grep -E '"(GET|POST) ' | grep -v '/static/'
+   ```
+
+6. Restart. Running requests get up to 120 seconds to finish, nobody is signed out, and the database is upgraded on start:
+
+   ```bash
+   sudo systemctl restart nomad-life
+   ```
+
+7. Check that it is healthy: `active (running)`, the new version, and no errors in the log. The `sleep` gives the app a few seconds to start (it upgrades the database first), so the version check does not run into a server that is not listening yet:
+
+   ```bash
+   sleep 5; systemctl status nomad-life --no-pager | head -5
+   curl -s http://127.0.0.1:5050/ | grep -o 'v1\.[0-9]*\.[0-9]*' | head -1
+   sudo journalctl -u nomad-life -n 30 --no-pager -q | grep -iE 'error|traceback' || echo "no errors"
+   ```
+
+8. Open https://nomad.example.com, sign in and look at the pages the release changed (its `CHANGELOG.md` entry). Browsers load the new styles by themselves after the restart.
+
+If something is wrong, go back to the previous version: find it with `git log --oneline -3`, then `git checkout <previous id> && sudo systemctl restart nomad-life`. Database upgrades only add tables, columns and indexes, so the previous version keeps working with the upgraded database. If the database itself is damaged, stop the service, unpack the archive from step 3 into `data/` (section 11) and start it again.
 
 Always restart, never reload with `kill -HUP`: because of `--preload` the gunicorn master keeps the old code, so a reload would start the new workers on the old version.
 
@@ -257,7 +318,7 @@ A server set up from an older copy of this guide lacks `--graceful-timeout 120` 
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
 
-- **1.3.1** numbers support tickets per year (2026-1, 2026-2, ...). Existing tickets are renumbered on start, in the order they were opened; links in emails sent before still open the right ticket.
+- **1.3.1** numbers support tickets per year (2026-1, 2026-2, ...). Existing tickets are renumbered on start, in the order they were opened; links in emails sent before still open the right ticket. To see the numbers after the restart: `sqlite3 data/nomad.db "SELECT ref_year || '-' || ref_seq, subject FROM tickets ORDER BY id"`.
 
 - **1.2.15** leaves the receipts out of the nightly archive. Before upgrading, make sure the off-site copy also takes the receipts folder (section 11), or from that night on the receipts are backed up nowhere. Archives from before still hold the receipts and are removed by `--keep` as usual.
 

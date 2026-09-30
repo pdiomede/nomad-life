@@ -42,7 +42,8 @@ from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
 APP_VERSION = "1.3.1"
-# "Contact Us" in the footer of every page, the landing page included.
+# "Contact Us" in the footer of every page, the landing page included (static/404.html, a
+# standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
@@ -3097,9 +3098,10 @@ def register_routes(app):
         elif action == "disable":
             # Also end every session and remember cookie for good, so enabling the account
             # later does not bring a stolen one back.
-            db.execute("UPDATE users SET disabled = 1, session_version = session_version + 1 "
-                       "WHERE id = ?", (user_id,))
-            db.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
+            with db.transaction() as conn:  # both or neither: no sessions left on a disabled account
+                conn.execute("UPDATE users SET disabled = 1, session_version = session_version + 1 "
+                             "WHERE id = ?", (user_id,))
+                conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
             audit("admin_disable", user_id, email, "", who)
             flash(f"{email} is disabled and signed out everywhere.", "info")
         elif action == "enable":
@@ -3281,8 +3283,10 @@ def register_routes(app):
             return redirect(ticket_url("support_ticket", ticket))
         messages = ticket_messages(ticket_id)
         if messages and messages[-1]["id"] > ticket["user_seen_id"]:
-            db.execute("UPDATE tickets SET user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
-                       (messages[-1]["id"], ticket_id))
+            # Housekeeping: skipped when the database is busy (the dot stays until next time),
+            # so reading a ticket never fails behind another request's write.
+            db.try_execute("UPDATE tickets SET user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
+                           (messages[-1]["id"], ticket_id))
         return render_template("support_ticket.html", ticket=ticket, messages=messages,
                                admin_view=False, kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
                                draft="", at_cap=open_ticket_cap_reached(ticket))
@@ -3446,8 +3450,8 @@ def register_routes(app):
             return redirect(back)
         messages = ticket_messages(ticket_id)
         if messages and messages[-1]["id"] > ticket["admin_seen_id"]:
-            db.execute("UPDATE tickets SET admin_seen_id = MAX(admin_seen_id, ?) WHERE id = ?",
-                       (messages[-1]["id"], ticket_id))
+            db.try_execute("UPDATE tickets SET admin_seen_id = MAX(admin_seen_id, ?) WHERE id = ?",
+                           (messages[-1]["id"], ticket_id))
         return render_template("support_ticket.html", ticket=ticket, messages=messages,
                                admin_view=True, kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
                                draft="", owner_name=full_name(ticket))

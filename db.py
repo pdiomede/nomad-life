@@ -148,6 +148,9 @@ CREATE INDEX IF NOT EXISTS idx_ticket_messages ON ticket_messages(ticket_id, id)
 CREATE INDEX IF NOT EXISTS idx_movements_year ON movements(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_year ON documents(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_movement ON documents(movement_id);
+-- Storage used per account (every page's storage card, quotas, the admin accounts table):
+-- without it each sum read every receipt of every account.
+CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id);
 """
 
 

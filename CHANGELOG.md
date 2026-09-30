@@ -11,7 +11,7 @@ All notable changes to this project are documented in this file.
 
 - Support tickets are numbered per year: `2026-1`, `2026-2`, and from January `2027-1`. The number is in the ticket list, on each ticket, in the admin table (sorted as numbers, so 2026-9 comes before 2026-10), in the emails and in their subjects, and in the addresses (`/support/2026-1`). The database gives the numbers itself: a trigger takes the next one of the year when a ticket is saved, a unique index refuses a duplicate, and a counter per year keeps a number from ever being given twice, also after an account is deleted. Existing tickets are renumbered on start in the order they were opened, and their history entries follow. Links in emails sent before (`/support/3`) still open the right ticket.
 - The admin ticket search finds a ticket by its number (`2026-3` or `#2026-3`), and a whole email address finds only that account's tickets (a part of an address still finds every match). The Support tickets link on an admin account page therefore lists only that account's tickets.
-- "Contact Us" in the footer of every page, the landing page included, writes to info@nomadlife.pro.
+- "Contact Us" in the footer of every page, the landing page and the 404 page included, writes to info@nomadlife.pro.
 
 ### Changed
 
@@ -23,7 +23,7 @@ All notable changes to this project are documented in this file.
 - The account menu shows an icon next to each item: Settings, Support, Admin, Support tickets and Sign out. The icons are drawn in CSS and follow the theme.
 - The "Finish setting up your account" email (signing up again for an address waiting for confirmation) has a **Confirm my Account** button.
 - The introduction on **Submit a ticket** stays on one line on wider screens.
-- `setup_vps.md` uses the real server layout: the app, its database and its receipts in `/var/www/nomad-life`, run as `paolo` (group `www-data`, restarted always). gunicorn now lets running requests finish for up to 120 seconds when it restarts (`--graceful-timeout 120`, `TimeoutStopSec=150`), and the upgrade section explains that nobody is signed out by an upgrade and how to check that nobody is using the app first.
+- `setup_vps.md` uses the real server layout: the app, its database and its receipts in `/var/www/nomad-life`, run as `paolo` (group `www-data`, restarted always). gunicorn now lets running requests finish for up to 120 seconds when it restarts (`--graceful-timeout 120`, `TimeoutStopSec=150`), and the upgrade section is a numbered procedure: check for local changes, check that nobody is using the app, back up, pull, check again, restart, check the health, and how to go back. The nginx section serves the app's own 404 page for the 404s nginx makes itself and refuses probes for dotfiles (`.env`, `.git`) and config, log and backup files, as on the live server.
 
 ### Fixed
 
@@ -35,6 +35,9 @@ Database calls:
 - An email change link opened twice at once (the user and a mail scanner) applied twice, with two alerts and two undo links.
 - Parallel requests could pass the 1000 stays per year limit and the 20 open tickets limit, since the count ran outside the write lock.
 - Deleting a receipt while `flask zip-receipts` converted it left the deleted receipt's ZIP on disk for good.
+- Receipts had no index by account, so every storage total read every receipt of every account: the storage card on each page, quotas, and the new admin accounts table, which added one full read per account (about 2 seconds with 2000 accounts and 60000 receipts, while every other request's writes waited). The index `idx_documents_user` is created on start; the admin table now takes about 10 ms.
+- Opening a ticket with a message not read yet failed with an error after 5 seconds while another request was writing, because marking it read needs the write lock. The mark is skipped when the database is busy and made on the next view.
+- Disabling an account on the admin page made two separate writes: if the second failed, the account stayed disabled with its sessions left behind (and a wrong device count after enabling it again). Both are one transaction now.
 
 Support pages:
 
