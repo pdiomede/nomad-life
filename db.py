@@ -269,6 +269,18 @@ def execute_rowcount(sql, args=()):
     return cur.rowcount
 
 
+def try_execute(sql, args=()):
+    """execute() for housekeeping that may be skipped: None instead of an error when another
+    request holds the write lock past the busy timeout."""
+    try:
+        return execute_rowcount(sql, args)
+    except sqlite3.OperationalError as exc:
+        if "locked" not in str(exc) and "busy" not in str(exc):
+            raise
+        current_app.logger.warning("Skipped while the database was busy: %s", exc)
+        return None
+
+
 def execute(sql, args=()):
     db = get_db()
     try:

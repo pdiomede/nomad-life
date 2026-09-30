@@ -448,12 +448,18 @@ def create_app(overrides=None):
             return None
         if sid:
             # Signed out (here or with "Sign out everywhere else") or unused for too long.
-            if not db.query("SELECT 1 FROM user_sessions WHERE id = ? AND user_id = ? AND "
+            seen = db.query("SELECT last_seen_at < datetime('now', '-1 hour') AS stale "
+                            "FROM user_sessions WHERE id = ? AND user_id = ? AND "
                             "last_seen_at >= datetime('now', ?)",
-                            (sid, row["id"], f"-{SESSION_IDLE_DAYS} days"), one=True):
+                            (sid, row["id"], f"-{SESSION_IDLE_DAYS} days"), one=True)
+            if not seen:
                 return None
-            db.execute("UPDATE user_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ? "
-                       "AND last_seen_at < datetime('now', '-1 hour')", (sid,))
+            # At most once an hour, and never a reason to fail the page: an UPDATE takes the
+            # database write lock even when it changes nothing, so a page view would otherwise
+            # wait for (and fail behind) any other request that is writing.
+            if seen["stale"]:
+                db.try_execute("UPDATE user_sessions SET last_seen_at = CURRENT_TIMESTAMP "
+                               "WHERE id = ?", (sid,))
         # Sessions from before 1.2.10 carry no sid; they end with the password or a
         # "Sign out everywhere else", as they always did.
         return User(row, sid or None)
@@ -476,11 +482,15 @@ def create_app(overrides=None):
     def purge_now_and_then():
         if time.monotonic() - last_purge[0] >= PURGE_EVERY_SECONDS:
             last_purge[0] = time.monotonic()
-            purge_unverified()
-            db.execute("DELETE FROM audit_log WHERE created_at < datetime('now', ?)",
-                       (f"-{AUDIT_DAYS} days",))
-            db.execute("DELETE FROM user_sessions WHERE last_seen_at < datetime('now', ?)",
-                       (f"-{SESSION_IDLE_DAYS} days",))
+            # Housekeeping only: when another request holds the write lock it waits for the
+            # next round instead of failing the page that happened to trigger it.
+            if purge_unverified(best_effort=True) is None:
+                last_purge[0] = 0.0
+                return
+            db.try_execute("DELETE FROM audit_log WHERE created_at < datetime('now', ?)",
+                           (f"-{AUDIT_DAYS} days",))
+            db.try_execute("DELETE FROM user_sessions WHERE last_seen_at < datetime('now', ?)",
+                           (f"-{SESSION_IDLE_DAYS} days",))
 
     @app.after_request
     def security_headers(resp):
@@ -652,12 +662,14 @@ def serializer(salt="password-reset"):
     return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt=salt)
 
 
-def purge_unverified():
+def purge_unverified(best_effort=False):
     """Delete accounts that were not confirmed within VERIFY_MINUTES. An account that holds
     data is never one of them (it can only come from a server running an older version), so it
     is kept rather than deleted with everything in it."""
     # A disabled account is kept too, so a new sign up cannot undo an admin's decision.
-    db.execute("DELETE FROM users WHERE verified_at IS NULL AND disabled = 0 AND "
+    # best_effort returns None instead of failing when the database is busy.
+    run = db.try_execute if best_effort else db.execute
+    return run("DELETE FROM users WHERE verified_at IS NULL AND disabled = 0 AND "
                "created_at <= datetime('now', ?) "
                "AND NOT EXISTS (SELECT 1 FROM years WHERE years.user_id = users.id)",
                (f"-{VERIFY_MINUTES} minutes",))
@@ -3302,25 +3314,44 @@ def register_routes(app):
         else:
             if file_ext(name) != ext:
                 name = f"{name}.{ext}"  # keep the real extension so downloads still open
-            # One write lock around the file and the row, so two renames at once (a double
-            # click, two tabs) leave the ZIP and the database agreeing on the same name.
-            with db.transaction() as conn:
-                current = conn.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?",
-                                       (doc_id, current_user.id)).fetchone()
-                size = current["size"] if current else None
-                if (current and name != current["original_name"]
-                        and current["stored_name"].endswith(".zip")):
-                    # The file inside the ZIP carries the name too: rewrite it.
-                    path = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id),
-                                        current["stored_name"])
+            # The file inside the ZIP carries the name too. It is rewritten into a temporary file
+            # outside the database write lock (a big receipt takes seconds and would stall every
+            # other request), then moved into place under the lock only if nobody changed the
+            # receipt meanwhile; two renames at once (a double click, two tabs) simply retry.
+            folder = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id))
+            for _attempt in range(3):
+                current = db.query("SELECT * FROM documents WHERE id = ? AND user_id = ?",
+                                   (doc_id, current_user.id), one=True)
+                if current is None:
+                    break
+                path = os.path.join(folder, current["stored_name"])
+                size, tmp = current["size"], None
+                if name != current["original_name"] and path.endswith(".zip"):
+                    tmp = f"{path}.{uuid.uuid4().hex}.tmp"
                     try:
                         _member, data = read_receipt(path)
-                        size = write_receipt_zip(path, zip_member_name(name, ext), data)
+                        size = write_receipt_zip(tmp, zip_member_name(name, ext), data)
                     except (OSError, zipfile.BadZipFile, zlib.error, IndexError) as exc:
                         app.logger.error("Could not rename the file in %s: %s", path, exc)
-                if current:
-                    conn.execute("UPDATE documents SET original_name = ?, kind = ?, size = ? "
-                                 "WHERE id = ?", (name, kind, size, doc_id))
+                        size = current["size"]
+                        if os.path.exists(tmp):
+                            os.remove(tmp)
+                        tmp = None
+                try:
+                    with db.transaction() as conn:
+                        changed = conn.execute(
+                            "UPDATE documents SET original_name = ?, kind = ?, size = ? "
+                            "WHERE id = ? AND original_name = ? AND size = ?",
+                            (name, kind, size, doc_id, current["original_name"],
+                             current["size"])).rowcount
+                        if changed and tmp:
+                            os.replace(tmp, path)
+                            tmp = None
+                finally:
+                    if tmp and os.path.exists(tmp):
+                        os.remove(tmp)
+                if changed:
+                    break
             flash("Document updated.", "success")
         return redirect(request.referrer or url_for("index"))
 
