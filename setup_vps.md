@@ -94,14 +94,14 @@ Wants=network-online.target
 
 [Service]
 User=paolo
-Group=paolo
+Group=www-data
 WorkingDirectory=/var/www/nomad-life
 UMask=0077
 ExecStart=/var/www/nomad-life/.venv/bin/gunicorn --preload --workers 3 --threads 4 \
           --bind 127.0.0.1:5050 --timeout 120 --graceful-timeout 120 --no-control-socket \
           --access-logfile - app:app
 TimeoutStopSec=150
-Restart=on-failure
+Restart=always
 RestartSec=3
 # Hardening: the app only writes to its data and uploads folders.
 NoNewPrivileges=true

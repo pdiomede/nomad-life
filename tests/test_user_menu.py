@@ -29,6 +29,30 @@ class UserMenuTests(AppTestCase):
         self.assertLess(panel.index("plan-chip"), panel.index('href="/admin">Admin</a>'))
         self.assertLess(panel.index('href="/admin">Admin</a>'), panel.index("Sign out"))
 
+    def test_menu_items_have_icons(self):
+        self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
+        self.signup("admin@example.com")
+        panel = self.menu()
+        for cls in ("menu-settings", "menu-support", "menu-admin", "menu-tickets", "menu-signout"):
+            self.assertIn(f'class="user-menu-item {cls}"', panel)
+        css = self.client.get("/static/css/style.css").get_data(as_text=True)
+        for cls in ("menu-settings", "menu-support", "menu-admin", "menu-tickets", "menu-signout"):
+            self.assertIn(f".{cls} {{ --menu-icon: url(", css)
+
+    def test_support_button_is_a_chat_bubble_and_close_is_red(self):
+        self.signup("user@example.com")
+        html = self.client.get("/support").get_data(as_text=True)
+        button = html[html.index('class="icon-btn support-btn'):]
+        button = button[:button.index("</a>")]
+        self.assertIn('<path d="M5 4h14a2 2 0 0 1 2 2v9', button)  # the speech bubble
+        self.assertNotIn("<circle", button)  # no longer the question mark
+        self.client.post("/support/new", data={"kind": "question", "subject": "Help",
+                                                "body": "Something broke."})
+        ticket = self.client.get("/support/1").get_data(as_text=True)
+        self.assertIn('<button class="btn btn-danger btn-sm" type="submit">Close ticket, my problem is '
+                      'solved</button>', ticket)
+        self.assertIn('class="back"', ticket)
+
     def test_no_nav_items_outside_the_menu(self):
         self.signup("user@example.com")
         html = self.client.get("/plan").get_data(as_text=True)

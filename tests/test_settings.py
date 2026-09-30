@@ -25,7 +25,7 @@ class SettingsPageTests(AppTestCase):
 
     def test_menu_and_footer_link_to_settings(self):
         html = self.client.get("/app", follow_redirects=True).get_data(as_text=True)
-        self.assertIn('<a class="user-menu-item" href="/settings">Settings</a>', html)
+        self.assertIn('<a class="user-menu-item menu-settings" href="/settings">Settings</a>', html)
         self.assertIn('<a href="/settings">Settings</a>', html)
         page = self.client.get("/settings").get_data(as_text=True)
         for anchor in ("profile", "password", "two-factor", "email", "devices", "activity",

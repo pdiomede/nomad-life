@@ -20,7 +20,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Account page: change your password or email, or delete your account with all its data.
 - Protection against password guessing: failed sign ins and reset requests are limited.
 - Admin page for the operator: accounts, storage, per account quotas, disable or delete accounts.
-- Support tickets: the question mark in the header (or "Support" in the menu) opens your tickets; write to support and follow the conversation (see [Support](#support)).
+- Support tickets: the chat bubble in the header (or "Support" in the menu) opens your tickets; write to support and follow the conversation (see [Support](#support)).
 - Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
 - Plans: Free, Pro ($4 a month or $40 a year) and Nomad+ ($9 a month or $90 a year), each with its own storage and receipt limits. The menu under your email in the header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
 - A world map under the movements with a pin for each country of the year (the base in its own color) showing its number of days; hovering or focusing a pin shows the flag, country, cities and days.
@@ -118,9 +118,9 @@ The admin page needs **two-factor sign in**: an admin without it is sent to the 
 
 ## Support
 
-Signed in users get a question mark in the header ("Contact support") and a **Support** item in the menu, both leading to `/support`:
+Signed in users get a chat bubble in the header ("Contact support") and a **Support** item in the menu, both leading to `/support`:
 
-- The list of your tickets with their status (Open or Closed), opened, last updated and closed dates, filterable by status. A dot on the question mark and a count in the menu show tickets with a reply you have not read.
+- The list of your tickets with their status (Open or Closed), opened, last updated and closed dates, filterable by status. A dot on the chat bubble and a count in the menu show tickets with a reply you have not read.
 - **Submit a ticket** opens a form with a type (Report a bug, Feature request, General question), a subject (up to 150 characters) and a description (up to 5000). You can have up to 20 open tickets, and open at most 5 tickets and write 30 messages every 15 minutes.
 - Each ticket is a conversation between you and support. You can close it, and writing on a closed ticket reopens it.
 

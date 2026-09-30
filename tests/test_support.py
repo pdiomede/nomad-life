@@ -35,7 +35,7 @@ class NavigationTests(SupportBase):
         self.assertIn('aria-label="Contact support"', html)
         header = html.split("</header>", 1)[0]
         self.assertLess(header.index("support-btn"), header.index('id="theme-toggle"'))
-        self.assertIn('<a class="user-menu-item" href="/support">Support</a>', html)
+        self.assertIn('<a class="user-menu-item menu-support" href="/support">Support</a>', html)
         self.assertNotIn("/admin/support", html)
         admin_html = self.admin.get("/settings").get_data(as_text=True)
         self.assertIn('href="/admin/support">Support tickets</a>', admin_html)

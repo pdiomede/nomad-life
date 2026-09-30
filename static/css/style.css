@@ -178,7 +178,14 @@ p { margin: 0; }
 .gap-sm { gap: 10px; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .eyebrow { text-transform: uppercase; font-size: 12px; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
-.back { display: inline-block; margin-bottom: 12px; font-size: 14px; color: var(--muted); }
+/* "Back to ..." links look like a rounded button, so they are easy to find. */
+.back {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; margin-bottom: 14px; padding: 6px 14px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text);
+  font-size: 14px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere;
+}
+.back:hover { background: var(--surface-2); text-decoration: none; }
+.back:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 
 /* Cards */
 .card {
@@ -524,6 +531,20 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outl
 }
 .user-menu-item:hover, .user-menu-item:focus-visible { background: var(--surface-2); text-decoration: none; }
 .user-menu-item:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+/* Menu icons: a mask over the text color, so they follow the theme. Drawn in CSS, no image files. */
+.user-menu-item { gap: 10px; }
+.menu-settings::before, .menu-support::before, .menu-admin::before, .menu-tickets::before, .menu-signout::before {
+  content: ""; flex: none; width: 16px; height: 16px; background-color: currentColor; opacity: 0.8;
+  -webkit-mask: var(--menu-icon) center / contain no-repeat; mask: var(--menu-icon) center / contain no-repeat;
+}
+@media (forced-colors: active) {
+  .menu-settings::before, .menu-support::before, .menu-admin::before, .menu-tickets::before, .menu-signout::before { forced-color-adjust: none; opacity: 1; }
+}
+.menu-settings { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 7h9M17 7h3M4 17h3M11 17h9'/><circle cx='15' cy='7' r='2'/><circle cx='9' cy='17' r='2'/></svg>"); }
+.menu-support { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z'/></svg>"); }
+.menu-admin { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z'/></svg>"); }
+.menu-tickets { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 13h5l1.5 3h5l1.5-3h5'/><path d='M5.5 5h13L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z'/></svg>"); }
+.menu-signout { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/><path d='M16 17l5-5-5-5'/><path d='M21 12H9'/></svg>"); }
 .plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: stretch; margin-bottom: 16px; }
 .plans-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .plan-card { display: flex; flex-direction: column; gap: 14px; margin: 0; }

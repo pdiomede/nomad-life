@@ -11,10 +11,13 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- The question mark in the header glows slowly until the support pages have been opened once in this browser, and again whenever a ticket has a new reply. It stays still for people who ask their system for reduced motion.
+- The support button in the header is a chat bubble instead of a question mark. It glows slowly until the support pages have been opened once in this browser, and again whenever a ticket has a new reply. It stays still for people who ask their system for reduced motion.
+- Every "Back to ..." link (your tickets, all tickets, admin, accounts, your dashboard, my years, a year) is a rounded button, easier to see.
+- "Close ticket, my problem is solved" (and the admin's "Close ticket") is a red button.
+- The account menu shows an icon next to each item: Settings, Support, Admin, Support tickets and Sign out. The icons are drawn in CSS and follow the theme.
 - The "Finish setting up your account" email (signing up again for an address waiting for confirmation) has a **Confirm my Account** button.
 - The introduction on **Submit a ticket** stays on one line on wider screens.
-- `setup_vps.md` uses the real server layout: the app, its database and its receipts in `/var/www/nomad-life`, run as `paolo`. gunicorn now lets running requests finish for up to 120 seconds when it restarts (`--graceful-timeout 120`, `TimeoutStopSec=150`), and the upgrade section explains that nobody is signed out by an upgrade and how to check that nobody is using the app first.
+- `setup_vps.md` uses the real server layout: the app, its database and its receipts in `/var/www/nomad-life`, run as `paolo` (group `www-data`, restarted always). gunicorn now lets running requests finish for up to 120 seconds when it restarts (`--graceful-timeout 120`, `TimeoutStopSec=150`), and the upgrade section explains that nobody is signed out by an upgrade and how to check that nobody is using the app first.
 
 ### Fixed
 

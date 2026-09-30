@@ -67,7 +67,7 @@
       <form method="post" class="ticket-close">
         {{ ui.csrf() }}
         <input type="hidden" name="action" value="close">
-        <button class="btn btn-ghost btn-sm" type="submit">{{ 'Close ticket' if admin_view else 'Close ticket, my problem is solved' }}</button>
+        <button class="btn btn-danger btn-sm" type="submit">{{ 'Close ticket' if admin_view else 'Close ticket, my problem is solved' }}</button>
       </form>
     {% endif %}
   </section>
