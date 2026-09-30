@@ -4,7 +4,7 @@ import sqlite3
 import time
 
 import app as appmod
-from tests.helpers import AppTestCase
+from tests.helpers import AppTestCase, ref
 
 
 class DatabaseFixTests(AppTestCase):
@@ -243,28 +243,28 @@ class SupportUiFixTests(AppTestCase):
         self.open_ticket()
         for q in ("Élodie", "élodie", "Élodie"):
             html = self.admin.get("/admin/support", query_string={"q": q}).get_data(as_text=True)
-            self.assertIn("/admin/support/1", html, repr(q))
+            self.assertIn(f"/admin/support/{ref(1)}", html, repr(q))
 
     def test_closed_ticket_at_the_cap_does_not_promise_to_reopen(self):
         self.open_ticket()
-        self.client.post("/support/1", data={"action": "close"})
-        html = self.client.get("/support/1").get_data(as_text=True)
+        self.client.post(f"/support/{ref(1)}", data={"action": "close"})
+        html = self.client.get(f"/support/{ref(1)}").get_data(as_text=True)
         self.assertIn("Writing a message opens it again.", html)
         with self.db() as conn:
             conn.executemany("INSERT INTO tickets (user_id, subject) VALUES (1, 'x')",
                              [()] * appmod.OPEN_TICKETS_MAX)
-        html = self.client.get("/support/1").get_data(as_text=True)
+        html = self.client.get(f"/support/{ref(1)}").get_data(as_text=True)
         self.assertNotIn("Writing a message opens it again.", html)
         self.assertIn("writing here keeps it closed", html)
 
     def test_admin_is_told_when_a_close_or_reopen_changed_nothing(self):
         self.open_ticket()
-        self.client.post("/support/1", data={"action": "close"})
-        html = self.admin.post("/admin/support/1", data={"action": "close"},
+        self.client.post(f"/support/{ref(1)}", data={"action": "close"})
+        html = self.admin.post(f"/admin/support/{ref(1)}", data={"action": "close"},
                                follow_redirects=True).get_data(as_text=True)
         self.assertIn("This ticket was already closed.", html)
-        self.admin.post("/admin/support/1", data={"action": "reopen"})
-        html = self.admin.post("/admin/support/1", data={"action": "reopen"},
+        self.admin.post(f"/admin/support/{ref(1)}", data={"action": "reopen"})
+        html = self.admin.post(f"/admin/support/{ref(1)}", data={"action": "reopen"},
                                follow_redirects=True).get_data(as_text=True)
         self.assertIn("This ticket is already open.", html)
 

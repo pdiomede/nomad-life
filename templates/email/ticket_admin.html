@@ -1,10 +1,10 @@
 {% extends "email/_layout.html" %}
 {% set p = "margin:0 0 14px; font-size:15px; line-height:1.6; color:#303549;" %}
-{% block preheader %}Support ticket #{{ ticket_id }} needs an answer.{% endblock %}
-{% block heading %}Support ticket #{{ ticket_id }}{% endblock %}
+{% block preheader %}Support ticket #{{ ticket_ref }} needs an answer.{% endblock %}
+{% block heading %}Support ticket #{{ ticket_ref }}{% endblock %}
 {% block body %}
 <p class="nl-text" style="{{ p }}"><strong style="word-break:break-all;">{{ user_email }}</strong> {% if event == "new" %}opened a new support ticket.{% elif event == "reopened" %}wrote on this ticket, which opened it again.{% else %}wrote a new message.{% endif %}</p>
 <p class="nl-text" style="{{ p }}">Open the ticket to read it and answer.</p>
 {% endblock %}
-{% block button %}Open ticket #{{ ticket_id }}{% endblock %}
+{% block button %}Open ticket #{{ ticket_ref }}{% endblock %}
 {% block note %}You get this email because your address is in ADMIN_EMAILS.{% endblock %}

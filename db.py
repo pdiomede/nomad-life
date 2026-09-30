@@ -109,7 +109,8 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
 
 -- Support tickets: one row per ticket, its messages apart. updated_at moves with every message
 -- or status change; closed_at is NULL while open. The *_seen_id columns hold the last message
--- the user (or any admin) has seen, for the "new reply" badges.
+-- the user (or any admin) has seen, for the "new reply" badges. ref_year and ref_seq make the
+-- number people see, 2026-1: set by the tickets_ref trigger, unique (see AFTER_MIGRATIONS).
 CREATE TABLE IF NOT EXISTS tickets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -121,9 +122,17 @@ CREATE TABLE IF NOT EXISTS tickets (
     closed_at TEXT,
     closed_by TEXT NOT NULL DEFAULT '',
     user_seen_id INTEGER NOT NULL DEFAULT 0,
-    admin_seen_id INTEGER NOT NULL DEFAULT 0
+    admin_seen_id INTEGER NOT NULL DEFAULT 0,
+    ref_year INTEGER NOT NULL DEFAULT 0,
+    ref_seq INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tickets_user ON tickets(user_id, updated_at);
+-- The last ticket number given in each year. Kept apart from the tickets, so the number of a
+-- ticket deleted with its account is never given again.
+CREATE TABLE IF NOT EXISTS ticket_counters (
+    year INTEGER PRIMARY KEY,
+    last_seq INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status, updated_at);
 
 CREATE TABLE IF NOT EXISTS ticket_messages (
@@ -228,7 +237,46 @@ MIGRATIONS = [
                              "instr(stored_name, '.') + 1))"]),
     ("documents", "file_size", ["ALTER TABLE documents ADD COLUMN file_size INTEGER NOT NULL "
                                 "DEFAULT 0", "UPDATE documents SET file_size = size"]),
+    # Tickets are numbered per year since 1.3.1 (2026-1, 2026-2, 2027-1): existing tickets get
+    # the year they were opened and their rank in it, and the history names them that way too.
+    ("tickets", "ref_seq", [
+        "ALTER TABLE tickets ADD COLUMN ref_year INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN ref_seq INTEGER NOT NULL DEFAULT 0",
+        "UPDATE tickets SET ref_year = CAST(strftime('%Y', created_at) AS INTEGER)",
+        "UPDATE tickets SET ref_seq = (SELECT COUNT(*) FROM tickets t2 "
+        "WHERE t2.ref_year = tickets.ref_year AND t2.id <= tickets.id)",
+        "UPDATE audit_log SET detail = (SELECT '#' || t.ref_year || '-' || t.ref_seq FROM tickets t "
+        "WHERE '#' || t.id = audit_log.detail) WHERE event LIKE 'ticket\\_%' ESCAPE '\\' "
+        "AND detail IN (SELECT '#' || id FROM tickets)",
+    ]),
 ]
+
+# Indexes and triggers on migrated columns: SCHEMA runs before the columns exist on an old
+# database, so these are created after MIGRATIONS, on every start (name, statement).
+AFTER_MIGRATIONS = [
+    # Two tickets never share a number.
+    ("idx_tickets_ref", "CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_ref "
+                        "ON tickets(ref_year, ref_seq)"),
+    # Every new ticket takes the next number of the year it was opened in (UTC), counted in the
+    # inserting transaction, so parallel inserts cannot get the same one. The counter only goes
+    # up (and never below a number already used), so a deleted ticket's number is not reused.
+    ("tickets_number", "CREATE TRIGGER IF NOT EXISTS tickets_number AFTER INSERT ON tickets "
+                       "WHEN NEW.ref_seq = 0 BEGIN "
+                       "INSERT INTO ticket_counters (year, last_seq) VALUES ("
+                       "CAST(strftime('%Y', NEW.created_at) AS INTEGER), "
+                       "(SELECT COALESCE(MAX(ref_seq), 0) + 1 FROM tickets WHERE ref_year = "
+                       "CAST(strftime('%Y', NEW.created_at) AS INTEGER))) "
+                       "ON CONFLICT(year) DO UPDATE SET last_seq = MAX(last_seq, "
+                       "(SELECT COALESCE(MAX(ref_seq), 0) FROM tickets "
+                       "WHERE ref_year = excluded.year)) + 1; "
+                       "UPDATE tickets SET ref_year = CAST(strftime('%Y', NEW.created_at) AS INTEGER), "
+                       "ref_seq = (SELECT last_seq FROM ticket_counters WHERE year = "
+                       "CAST(strftime('%Y', NEW.created_at) AS INTEGER)) WHERE id = NEW.id; END"),
+]
+
+# Triggers of earlier development builds, dropped on start. tickets_ref counted from the highest
+# number left, so it gave a deleted ticket's number again.
+REPLACED_TRIGGERS = ["tickets_ref"]
 
 
 def migrate(conn):
@@ -241,6 +289,18 @@ def migrate(conn):
             if not _has_column(conn, table, column):  # another process may have won
                 for sql in statements:
                     conn.execute(sql)
+        except BaseException:
+            conn.rollback()
+            raise
+        conn.commit()
+    names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master")}
+    if any(name not in names for name, _sql in AFTER_MIGRATIONS) or names & set(REPLACED_TRIGGERS):
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for name in REPLACED_TRIGGERS:
+                conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+            for _name, sql in AFTER_MIGRATIONS:
+                conn.execute(sql)  # IF NOT EXISTS: another process may have made them
         except BaseException:
             conn.rollback()
             raise

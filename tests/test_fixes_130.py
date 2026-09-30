@@ -4,7 +4,7 @@ import re
 import threading
 
 import app as appmod
-from tests.helpers import AppTestCase
+from tests.helpers import AppTestCase, ref
 
 
 class Base(AppTestCase):
@@ -34,8 +34,8 @@ class AdminFixTests(Base):
         for q in ("#²", "#99999999999999999999", "#١", "#", "##1"):
             resp = self.admin.get("/admin/support", query_string={"q": q})
             self.assertEqual(resp.status_code, 200, q)
-        html = self.admin.get("/admin/support", query_string={"q": "#1"}).get_data(as_text=True)
-        self.assertIn("/admin/support/1", html)
+        html = self.admin.get("/admin/support", query_string={"q": f"#{ref(1)}"}).get_data(as_text=True)
+        self.assertIn(f"/admin/support/{ref(1)}", html)
 
     def test_answer_is_not_saved_on_a_ticket_closed_meanwhile(self):
         self.open_ticket()
@@ -46,13 +46,13 @@ class AdminFixTests(Base):
         def close_first():
             if not closed:
                 closed.append(True)
-                boss.post("/admin/support/1", data={"action": "close"})
+                boss.post(f"/admin/support/{ref(1)}", data={"action": "close"})
             return real()
 
         self.outbox.clear()
         appmod.db.transaction = close_first
         try:
-            resp = self.admin.post("/admin/support/1", data={"action": "reply",
+            resp = self.admin.post(f"/admin/support/{ref(1)}", data={"action": "reply",
                                                              "body": "Here is the fix"})
         finally:
             appmod.db.transaction = real
@@ -63,14 +63,14 @@ class AdminFixTests(Base):
         self.assertEqual(self.ticket()["status"], "closed")
         self.assertEqual([m["body"] for m in self.messages()], ["Please help"])
         self.assertEqual([m["subject"] for m in self.outbox if m["to"] == "a@example.com"],
-                         ["Your support ticket #1 was closed"])
+                         [f"Your support ticket #{ref(1)} was closed"])
 
     def test_reopen_and_send_from_a_closed_ticket(self):
         self.open_ticket()
-        self.admin.post("/admin/support/1", data={"action": "close"})
-        html = self.admin.get("/admin/support/1").get_data(as_text=True)
+        self.admin.post(f"/admin/support/{ref(1)}", data={"action": "close"})
+        html = self.admin.get(f"/admin/support/{ref(1)}").get_data(as_text=True)
         self.assertIn("Reopen and send", html)
-        self.admin.post("/admin/support/1", data={"action": "reopen_reply", "body": "Answer"})
+        self.admin.post(f"/admin/support/{ref(1)}", data={"action": "reopen_reply", "body": "Answer"})
         self.assertEqual(self.ticket()["status"], "open")
         self.assertEqual(self.messages()[-1]["body"], "Answer")
 
@@ -80,7 +80,7 @@ class AdminFixTests(Base):
         self.open_ticket()
         for q in ("Élodie", "élodie", "ÉLODIE", "ångström"):
             html = self.admin.get("/admin/support", query_string={"q": q}).get_data(as_text=True)
-            self.assertIn("/admin/support/1", html, q)
+            self.assertIn(f"/admin/support/{ref(1)}", html, q)
 
     def test_searching_for_the_word_all_is_kept_in_links(self):
         self.client.post("/settings", data={"action": "profile", "first_name": "Allan",
@@ -95,12 +95,12 @@ class AdminFixTests(Base):
         with self.db() as conn:
             conn.execute("UPDATE tickets SET created_at = '2026-09-30 12:43:00'")
         for client, path in ((self.admin, "/admin/support"), (self.client, "/support"),
-                             (self.client, "/support/1")):
+                             (self.client, f"/support/{ref(1)}")):
             self.assertIn("2026-09-30 12:43 UTC", client.get(path).get_data(as_text=True), path)
 
     def test_user_messages_have_their_own_audit_label(self):
         self.open_ticket()
-        self.client.post("/support/1", data={"action": "reply", "body": "More details"})
+        self.client.post(f"/support/{ref(1)}", data={"action": "reply", "body": "More details"})
         html = self.admin.get("/admin").get_data(as_text=True)
         self.assertIn("Support ticket message from the user", html)
         self.assertNotIn("Support ticket answered", html)
@@ -108,8 +108,8 @@ class AdminFixTests(Base):
     def test_type_sorts_by_name_and_messages_sort(self):
         self.open_ticket(kind="bug")
         self.open_ticket(kind="feature")
-        self.client.post("/support/1", data={"action": "reply", "body": "x"})
-        rows = lambda q: re.findall(r'href="/admin/support/(\d+)" dir="auto"',
+        self.client.post(f"/support/{ref(1)}", data={"action": "reply", "body": "x"})
+        rows = lambda q: re.findall(r'href="/admin/support/\d{4}-(\d+)" dir="auto"',
                                     self.admin.get("/admin/support" + q).get_data(as_text=True))
         self.assertEqual(rows("?sort=kind&dir=asc"), ["2", "1"])
         self.assertEqual(rows("?sort=messages&dir=desc"), ["1", "2"])
@@ -119,11 +119,11 @@ class AdminFixTests(Base):
 class UserFixTests(Base):
     def test_writing_on_a_closed_ticket_respects_the_open_limit(self):
         self.open_ticket()
-        self.client.post("/support/1", data={"action": "close"})
+        self.client.post(f"/support/{ref(1)}", data={"action": "close"})
         with self.db() as conn:
             for _ in range(appmod.OPEN_TICKETS_MAX):
                 conn.execute("INSERT INTO tickets (user_id, subject) VALUES (1, 'x')")
-        html = self.client.post("/support/1", data={"action": "reply", "body": "again"},
+        html = self.client.post(f"/support/{ref(1)}", data={"action": "reply", "body": "again"},
                                 follow_redirects=True).get_data(as_text=True)
         self.assertIn("The ticket stays closed", html)
         self.assertEqual(self.ticket()["status"], "closed")
@@ -138,15 +138,15 @@ class UserFixTests(Base):
 
     def test_closing_twice_says_so(self):
         self.open_ticket()
-        self.client.post("/support/1", data={"action": "close"})
-        html = self.client.post("/support/1", data={"action": "close"},
+        self.client.post(f"/support/{ref(1)}", data={"action": "close"})
+        html = self.client.post(f"/support/{ref(1)}", data={"action": "close"},
                                 follow_redirects=True).get_data(as_text=True)
         self.assertIn("This ticket was already closed.", html)
 
     def test_header_label_counts_tickets(self):
         self.open_ticket()
         for i in range(3):
-            self.admin.post("/admin/support/1", data={"action": "reply", "body": f"r{i}"})
+            self.admin.post(f"/admin/support/{ref(1)}", data={"action": "reply", "body": f"r{i}"})
         html = self.client.get("/support").get_data(as_text=True)
         self.assertIn('aria-label="Contact support (1 ticket with a new reply)"', html)
 
@@ -158,7 +158,7 @@ class UserFixTests(Base):
     def test_rtl_subject_keeps_the_number_first(self):
         self.open_ticket(subject="مرحبا hello")
         html = self.client.get("/support").get_data(as_text=True)
-        self.assertIn("#1 <bdi>مرحبا hello</bdi></a>", html)
+        self.assertIn(f"#{ref(1)} <bdi>مرحبا hello</bdi></a>", html)
 
 
 class LayoutRuleTests(AppTestCase):

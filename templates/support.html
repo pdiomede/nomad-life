@@ -26,7 +26,7 @@
     {% for t in pager.rows %}
     <li class="ticket-row">
       <div class="ticket-main">
-        <a class="ticket-subject" href="{{ url_for('support_ticket', ticket_id=t.id) }}">#{{ t.id }} <bdi>{{ t.subject }}</bdi></a>
+        <a class="ticket-subject" href="{{ url_for('support_ticket', year=t.ref_year, seq=t.ref_seq) }}">#{{ t | ticket_ref }} <bdi>{{ t.subject }}</bdi></a>
         <p class="muted small">
           <span class="tag">{{ kinds.get(t.kind, 'General question') }}</span>
           Opened {{ t.created_at | utcdatetime }} &middot; updated {{ t.updated_at | utcdatetime }}{% if t.closed_at %} &middot; closed {{ t.closed_at | utcdatetime }}{% endif %}

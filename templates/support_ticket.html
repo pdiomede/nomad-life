@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui with context %}
-{% block title %}Ticket #{{ ticket.id }} | Nomad Life{% endblock %}
+{% block title %}Ticket #{{ ticket | ticket_ref }} | Nomad Life{% endblock %}
 {% block content %}
 <div class="narrow">
   {% if admin_view %}
@@ -10,7 +10,7 @@
   {% endif %}
   <div class="page-head">
     <div>
-      <p class="eyebrow">{{ 'Support ticket' if admin_view else 'Support' }} #{{ ticket.id }}</p>
+      <p class="eyebrow">{{ 'Support ticket' if admin_view else 'Support' }} #{{ ticket | ticket_ref }}</p>
       <h1 class="ticket-title" dir="auto">{{ ticket.subject }}</h1>
       <p class="muted small">
         <span class="tag">{{ kinds.get(ticket.kind, 'General question') }}</span>

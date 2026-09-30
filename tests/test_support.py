@@ -2,7 +2,7 @@
 import re
 
 import app as appmod
-from tests.helpers import AppTestCase
+from tests.helpers import AppTestCase, ref
 
 
 class SupportBase(AppTestCase):
@@ -56,16 +56,16 @@ class UserTicketTests(SupportBase):
         for label in ("Report a bug", "Feature request", "General question"):
             self.assertIn(label, page)
         resp = self.open_ticket(subject="  Map‮ is empty ", body="Line 1\r\nLine 2\x00 ")
-        self.assertEqual(resp.headers["Location"], "/support/1")
+        self.assertEqual(resp.headers["Location"], f"/support/{ref(1)}")
         t = self.ticket()
         self.assertEqual((t["kind"], t["subject"], t["status"]), ("bug", "Map is empty", "open"))
         self.assertIsNone(t["closed_at"])
         self.assertEqual(self.messages()[0]["body"], "Line 1\nLine 2")
         html = self.client.get("/support").get_data(as_text=True)
-        self.assertIn("#1 <bdi>Map is empty</bdi>", html)
+        self.assertIn(f"#{ref(1)} <bdi>Map is empty</bdi>", html)
         self.assertIn("Report a bug", html)
         self.assertIn(">Open<", html)
-        ticket_page = self.client.get("/support/1").get_data(as_text=True)
+        ticket_page = self.client.get(f"/support/{ref(1)}").get_data(as_text=True)
         self.assertIn('<div class="message-body" dir="auto">Line 1\nLine 2</div>', ticket_page)
 
     def test_validation(self):
@@ -99,18 +99,18 @@ class UserTicketTests(SupportBase):
     def test_other_users_tickets_are_not_found(self):
         self.open_ticket()
         other = self.signup("b@example.com", client=self.app.test_client())
-        self.assertEqual(other.get("/support/1").status_code, 404)
-        self.assertEqual(other.post("/support/1", data={"action": "close"}).status_code, 404)
-        self.assertEqual(other.post("/support/1", data={"action": "reply", "body": "hi"})
+        self.assertEqual(other.get(f"/support/{ref(1)}").status_code, 404)
+        self.assertEqual(other.post(f"/support/{ref(1)}", data={"action": "close"}).status_code, 404)
+        self.assertEqual(other.post(f"/support/{ref(1)}", data={"action": "reply", "body": "hi"})
                          .status_code, 404)
         self.assertNotIn("Map is empty", other.get("/support").get_data(as_text=True))
         self.assertEqual(self.client.get("/admin/support").status_code, 404)  # not an admin
-        self.assertEqual(self.client.get("/admin/support/1").status_code, 404)
+        self.assertEqual(self.client.get(f"/admin/support/{ref(1)}").status_code, 404)
         self.assertEqual(len(self.messages()), 1)
 
     def test_messages_are_escaped(self):
         self.open_ticket(subject="<b>bold</b>", body="<script>alert(1)</script>")
-        for client, path in ((self.client, "/support/1"), (self.admin, "/admin/support/1"),
+        for client, path in ((self.client, f"/support/{ref(1)}"), (self.admin, f"/admin/support/{ref(1)}"),
                              (self.admin, "/admin/support"), (self.client, "/support")):
             html = client.get(path).get_data(as_text=True)
             self.assertNotIn("<script>alert(1)", html)
@@ -125,24 +125,24 @@ class ConversationTests(SupportBase):
 
     def test_admin_and_user_talk_and_emails_carry_no_text(self):
         self.assertIn("New", self.admin.get("/admin/support").get_data(as_text=True))
-        self.admin.post("/admin/support/1", data={"action": "reply", "body": "Secret fix steps"})
+        self.admin.post(f"/admin/support/{ref(1)}", data={"action": "reply", "body": "Secret fix steps"})
         mail = self.outbox[-1]
         self.assertEqual(mail["to"], "a@example.com")
-        self.assertIn("/support/1", mail["text"])
+        self.assertIn(f"/support/{ref(1)}", mail["text"])
         self.assertNotIn("Secret fix steps", mail["text"] + mail["html"])
         self.assertNotIn("Map is empty", mail["text"] + mail["html"])
         html = self.client.get("/app", follow_redirects=True).get_data(as_text=True)
         self.assertIn("support-dot", html)
         self.assertIn("1 ticket with a new reply", html)
         self.assertIn("New reply", self.client.get("/support").get_data(as_text=True))
-        page = self.client.get("/support/1").get_data(as_text=True)
+        page = self.client.get(f"/support/{ref(1)}").get_data(as_text=True)
         self.assertIn("Nomad Life support", page)
         self.assertIn("Secret fix steps", page)
         self.assertNotIn("support-dot", self.client.get("/support").get_data(as_text=True))
-        self.client.post("/support/1", data={"action": "reply", "body": "Thanks, still empty"})
+        self.client.post(f"/support/{ref(1)}", data={"action": "reply", "body": "Thanks, still empty"})
         admin_mail = self.outbox[-1]
         self.assertEqual(admin_mail["to"], "admin@example.com")
-        self.assertIn("/admin/support/1", admin_mail["text"])
+        self.assertIn(f"/admin/support/{ref(1)}", admin_mail["text"])
         self.assertNotIn("still empty", admin_mail["text"] + admin_mail["html"])
         self.assertEqual([m["from_admin"] for m in self.messages()], [0, 1, 0])
 
@@ -150,38 +150,38 @@ class ConversationTests(SupportBase):
         self.outbox.clear()
         self.open_ticket(subject="Second")
         self.assertEqual([m["to"] for m in self.outbox], ["admin@example.com"])
-        self.assertIn("opened support ticket #2", self.outbox[-1]["text"])
+        self.assertIn(f"opened support ticket #{ref(2)}", self.outbox[-1]["text"])
 
     def test_closing_reopening_and_dates(self):
-        self.client.post("/support/1", data={"action": "close"})
+        self.client.post(f"/support/{ref(1)}", data={"action": "close"})
         t = self.ticket()
         self.assertEqual((t["status"], t["closed_by"]), ("closed", "user"))
         self.assertIsNotNone(t["closed_at"])
         self.assertEqual(t["updated_at"], t["closed_at"])
-        self.client.post("/support/1", data={"action": "reply", "body": "Back again"})
+        self.client.post(f"/support/{ref(1)}", data={"action": "reply", "body": "Back again"})
         t = self.ticket()
         self.assertEqual(t["status"], "open")
         self.assertIsNone(t["closed_at"])
         self.assertIn("opened it again", self.outbox[-1]["text"])
-        self.admin.post("/admin/support/1", data={"action": "close"})
+        self.admin.post(f"/admin/support/{ref(1)}", data={"action": "close"})
         t = self.ticket()
         self.assertEqual((t["status"], t["closed_by"]), ("closed", "admin"))
         self.assertIn("closed your ticket", self.outbox[-1]["text"])
-        resp = self.admin.post("/admin/support/1", data={"action": "reply", "body": "late"},
+        resp = self.admin.post(f"/admin/support/{ref(1)}", data={"action": "reply", "body": "late"},
                                follow_redirects=True)
         self.assertIn("Reopen it to answer", resp.get_data(as_text=True))
         self.assertEqual(len(self.messages()), 2)
-        self.admin.post("/admin/support/1", data={"action": "reopen"})
+        self.admin.post(f"/admin/support/{ref(1)}", data={"action": "reopen"})
         self.assertEqual(self.ticket()["status"], "open")
         self.assertIsNone(self.ticket()["closed_at"])
 
     def test_closing_twice_sends_one_email(self):
-        self.admin.post("/admin/support/1", data={"action": "close"})
-        self.admin.post("/admin/support/1", data={"action": "close"})
+        self.admin.post(f"/admin/support/{ref(1)}", data={"action": "close"})
+        self.admin.post(f"/admin/support/{ref(1)}", data={"action": "close"})
         self.assertEqual(len([m for m in self.outbox if "closed" in m["subject"]]), 1)
 
     def test_empty_reply_keeps_the_draft_page(self):
-        resp = self.client.post("/support/1", data={"action": "reply", "body": "  "})
+        resp = self.client.post(f"/support/{ref(1)}", data={"action": "reply", "body": "  "})
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Please write a message.", resp.get_data(as_text=True))
 
@@ -209,11 +209,11 @@ class AdminTableTests(SupportBase):
         self.open_ticket(subject="beta idea", kind="feature")
         bob = self.signup("bob@example.com", client=self.app.test_client())
         self.open_ticket(subject="Gamma question", kind="question", client=bob)
-        self.client.post("/support/2", data={"action": "close"})
+        self.client.post(f"/support/{ref(2)}", data={"action": "close"})
 
     def rows(self, query=""):
         html = self.admin.get("/admin/support" + query).get_data(as_text=True)
-        return re.findall(r'<a href="/admin/support/(\d+)" dir="auto">', html)
+        return re.findall(r'<a href="/admin/support/\d{4}-(\d+)" dir="auto">', html)
 
     def test_filters_and_search(self):
         self.assertEqual(sorted(self.rows()), ["1", "2", "3"])
@@ -223,7 +223,7 @@ class AdminTableTests(SupportBase):
         self.assertEqual(self.rows("?kind=question&status=open"), ["3"])
         self.assertEqual(self.rows("?q=bob"), ["3"])
         self.assertEqual(sorted(self.rows("?q=Lovelace")), ["1", "2"])
-        self.assertEqual(self.rows("?q=%233"), ["3"])
+        self.assertEqual(self.rows(f"?q={ref(3)}"), ["3"])
         self.assertEqual(self.rows("?q=100%25"), [])
         self.assertEqual(sorted(self.rows("?status=bogus&kind=bogus&sort=bogus")),
                          ["1", "2", "3"])
@@ -266,6 +266,6 @@ class AdminTableTests(SupportBase):
     def test_admin_page_needs_two_factor(self):
         self.app.config["ADMIN_REQUIRE_2FA"] = True
         self.assertEqual(self.admin.get("/admin/support").headers["Location"], "/settings")
-        self.assertEqual(self.admin.post("/admin/support/1", data={"action": "close"})
+        self.assertEqual(self.admin.post(f"/admin/support/{ref(1)}", data={"action": "close"})
                          .status_code, 302)
         self.assertEqual(self.ticket()["status"], "open")

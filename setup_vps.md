@@ -257,6 +257,8 @@ A server set up from an older copy of this guide lacks `--graceful-timeout 120` 
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
 
+- **1.3.1** numbers support tickets per year (2026-1, 2026-2, ...). Existing tickets are renumbered on start, in the order they were opened; links in emails sent before still open the right ticket.
+
 - **1.2.15** leaves the receipts out of the nightly archive. Before upgrading, make sure the off-site copy also takes the receipts folder (section 11), or from that night on the receipts are backed up nowhere. Archives from before still hold the receipts and are removed by `--keep` as usual.
 
 - **1.2.12** stores receipts as ZIP files and resizes big photos. Receipts uploaded before keep working (they are zipped when downloaded), but to save the space run this once:

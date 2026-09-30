@@ -1,6 +1,6 @@
 Hi{% if first_name %} {{ first_name }}{% endif %},
 
-{% if event == "new" %}{{ user_email }} opened support ticket #{{ ticket_id }}.{% elif event == "reopened" %}{{ user_email }} wrote on support ticket #{{ ticket_id }}, which opened it again.{% else %}{{ user_email }} wrote a new message on support ticket #{{ ticket_id }}.{% endif %} Open it to read and answer:
+{% if event == "new" %}{{ user_email }} opened support ticket #{{ ticket_ref }}.{% elif event == "reopened" %}{{ user_email }} wrote on support ticket #{{ ticket_ref }}, which opened it again.{% else %}{{ user_email }} wrote a new message on support ticket #{{ ticket_ref }}.{% endif %} Open it to read and answer:
 
 {{ link }}
 

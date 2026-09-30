@@ -124,7 +124,7 @@ Signed in users get a chat bubble in the header ("Contact support") and a **Supp
 - **Submit a ticket** opens a form with a type (Report a bug, Feature request, General question), a subject (up to 150 characters) and a description (up to 5000). You can have up to 20 open tickets, and open at most 5 tickets and write 30 messages every 15 minutes.
 - Each ticket is a conversation between you and support. You can close it, and writing on a closed ticket reopens it.
 
-Admins open **Support tickets** in the menu (`/admin/support`): every ticket with its number, type, subject, user, status, opened, last updated and closed dates and number of messages. Filter by status and type, search by email, name or `#number`, and sort by any column. On a ticket an admin can answer, close, reopen, or reopen and answer at once. Times are shown in UTC.
+Admins open **Support tickets** in the menu (`/admin/support`): every ticket with its number, type, subject, user, status, opened, last updated and closed dates and number of messages. Filter by status and type, search by email, name or ticket number (`2026-3`), and sort by any column. Tickets are numbered per year: `2026-1`, `2026-2`, then `2027-1` from January. On a ticket an admin can answer, close, reopen, or reopen and answer at once. Times are shown in UTC.
 
 Emails are notifications only: admins get one for each new ticket or message, the user for each answer and when support closes the ticket. They carry a link to the ticket and never the message itself, so answers are always written in the app.
 

@@ -14,6 +14,12 @@ from unittest import mock
 import app as appmod
 
 
+def ref(n):
+    """The number of the n-th ticket opened this year (UTC), as shown and in URLs: 2026-1."""
+    from datetime import datetime, timezone
+    return f"{datetime.now(timezone.utc).year}-{n}"
+
+
 class AppTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="nomadlife-test-")

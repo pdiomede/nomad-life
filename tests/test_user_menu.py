@@ -1,7 +1,7 @@
 """Header user menu: the email opens a panel with the plan, Admin (admins only) and Sign out."""
 import unittest
 
-from tests.helpers import AppTestCase
+from tests.helpers import AppTestCase, ref
 
 
 class UserMenuTests(AppTestCase):
@@ -48,7 +48,7 @@ class UserMenuTests(AppTestCase):
         self.assertNotIn("<circle", button)  # no longer the question mark
         self.client.post("/support/new", data={"kind": "question", "subject": "Help",
                                                 "body": "Something broke."})
-        ticket = self.client.get("/support/1").get_data(as_text=True)
+        ticket = self.client.get(f"/support/{ref(1)}").get_data(as_text=True)
         self.assertIn('<button class="btn btn-danger btn-sm" type="submit">Close ticket, my problem is '
                       'solved</button>', ticket)
         self.assertIn('class="back"', ticket)

@@ -42,6 +42,8 @@ from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
 APP_VERSION = "1.3.1"
+# "Contact Us" in the footer of every page, the landing page included.
+CONTACT_EMAIL = "info@nomadlife.pro"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Content types are derived from the extension, never from the browser.
 MIME_TYPES = {
@@ -537,7 +539,7 @@ def create_app(overrides=None):
 
     @app.context_processor
     def inject_globals():
-        return {"app_version": APP_VERSION, "asset_version": asset_version, "countries": COUNTRIES, "country_data": COUNTRY_DATA,
+        return {"app_version": APP_VERSION, "contact_email": CONTACT_EMAIL, "asset_version": asset_version, "countries": COUNTRIES, "country_data": COUNTRY_DATA,
                 "document_kinds": DOCUMENT_KINDS,
                 "max_receipt_bytes": receipt_limit(),
                 "max_receipt_label": format_size(receipt_limit(), "down"),
@@ -555,6 +557,7 @@ def create_app(overrides=None):
     app.add_template_filter(local_date, "localdate")
     app.add_template_filter(local_datetime, "localdatetime")
     app.add_template_filter(utc_datetime, "utcdatetime")
+    app.add_template_filter(ticket_ref, "ticket_ref")
     app.add_template_filter(country_flag, "flag")
 
     @app.errorhandler(413)
@@ -958,7 +961,7 @@ TICKETS_PER_PAGE = 25
 # no closed date: they go last in both directions.
 TICKET_SORTS = {
     # Type sorts by the name shown (Feature request, General question, Report a bug).
-    "id": "t.id", "kind": "CASE t.kind WHEN 'feature' THEN 1 WHEN 'question' THEN 2 ELSE 3 END",
+    "id": "t.ref_year, t.ref_seq", "kind": "CASE t.kind WHEN 'feature' THEN 1 WHEN 'question' THEN 2 ELSE 3 END",
     "subject": "t.subject COLLATE NOCASE", "messages": "messages",
     "user": "u.email COLLATE NOCASE", "status": "t.status", "created": "t.created_at",
     "updated": "t.updated_at", "closed": "t.closed_at IS NULL, t.closed_at",
@@ -1002,14 +1005,26 @@ def support_unread(user_id):
     return row["n"] if row else 0
 
 
-def notify_admins(ticket_id, event, user_email):
+def ticket_ref(ticket):
+    """The number people see: the year the ticket was opened and its place in that year, 2026-1
+    (ref_year and ref_seq, set by the tickets_ref trigger in db.py)."""
+    return f"{ticket['ref_year']}-{ticket['ref_seq']}"
+
+
+def ticket_args(ticket):
+    """URL values of a ticket page: url_for("support_ticket", **ticket_args(t)) is /support/2026-1."""
+    return {"year": ticket["ref_year"], "seq": ticket["ref_seq"]}
+
+
+def notify_admins(ticket, event, user_email):
     """Tell every admin that a ticket needs them. A link only, never the ticket's text."""
-    link = email_link("admin_ticket", ticket_id=ticket_id)
+    ref = ticket_ref(ticket)
+    link = email_link("admin_ticket", **ticket_args(ticket))
     for admin in sorted(current_app.config["ADMIN_EMAILS"]):
-        if not send_template_email(admin, f"Support ticket #{ticket_id} needs an answer",
-                                   "ticket_admin", ticket_id=ticket_id, event=event,
+        if not send_template_email(admin, f"Support ticket #{ref} needs an answer",
+                                   "ticket_admin", ticket_ref=ref, event=event,
                                    user_email=user_email, link=link):
-            current_app.logger.error("Could not email %s about ticket %s", admin, ticket_id)
+            current_app.logger.error("Could not email %s about ticket %s", admin, ref)
 
 
 def notify_user(ticket, event):
@@ -1017,13 +1032,13 @@ def notify_user(ticket, event):
     owner = db.query("SELECT email FROM users WHERE id = ?", (ticket["user_id"],), one=True)
     if owner is None:
         return
-    subject = (f"Support answered your ticket #{ticket['id']}" if event == "reply"
-               else f"Your support ticket #{ticket['id']} was closed")
-    if not send_template_email(owner["email"], subject, "ticket_user", ticket_id=ticket["id"],
+    ref = ticket_ref(ticket)
+    subject = (f"Support answered your ticket #{ref}" if event == "reply"
+               else f"Your support ticket #{ref} was closed")
+    if not send_template_email(owner["email"], subject, "ticket_user", ticket_ref=ref,
                                event=event, link=email_link("support_ticket",
-                                                            ticket_id=ticket["id"])):
-        current_app.logger.error("Could not email %s about ticket %s", owner["email"],
-                                 ticket["id"])
+                                                            **ticket_args(ticket))):
+        current_app.logger.error("Could not email %s about ticket %s", owner["email"], ref)
 
 
 def ticket_messages(ticket_id):
@@ -3075,12 +3090,15 @@ def register_routes(app):
 
     # --- support ---
 
-    def get_ticket_or_404(ticket_id):
-        row = db.query("SELECT * FROM tickets WHERE id = ? AND user_id = ?",
-                       (ticket_id, current_user.id), one=True)
+    def get_ticket_or_404(year, seq):
+        row = db.query("SELECT * FROM tickets WHERE ref_year = ? AND ref_seq = ? AND user_id = ?",
+                       (year, seq, current_user.id), one=True)
         if row is None:
             abort(404)
         return row
+
+    def ticket_url(endpoint, ticket):
+        return url_for(endpoint, **ticket_args(ticket))
 
     @app.route("/support")
     @login_required
@@ -3142,23 +3160,39 @@ def register_routes(app):
                                                   (ticket_id, current_user.id, body)).lastrowid
                         conn.execute("UPDATE tickets SET user_seen_id = ? WHERE id = ?",
                                      (message_id, ticket_id))
+                        # Numbered by the tickets_ref trigger during the insert.
+                        ticket = conn.execute("SELECT * FROM tickets WHERE id = ?",
+                                              (ticket_id,)).fetchone()
             if err:
                 flash(err, "error")
                 return render_template("support_new.html", form=form, kinds=TICKET_KINDS,
                                        subject_max=TICKET_SUBJECT_MAX,
                                        body_max=TICKET_BODY_MAX), 400
-            audit("ticket_opened", current_user.id, current_user.email, f"#{ticket_id}")
-            notify_admins(ticket_id, "new", current_user.email)
-            flash(f"Ticket #{ticket_id} was sent. We will answer here and email you when we do.",
+            ref = ticket_ref(ticket)
+            audit("ticket_opened", current_user.id, current_user.email, f"#{ref}")
+            notify_admins(ticket, "new", current_user.email)
+            flash(f"Ticket #{ref} was sent. We will answer here and email you when we do.",
                   "success")
-            return redirect(url_for("support_ticket", ticket_id=ticket_id))
+            return redirect(ticket_url("support_ticket", ticket))
         return render_template("support_new.html", form=form, kinds=TICKET_KINDS,
                                subject_max=TICKET_SUBJECT_MAX, body_max=TICKET_BODY_MAX)
 
     @app.route("/support/<int:ticket_id>", methods=["GET", "POST"])
     @login_required
-    def support_ticket(ticket_id):
-        ticket = get_ticket_or_404(ticket_id)
+    def support_ticket_by_id(ticket_id):
+        """Links from before 1.3.1 name the ticket by its id. 307 keeps a POST, so a page opened
+        before the upgrade still sends its form."""
+        ticket = db.query("SELECT ref_year, ref_seq FROM tickets WHERE id = ? AND user_id = ?",
+                          (ticket_id, current_user.id), one=True)
+        if ticket is None:
+            abort(404)
+        return redirect(ticket_url("support_ticket", ticket), code=307)
+
+    @app.route("/support/<int:year>-<int:seq>", methods=["GET", "POST"])
+    @login_required
+    def support_ticket(year, seq):
+        ticket = get_ticket_or_404(year, seq)
+        ticket_id, ref = ticket["id"], ticket_ref(ticket)
         if request.method == "POST":
             action = request.form.get("action")
             if action == "reply":
@@ -3189,15 +3223,15 @@ def register_routes(app):
                                      "user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
                                      (message_id, ticket_id))
                     audit("ticket_reopened" if reopened else "ticket_message", current_user.id,
-                          current_user.email, f"#{ticket_id}")
-                    notify_admins(ticket_id, "reopened" if reopened else "reply",
+                          current_user.email, f"#{ref}")
+                    notify_admins(ticket, "reopened" if reopened else "reply",
                                   current_user.email)
                     flash("Your message was sent." + (
                         " The ticket is open again." if reopened else
                         f" The ticket stays closed: you already have {OPEN_TICKETS_MAX} open "
                         "tickets. Close the solved ones to open it again." if still_closed
                         else ""), "success")
-                    return redirect(url_for("support_ticket", ticket_id=ticket_id))
+                    return redirect(ticket_url("support_ticket", ticket))
                 return render_template("support_ticket.html", ticket=ticket,
                                        messages=ticket_messages(ticket_id), admin_view=False,
                                        kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
@@ -3209,12 +3243,12 @@ def register_routes(app):
                     "closed_by = 'user', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND "
                     "status = 'open'", (ticket_id,))
                 if closed:
-                    audit("ticket_closed", current_user.id, current_user.email, f"#{ticket_id}")
+                    audit("ticket_closed", current_user.id, current_user.email, f"#{ref}")
                     flash("The ticket is closed. Write on it any time to open it again.",
                           "success")
                 else:
                     flash("This ticket was already closed.", "info")
-            return redirect(url_for("support_ticket", ticket_id=ticket_id))
+            return redirect(ticket_url("support_ticket", ticket))
         messages = ticket_messages(ticket_id)
         if messages and messages[-1]["id"] > ticket["user_seen_id"]:
             db.execute("UPDATE tickets SET user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
@@ -3249,11 +3283,17 @@ def register_routes(app):
             where.append("t.kind = ?")
             params.append(kind)
         if q:
-            number = q.lstrip("#")
-            if q.startswith("#") and number.isascii() and number.isdigit():
-                # A number beyond SQLite's range matches no ticket.
-                where.append("t.id = ?")
-                params.append(int(number) if int(number) < 2 ** 63 else -1)
+            number = re.fullmatch(r"#?([0-9]{4})-([0-9]+)", q)
+            if number:
+                # A ticket number, 2026-12 or #2026-12. Beyond SQLite's range matches nothing.
+                where.append("t.ref_year = ? AND t.ref_seq = ?")
+                seq = int(number[2])
+                params += [int(number[1]), seq if seq < 2 ** 63 else -1]
+            elif valid_email(q.lower()):
+                # A whole address is one account: ann@x.com must not also list joann@x.com
+                # (the Support tickets link of the admin account page searches this way).
+                where.append("u.email = ?")
+                params.append(q.lower())
             else:
                 # casefold (registered in db.get_db) folds every script, not only A to Z,
                 # and composes accents, so "élodie" finds "Élodie" however it was typed.
@@ -3282,14 +3322,26 @@ def register_routes(app):
 
     @app.route("/admin/support/<int:ticket_id>", methods=["GET", "POST"])
     @login_required
-    def admin_ticket(ticket_id):
+    def admin_ticket_by_id(ticket_id):
+        """Links from before 1.3.1 (admin emails) name the ticket by its id."""
         require_admin()
-        ticket = db.query("SELECT t.*, u.email, u.first_name, u.last_name FROM tickets t "
-                          "JOIN users u ON u.id = t.user_id WHERE t.id = ?", (ticket_id,),
+        ticket = db.query("SELECT ref_year, ref_seq FROM tickets WHERE id = ?", (ticket_id,),
                           one=True)
         if ticket is None:
             abort(404)
-        back = url_for("admin_ticket", ticket_id=ticket_id)
+        return redirect(ticket_url("admin_ticket", ticket), code=307)
+
+    @app.route("/admin/support/<int:year>-<int:seq>", methods=["GET", "POST"])
+    @login_required
+    def admin_ticket(year, seq):
+        require_admin()
+        ticket = db.query("SELECT t.*, u.email, u.first_name, u.last_name FROM tickets t "
+                          "JOIN users u ON u.id = t.user_id WHERE t.ref_year = ? AND t.ref_seq = ?",
+                          (year, seq), one=True)
+        if ticket is None:
+            abort(404)
+        ticket_id, ref = ticket["id"], ticket_ref(ticket)
+        back = ticket_url("admin_ticket", ticket)
         if request.method == "POST":
             action = request.form.get("action")
             if action in ("reply", "reopen_reply"):
@@ -3324,9 +3376,9 @@ def register_routes(app):
                     if still_open:
                         if reopen and reopened:
                             audit("ticket_reopened", ticket["user_id"], ticket["email"],
-                                  f"#{ticket_id}", current_user.email)
+                                  f"#{ref}", current_user.email)
                         audit("ticket_reply", ticket["user_id"], ticket["email"],
-                              f"#{ticket_id}", current_user.email)
+                              f"#{ref}", current_user.email)
                         notify_user(ticket, "reply")
                         flash("Your answer was sent. The user gets an email.", "success")
                         return redirect(back)
@@ -3345,7 +3397,7 @@ def register_routes(app):
                         "UPDATE tickets SET status = 'closed', closed_at = CURRENT_TIMESTAMP, "
                         "closed_by = 'admin', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND "
                         "status = 'open'", (ticket_id,)):
-                    audit("ticket_closed", ticket["user_id"], ticket["email"], f"#{ticket_id}",
+                    audit("ticket_closed", ticket["user_id"], ticket["email"], f"#{ref}",
                           current_user.email)
                     notify_user(ticket, "closed")
                     flash("The ticket is closed. The user gets an email.", "success")
@@ -3357,7 +3409,7 @@ def register_routes(app):
                         "updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'closed'",
                         (ticket_id,)):
                     audit("ticket_reopened", ticket["user_id"], ticket["email"],
-                          f"#{ticket_id}", current_user.email)
+                          f"#{ref}", current_user.email)
                     flash("The ticket is open again.", "success")
                 else:
                     flash("This ticket is already open.", "info")
