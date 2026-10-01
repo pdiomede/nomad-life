@@ -273,6 +273,7 @@ main:focus { outline: none; }
 .auth-head { text-align: center; margin-bottom: 22px; }
 .auth-head h1 { font-size: 24px; margin-top: 14px; }
 .auth-head p { margin-top: 6px; overflow-wrap: anywhere; }  /* long email addresses */
+.auth-card form p { overflow-wrap: anywhere; }  /* the email change pages name both addresses */
 
 /* Year tabs */
 .year-tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px; flex-wrap: wrap; }

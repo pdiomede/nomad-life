@@ -26,8 +26,9 @@ from datetime import date, datetime, timedelta, timezone
 import click
 import segno
 from dotenv import load_dotenv
-from flask import (Flask, Response, abort, current_app, flash, has_request_context, redirect,
-                   render_template, request, send_file, send_from_directory, session, url_for)
+from flask import (Flask, Response, abort, after_this_request, current_app, flash,
+                   has_request_context, redirect, render_template, request, send_file,
+                   send_from_directory, session, url_for)
 from markupsafe import escape
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_url, login_user, logout_user, user_loaded_from_cookie)
@@ -1520,6 +1521,29 @@ def send_template_email(to, subject, name, *, background=False, on_failure=None,
     return sent
 
 
+def after_answer(work):
+    """Run work() once the answer is sent (the server closes the response), from a thread
+    with a request context of its own (emails build their links with url_for); at once when
+    EMAIL_IN_BACKGROUND is off (tests read the outbox right after the request). For what a
+    public form does only for a registered address: run for every address, the answer takes
+    as long for both (a thread started during the request still slowed it down)."""
+    app = current_app._get_current_object()
+    if not app.config.get("EMAIL_IN_BACKGROUND", True):
+        work()
+        return
+    ip = client_ip()
+
+    def run():
+        with app.test_request_context(environ_base={"REMOTE_ADDR": ip}):
+            work()
+
+    @after_this_request
+    def start_when_sent(resp):
+        # Not a daemon thread: a server restart waits for the email instead of dropping it.
+        resp.call_on_close(lambda: threading.Thread(target=run, name="email").start())
+        return resp
+
+
 def release_email_wait(user_id):
     """Nothing was sent, so do not make the user wait a minute before trying again."""
     db.execute("UPDATE users SET email_sent_at = NULL WHERE id = ?", (user_id,))
@@ -2037,13 +2061,17 @@ class QuotaExceeded(Exception):
         self.left = left
 
 
-def delete_account(user_id):
+def delete_account(user_id, password_hash=None):
     """Delete an account with all its years, movements and documents, then its files.
-    Returns False when there was no such account any more (deleted meanwhile)."""
+    Returns False when there was no such account any more (deleted meanwhile), or, with
+    password_hash, when its password is no longer that one (reset by email meanwhile)."""
     from flask import current_app
+    sql, args = "DELETE FROM users WHERE id = ?", (user_id,)
+    if password_hash is not None:
+        sql, args = sql + " AND password_hash = ?", (user_id, password_hash)
     with db.transaction() as conn:  # list and delete together, see the year delete
         docs = conn.execute("SELECT * FROM documents WHERE user_id = ?", (user_id,)).fetchall()
-        deleted = conn.execute("DELETE FROM users WHERE id = ?", (user_id,)).rowcount
+        deleted = conn.execute(sql, args).rowcount
     if not deleted:
         return False
     remove_files(docs)
@@ -2575,9 +2603,15 @@ def register_routes(app):
                         flash(sent, "info")
                         return redirect(url_for("login"))
                     # Earlier confirmation links stop working: only the mailbox owner, through
-                    # the link below, decides the password now.
-                    db.execute("UPDATE users SET session_version = session_version + 1 WHERE id = ?",
-                               (old["id"],))
+                    # the link below, decides the password now. Only while it still waits: it
+                    # may have been confirmed while the password was hashed, and a confirmed
+                    # account must not be signed out everywhere and asked to finish signing up.
+                    if not db.execute_rowcount("UPDATE users SET session_version = "
+                                               "session_version + 1 WHERE id = ? AND "
+                                               "verified_at IS NULL", (old["id"],)):
+                        release_email_wait(old["id"])
+                        flash(sent, "info")
+                        return redirect(url_for("login"))
                     old = db.query("SELECT * FROM users WHERE id = ?", (old["id"],), one=True)
                     if not send_password_link(old, "finish_signup",
                                               "Finish setting up your Nomad Life account",
@@ -2680,7 +2714,9 @@ def register_routes(app):
             return redirect(url_for("index"))
         if request.method == "POST":
             purge_unverified()
-            email = request.form.get("email", "").strip().lower()
+            # Every failure is recorded under the typed address, so a longer one than any
+            # account can have (valid_email: 254) is cut: a form field can hold 500 KB.
+            email = request.form.get("email", "").strip().lower()[:255]
             device = device_for(email)
             wait, scope, attempt = take_attempt("fail", email, device)
             if wait:
@@ -2792,12 +2828,15 @@ def register_routes(app):
             if wait:
                 flash(too_many_message(wait, scope, "reset requests"), "error")
                 return render_template("auth/forgot.html"), 429
-            row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
-            if row and not row["disabled"] and email_allowed(row["id"]):
-                # Sent after answering: an unknown address, which sends nothing, must not
-                # answer seconds sooner than a registered one.
-                send_password_link(row, "reset", "Reset your Nomad Life password",
-                                   background=True)
+            def send_link():
+                row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
+                if row and not row["disabled"] and email_allowed(row["id"]):
+                    send_password_link(row, "reset", "Reset your Nomad Life password")
+
+            # Looked up and sent after answering, for every address: an unknown one, which
+            # sends nothing, must not answer sooner than a registered one (seconds when Gmail
+            # was awaited, still half a millisecond while the email was claimed and rendered).
+            after_answer(send_link)
             flash("If that email is registered, a reset link is on its way.", "info")
             return redirect(url_for("login"))
         return render_template("auth/forgot.html")
@@ -2836,12 +2875,13 @@ def register_routes(app):
                 with db.transaction() as conn:
                     # The link came by email, so it also confirms an account still waiting for
                     # it. Only while the password is still the one the link was made for: two
-                    # submits at once (two tabs) must not both succeed.
+                    # submits at once (two tabs) must not both succeed. And only while the
+                    # email is the one checked above: once it changed, the old mailbox has no say.
                     used = conn.execute(
                         "UPDATE users SET password_hash = ?, verified_at = COALESCE(verified_at, "
                         "CURRENT_TIMESTAMP), pending_email = NULL "
-                        "WHERE id = ? AND password_hash = ?",
-                        (new_hash, row["id"], row["password_hash"])).rowcount
+                        "WHERE id = ? AND password_hash = ? AND email = ?",
+                        (new_hash, row["id"], row["password_hash"], row["email"])).rowcount
                     if used:
                         # Proving the mailbox ends a lock from wrong guesses (by anyone),
                         # also the one of each browser the account signed in from.
@@ -2852,7 +2892,16 @@ def register_routes(app):
                         # The new password already ends every session; forget their rows too.
                         conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
                 if not used:
-                    flash("This reset link has already been used.", "error")
+                    # What changed while the new password was hashed, in the words the checks
+                    # above use: the account removed (a sign up whose 20 minutes ran out), the
+                    # same link used in another tab, or the email changed.
+                    now = db.query("SELECT password_hash FROM users WHERE id = ?", (row["id"],),
+                                   one=True)
+                    flash("This reset link is no longer valid." if now is None
+                          else "This reset link has already been used."
+                          if now["password_hash"] != row["password_hash"]
+                          else "This reset link is no longer valid. Please request a new one.",
+                          "error")
                     return redirect(url_for("forgot"))
                 if row["verified_at"] is None:
                     # The first password of an account still waiting for confirmation: this
@@ -3308,8 +3357,18 @@ def register_routes(app):
                 else:
                     # Only the newest request can be confirmed, and only while the email is
                     # still the one it started from, so an older link (to a mistyped address,
-                    # say) can never take the account.
-                    db.execute("UPDATE users SET pending_email = ? WHERE id = ?", (new, row["id"]))
+                    # say) can never take the account. Only over the password checked above:
+                    # after a reset by email meanwhile its link could never work.
+                    if not db.execute_rowcount("UPDATE users SET pending_email = ? WHERE id = ? "
+                                               "AND password_hash = ?",
+                                               (new, row["id"], row["password_hash"])):
+                        release_email_wait(row["id"])
+                        if not db.query("SELECT 1 FROM users WHERE id = ?", (row["id"],),
+                                        one=True):
+                            return account_gone()
+                        flash("The password of this account was changed elsewhere in the "
+                              "meantime, so no confirmation link was sent.", "error")
+                        return redirect(url_for("settings"))
                     token = serializer("email-change").dumps(
                         {"uid": row["id"], "email": new, "old": row["email"],
                          "h": password_fingerprint(row["password_hash"])})
@@ -3397,8 +3456,14 @@ def register_routes(app):
                     flash("Type your email address to confirm the deletion.", "error")
                 elif err:
                     flash(err, "error")
+                # Only over the password checked above, as for a password change: a reset by
+                # email that finished meanwhile (the owner taking the account back) wins.
+                elif not delete_account(row["id"], row["password_hash"]):
+                    if not db.query("SELECT 1 FROM users WHERE id = ?", (row["id"],), one=True):
+                        return account_gone()  # deleted meanwhile (an admin): nothing to record
+                    flash("The password of this account was changed elsewhere in the meantime, "
+                          "so the account was not deleted.", "error")
                 else:
-                    delete_account(row["id"])
                     audit("account_deleted", row["id"], row["email"])
                     logout_user()
                     flash("Your account and all its data have been deleted.", "info")
@@ -3519,9 +3584,15 @@ def register_routes(app):
             flash("This link is not valid.", "error")
             return redirect(url_for("login"))
         row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
-        if row and row["email"] == data.get("old"):  # pressed twice: the first one worked
-            flash(f"The account already uses {data['old']} again. Use the link we emailed "
-                  "there to choose a new password.", "info")
+        if row and row["email"] == data.get("old"):
+            # Pressed twice: the first press undid it and emailed a password link. Or the
+            # address was changed back from Settings: nothing was undone, nothing was sent.
+            undone = db.query("SELECT 1 FROM audit_log WHERE user_id = ? AND event = "
+                              "'email_reverted' AND detail = ?",
+                              (row["id"], f"{data['new']} to {data['old']}"), one=True)
+            flash(f"The account already uses {data['old']} again."
+                  + (" Use the link we emailed there to choose a new password." if undone
+                     else ""), "info")
             return redirect(url_for("login"))
         if not row or row["email"] != data.get("new"):  # changed again since
             flash("This link is no longer valid.", "error")
@@ -3987,6 +4058,14 @@ def register_routes(app):
             if not db.execute_rowcount("UPDATE users SET disabled = 0 WHERE id = ?", (user_id,)):
                 return gone()
             audit("admin_enable", user_id, email, "", who)
+            if row["verified_at"] is None:
+                # A blocked sign up that was never confirmed: enabled, it is removed like any
+                # other once its 20 minutes are over, which frees the address (and its page).
+                purge_unverified()
+                if not db.query("SELECT 1 FROM users WHERE id = ?", (user_id,), one=True):
+                    flash(f"{email} is no longer blocked. The account was never confirmed, so it "
+                          "was removed: the address can sign up again.", "success")
+                    return redirect(admin_url(**state))
             flash(f"{email} can sign in again.", "success")
         elif action == "delete":
             if not delete_confirmed():
@@ -4497,7 +4576,9 @@ def register_routes(app):
         # Trailing dots and spaces would leave "Hotel..pdf" (Windows drops them anyway).
         typed = request.form.get("name", "").replace("/", "-").replace("\\", "-")
         typed = typed.strip().rstrip(". ")
-        name = display_name(typed) if typed else ""
+        # A name of invisible characters only (zero width spaces, blank letters) would show
+        # as an empty name, or as the extension alone.
+        name = display_name(typed) if visible(stem(typed)) else ""
         kind = request.form.get("kind", "")
         ext = doc_format(doc)
         if not name:

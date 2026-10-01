@@ -50,6 +50,19 @@ Third review:
 - The admin page scrolled sideways between about 600 and 930 pixels wide (a hidden "Actions" label escaped the accounts table), and the documentation page 4 pixels too (its tables).
 - In the country list, screen readers could be pointed at an option that no longer existed, or at "Afghanistan" after the field was cleared, although Enter then sends the form.
 
+Fourth review (severity in bold):
+
+- **Medium.** Deleting the account on the Settings page went ahead when the owner reset the password by email while the current password was being checked: whoever knew the old password could still delete the account the owner was taking back. It now deletes only while the password is the one it checked, as the password change does. An account deleted meanwhile by an admin no longer gets a second "Account deleted" row.
+- **Medium.** A password reset link still set the password when the account's email changed while the new password was being saved, although the old mailbox has no say once the address changed (the link already said so when opened after the change). It now saves only while the address is the same. A reset that loses such a race says why: "no longer valid" for an account removed meanwhile (a sign up whose 20 minutes ran out) or whose email changed, instead of "already been used".
+- **Medium.** Signing in with a very long "email" stored all of it, up to 500 KB per attempt, in the table of sign in limits: each network address could keep about 20 MB there (with its index), so many of them together could fill the server's disk. The address is cut to 255 characters first, since a longer one cannot have an account.
+- **Low.** Starting an email change on the Settings page while the owner reset the password by email still sent a confirmation link that could never work, and showed "Waiting for confirmation". It now sends nothing and says the password was changed elsewhere.
+- **Low.** Forgot password still answered a registered address about half a millisecond later than an unknown one (measured over 300 requests of each, interleaved), because claiming and rendering its email happened before the answer. The address is now looked up and its email made only once the answer is sent, for every address.
+- **Low.** Signing up again for an address whose account was confirmed at that very moment (while the password was hashed) signed that account out everywhere and emailed it "Finish setting up your account". It now only answers as usual.
+- **Low.** On the admin account page, enabling a blocked sign up that was never confirmed said it "can sign in again", and the next page was "Page not found": once enabled, it was removed as unconfirmed. It now says the address can sign up again and goes back to the list.
+- **Low.** Pressing **Undo this change** after the address had been changed back from Settings said "Use the link we emailed there to choose a new password", although nothing was undone or sent. It now only says the account already uses that address again.
+- **Low.** A receipt could be renamed to invisible characters only (zero width spaces, blank letters such as U+3164), saved as "ㅤ.pdf" or "file.pdf". Such a name is refused like an empty one.
+- **Low.** The email change confirmation page and its undo page still scrolled sideways on phones with an address of about 40 characters or more: the earlier fix covered the heading, not the text above the button, which now wraps too.
+
 ## [1.5.6] - 2026-10-01
 
 ### Added

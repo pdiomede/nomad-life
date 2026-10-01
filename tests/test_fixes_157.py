@@ -3,6 +3,7 @@ and the shorter overlap texts."""
 import os
 import re
 import sqlite3
+import threading
 import time
 from unittest import mock
 
@@ -428,3 +429,190 @@ class LayoutReviewTests(AppTestCase):
         self.assertIn('active = -1;\n      // The old options are gone: never leave the input '
                       'pointing at one of them.\n      input.removeAttribute('
                       '"aria-activedescendant");', js)
+
+
+class FourthReviewTests(AppTestCase):
+    """Found in the fourth review of 1.5.7: writes that did not repeat what they checked,
+    links racing the 20 minute line, a stored sign in field, timing, and two pages."""
+
+    def setUp(self):
+        super().setUp()
+        self.signup()
+        self.age_emails()
+
+    def flashes(self, resp):
+        return re.findall(r'flash-text">(.*?)<', self.client.get(resp.headers["Location"])
+                          .get_data(as_text=True)) if resp.status_code == 302 else []
+
+    def meanwhile(self, sql, *args):
+        """A side effect for a patched helper: run sql through a second connection first."""
+        def run(*call_args, **_kwargs):
+            with other_connection(self) as conn:
+                conn.execute(sql, args)
+        return run
+
+    def test_deleting_the_account_does_not_win_over_a_reset_meanwhile(self):
+        matches = appmod.password_matches
+        reset = self.meanwhile("UPDATE users SET password_hash = 'reset-by-owner'")
+        form = {"action": "delete", "confirm_delete": "2", "confirm_email": "a@example.com",
+                "current_password": "password1"}
+        with mock.patch.object(appmod, "password_matches",
+                               side_effect=lambda h, p: (reset(), matches(h, p))[1]):
+            html = self.client.post("/settings", data=form,
+                                    follow_redirects=True).get_data(as_text=True)
+        self.assertIn("so the account was not deleted", html)
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0], 1)
+        # Deleted meanwhile by an admin: nothing more to delete, and nothing recorded as if.
+        owner = self.signup("b@example.com", client=self.app.test_client())
+        gone = self.meanwhile("DELETE FROM users WHERE email = 'b@example.com'")
+        with mock.patch.object(appmod, "password_matches",
+                               side_effect=lambda h, p: (gone(), matches(h, p))[1]):
+            resp = owner.post("/settings", data=dict(form, confirm_email="b@example.com"))
+        self.assertEqual(resp.headers["Location"], "/login")
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM audit_log WHERE event = "
+                                          "'account_deleted'").fetchone()[0], 0)
+
+    def test_a_reset_link_does_not_apply_once_the_email_changed(self):
+        self.client.post("/logout")
+        self.client.post("/forgot", data={"email": "a@example.com"})
+        link = self.last_link("a@example.com", kind="reset")
+        hash_password = appmod.hash_password
+        change = self.meanwhile("UPDATE users SET email = 'thief@example.com'")
+        with mock.patch.object(appmod, "hash_password",
+                               side_effect=lambda p: (change(), hash_password(p))[1]):
+            html = self.client.post(link, data={"password": "newpass123", "confirm": "newpass123"},
+                                    follow_redirects=True).get_data(as_text=True)
+        self.assertIn("This reset link is no longer valid. Please request a new one.", html)
+        with self.db() as conn:
+            stored = conn.execute("SELECT password_hash FROM users").fetchone()[0]
+        self.assertTrue(appmod.check_password_hash(stored, "password1"))
+        # A sign up removed at its 20 minutes while the password was hashed: the link is no
+        # longer valid, it was never "already used".
+        self.client.post("/signup", data={"email": "n@example.com", "password": "password1",
+                                          "confirm": "password1"})
+        self.age_emails()
+        self.client.post("/forgot", data={"email": "n@example.com"})
+        link = self.last_link("n@example.com", kind="reset")
+        purge = self.meanwhile("DELETE FROM users WHERE email = 'n@example.com'")
+        with mock.patch.object(appmod, "hash_password",
+                               side_effect=lambda p: (purge(), hash_password(p))[1]):
+            html = self.client.post(link, data={"password": "newpass123", "confirm": "newpass123"},
+                                    follow_redirects=True).get_data(as_text=True)
+        self.assertIn("This reset link is no longer valid.", html)
+        self.assertNotIn("already been used", html)
+
+    def test_a_huge_email_at_sign_in_is_not_stored(self):
+        self.client.post("/logout")
+        self.client.post("/login", data={"email": "x" * 400_000 + "@example.com",
+                                         "password": "password1"})
+        with self.db() as conn:
+            longest = conn.execute("SELECT MAX(length(key)) FROM auth_events").fetchone()[0]
+        self.assertLessEqual(longest, 300)  # was 400,018 characters per failed attempt
+
+    def test_an_email_change_is_not_started_over_a_reset_meanwhile(self):
+        matches = appmod.password_matches
+        reset = self.meanwhile("UPDATE users SET password_hash = 'reset-by-owner', "
+                               "pending_email = NULL")
+        with mock.patch.object(appmod, "password_matches",
+                               side_effect=lambda h, p: (reset(), matches(h, p))[1]):
+            html = self.client.post("/settings", data={
+                "action": "email", "email": "thief@example.com", "current_password": "password1"},
+                follow_redirects=True).get_data(as_text=True)
+        self.assertNotIn("We sent a confirmation link", html)
+        self.assertNotIn("thief@example.com", [m["to"] for m in self.outbox])
+        with self.db() as conn:
+            self.assertIsNone(conn.execute("SELECT pending_email FROM users").fetchone()[0])
+
+    def test_forgot_password_does_nothing_more_for_a_registered_address_until_answered(self):
+        self.client.post("/logout")
+        self.app.config["EMAIL_IN_BACKGROUND"] = True
+        sent = len(self.outbox)
+        with self.db() as conn:
+            before = conn.execute("SELECT email_sent_at FROM users").fetchone()[0]
+        resp = self.client.post("/forgot", data={"email": "a@example.com"})
+        # Answered with the account untouched: no lookup, cooldown or email yet, as for an
+        # unknown address (claiming and rendering it made the answer slower).
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT email_sent_at FROM users").fetchone()[0], before)
+        self.assertEqual(len(self.outbox), sent)
+        resp.close()  # the server has sent the answer
+        for thread in threading.enumerate():
+            if thread.name == "email":
+                thread.join(5)
+        self.assertIn("/reset/", self.outbox[-1]["text"])
+
+    def test_signing_up_again_does_not_sign_out_an_account_confirmed_meanwhile(self):
+        self.app.test_client().post("/signup", data={"email": "n@example.com", "password": "password1",
+                                          "confirm": "password1"})
+        link = self.last_link("n@example.com")
+        self.age_emails()
+        hash_password = appmod.hash_password
+        owner = self.app.test_client()
+        with mock.patch.object(appmod, "hash_password",
+                               side_effect=lambda p: (owner.post(link), hash_password(p))[1]):
+            self.app.test_client().post("/signup", data={
+                "email": "n@example.com", "password": "password2", "confirm": "password2"})
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT session_version FROM users WHERE email = "
+                                          "'n@example.com'").fetchone()[0], 0)
+        self.assertNotIn("Finish setting up your Nomad Life account",
+                         [m["subject"] for m in self.outbox])
+
+    def test_undo_after_changing_back_promises_no_email(self):
+        self.client.post("/settings", data={"action": "email", "email": "b@example.com",
+                                            "current_password": "password1"})
+        self.client.post(self.last_link("b@example.com", kind="account/email"))
+        undo = self.last_link("a@example.com", kind="account/email/undo")
+        self.age_emails()
+        self.client.post("/settings", data={"action": "email", "email": "a@example.com",
+                                            "current_password": "password1"})
+        self.client.post(self.last_link("a@example.com", kind="account/email"))
+        sent = len(self.outbox)
+        html = self.app.test_client().post(undo, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("The account already uses a@example.com again.", html)
+        self.assertNotIn("Use the link we emailed", html)  # none was: nothing was undone
+        self.assertEqual(len(self.outbox), sent)
+
+    def test_a_receipt_cannot_be_renamed_to_invisible_characters(self):
+        self.new_year(2027)
+        self.upload("/year/2027/base", "lease.pdf", b"%PDF-1.4\n%%EOF\n")
+        with self.db() as conn:
+            doc = conn.execute("SELECT id FROM documents").fetchone()[0]
+        for typed in ("ㅤ", "​​", "⠀ ⠀", "ㅤ.pdf"):
+            html = self.client.post(f"/documents/{doc}/edit", data={"name": typed, "kind": "other"},
+                                    follow_redirects=True).get_data(as_text=True)
+            self.assertIn("Please enter a name for the document.", html, repr(typed))
+            with self.db() as conn:
+                self.assertEqual(conn.execute("SELECT original_name FROM documents")
+                                 .fetchone()[0], "lease.pdf", repr(typed))
+
+    def test_the_email_change_pages_wrap_long_addresses(self):
+        # Both addresses are in a paragraph of the form, which did not wrap: a 41 character
+        # address made the page scroll sideways at 320 px.
+        with open(os.path.join(ROOT, "static", "css", "style.css"), encoding="utf-8") as fh:
+            self.assertIn(".auth-card form p { overflow-wrap: anywhere; }", fh.read())
+        for name in ("confirm_email.html", "revert_email.html"):
+            with open(os.path.join(ROOT, "templates", "auth", name), encoding="utf-8") as fh:
+                self.assertRegex(fh.read(), r'<form method="post"[^>]*>\s*<input[^>]*>\s*<p ')
+
+
+class FourthReviewAdminTests(AppTestCase):
+    def test_enabling_a_blocked_sign_up_goes_back_to_the_list(self):
+        self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
+        self.signup("admin@example.com")
+        with self.db() as conn:
+            uid = conn.execute("INSERT INTO users (email, password_hash, disabled, created_at) "
+                               "VALUES ('bot@example.com', 'x', 1, datetime('now', '-2 hours'))"
+                               ).lastrowid
+        resp = self.client.post(f"/admin/users/{uid}", data={"action": "enable", "q": "bot"})
+        # Never confirmed: enabled, its 20 minutes are long over, so it goes (and its page).
+        self.assertEqual(resp.headers["Location"], "/admin?q=bot")
+        html = self.client.get(resp.headers["Location"]).get_data(as_text=True)
+        self.assertIn("bot@example.com is no longer blocked. The account was never confirmed, "
+                      "so it was removed: the address can sign up again.", html)
+        self.assertNotIn("can sign in again", html)
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM users WHERE id = ?",
+                                          (uid,)).fetchone()[0], 0)

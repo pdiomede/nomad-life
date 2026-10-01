@@ -184,6 +184,10 @@ class SignInFixTests(AppTestCase):
         self.age_emails()
         resp = self.client.post("/forgot", data={"email": "a@example.com"})
         self.assertEqual(resp.status_code, 302)
+        # Since 1.5.7 the email is made once the answer is sent, which the server marks by
+        # closing the response (the test client leaves that to the caller).
+        self.assertFalse(started.wait(0.2))
+        resp.close()
         self.assertTrue(started.wait(5))
         self.assertFalse(release.is_set())  # answered while the email was still being sent
         release.set()
@@ -192,7 +196,7 @@ class SignInFixTests(AppTestCase):
         # A failed send still lets the user ask again at once.
         self.send_email.side_effect = lambda *a, **k: False
         self.age_emails()
-        self.client.post("/forgot", data={"email": "a@example.com"})
+        self.client.post("/forgot", data={"email": "a@example.com"}).close()
         self.join_email_threads()
         with self.db() as conn:
             self.assertIsNone(conn.execute("SELECT email_sent_at FROM users").fetchone()[0])
