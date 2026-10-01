@@ -1588,8 +1588,9 @@ def release_email_wait(user_id):
     db.execute("UPDATE users SET email_sent_at = NULL WHERE id = ?", (user_id,))
 
 
-def send_password_link(row, template, subject, background=False):
-    """Email a link to choose a new password (it also confirms a pending account)."""
+def send_password_link(row, template, subject, background=False, **context):
+    """Email a link to choose a new password (it also confirms a pending account). context:
+    more template values (first_name="" leaves out the name the account holder typed)."""
     token = serializer().dumps({"uid": row["id"], "h": password_fingerprint(row["password_hash"]),
                                 "e": row["email"]})
     # An account still waiting for confirmation is deleted VERIFY_MINUTES after its sign up
@@ -1602,7 +1603,7 @@ def send_password_link(row, template, subject, background=False):
     return send_template_email(row["email"], subject, template, background=background,
                                on_failure=lambda: release_email_wait(user_id),
                                link=email_link("reset", token=token),
-                               hours=RESET_TOKEN_MAX_AGE // 3600, minutes=minutes)
+                               hours=RESET_TOKEN_MAX_AGE // 3600, minutes=minutes, **context)
 
 
 def send_verification(row, background=False, on_failure=None):
@@ -3685,7 +3686,9 @@ def register_routes(app):
             sign_out()
         audit("email_reverted", row["id"], data["old"], f"{current['email']} to {data['old']}")
         fresh = db.query("SELECT * FROM users WHERE id = ?", (row["id"],), one=True)
-        if send_password_link(fresh, "reset", "Reset your Nomad Life password"):
+        # Without the name, as the security alerts: whoever changed the address may have set
+        # it ("Hi Ignore this email,") in the email the owner takes the account back with.
+        if send_password_link(fresh, "reset", "Reset your Nomad Life password", first_name=""):
             flash(f"The account uses {data['old']} again and every device was signed out. We "
                   "sent you a link to choose a new password.", "success")
         else:

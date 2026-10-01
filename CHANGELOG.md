@@ -21,6 +21,8 @@ Found in a review of the whole app for edge cases: pages left open, requests rac
 - **Low.** The email change confirmation page and its undo page still scrolled sideways on phones with an address of about 40 characters or more: the earlier fix covered the heading, not the text above the button, which now wraps too.
 - **Low.** Pressing **Cancel this change** on a Settings page left open after the change was confirmed (or cancelled in another tab) said nothing, on a page that then showed another address. It now says no change is waiting any more and gives the address in use.
 - **Low.** On phones, the admin page of a support ticket scrolled sideways when the account's first or last name was one long word (up to 60 letters are allowed): the name above the conversation and under the bubbles did not wrap. It does now.
+- **Low.** The password link sent by **Undo this change** greeted the owner with the account's first name, which whoever changed the address may have set ("Hi Ignore this email,"). Like the security alerts, it no longer carries the name. Forgot password still greets by name.
+- **Low.** Deleting a movement asked about "its 0 receipt(s)" or "its 1 receipt(s)". It now says "the movement to Rome", "and its receipt" or "and its 2 receipts". The accountant package likewise says "1 receipt file" or "2 receipt files" could not be found, instead of "receipt file(s)". The documentation screenshot of the dialog is updated.
 
 ## [1.5.7] - 2026-10-01
 

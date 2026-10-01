@@ -329,3 +329,55 @@ class StaleCancelAndLongNameTests(AppTestCase):
         self.assertIn('.chat-key::before { content: ""; flex: none;', css)
         self.assertIn(".bubble-meta { margin: 4px 6px 0; color: var(--muted); "
                       "overflow-wrap: anywhere; }", css)
+
+
+class PluralAndRecoveryNameTests(AppTestCase):
+    def setUp(self):
+        super().setUp()
+        self.signup()
+
+    def test_delete_dialogs_and_the_package_count_receipts_in_words(self):
+        self.new_year(2027)
+        rome = self.add_movement(2027, "Rome", "Italy", "2027-02-01", "2027-02-03")
+        for name in ("hotel.pdf", "flight.pdf"):
+            self.upload(f"/movements/{rome}", name, b"%PDF-1.4\n%%EOF\n")
+            if name == "hotel.pdf":  # one receipt
+                self.assertIn('data-confirm-delete="the movement to Rome and its receipt"',
+                              self.client.get(f"/movements/{rome}").get_data(as_text=True))
+        oslo = self.add_movement(2027, "Oslo", "Norway", "2027-03-01", "2027-03-03")
+        html = self.client.get("/year/2027").get_data(as_text=True)
+        self.assertIn('data-confirm-delete="the movement to Rome and its 2 receipts"', html)
+        self.assertIn('data-confirm-delete="the movement to Oslo"', html)  # was "its 0 receipt(s)"
+        self.assertIn('data-confirm-delete="the movement to Oslo"',
+                      self.client.get(f"/movements/{oslo}").get_data(as_text=True))
+        self.assertNotIn("receipt(s)", html)
+        # The package lists receipts missing on disk: "1 receipt file", "2 receipt files".
+        import package
+        with self.db() as conn:
+            stored = [r[0] for r in conn.execute("SELECT stored_name FROM documents ORDER BY id")]
+        folder = os.path.join(self.app.config["UPLOAD_DIR"], "1")
+        for gone, expected in ((1, "1 receipt file could not be found on the server and is not "
+                                   "in this package. It is listed as missing"),
+                               (2, "2 receipt files could not be found on the server and are "
+                                   "not in this package. They are listed as missing")):
+            os.remove(os.path.join(folder, stored[gone - 1]))
+            with self.app.app_context():
+                year = appmod.db.query("SELECT * FROM years", one=True)
+                notes = [text for kind, text in package.summary_blocks(
+                    appmod.build_package_data(year, False)) if kind == "note"]
+            self.assertTrue(any(n.startswith(expected) for n in notes), notes)
+
+    def test_the_reset_email_of_an_undo_leaves_out_the_name(self):
+        # The name may be the intruder's: it must not greet the owner taking the account back.
+        self.client.post("/settings", data={"action": "profile",
+                                            "first_name": "Ignore this email", "last_name": "x"})
+        self.age_emails()
+        self.client.post("/settings", data={"action": "email", "email": "b@evil.example",
+                                            "current_password": "password1"})
+        self.client.post(self.last_link("b@evil.example", kind="account/email"))
+        self.app.test_client().post(self.last_link("a@example.com", kind="account/email/undo"))
+        mail = self.outbox[-1]
+        self.assertEqual((mail["to"], mail["subject"]),
+                         ("a@example.com", "Reset your Nomad Life password"))
+        self.assertTrue(mail["text"].startswith("Hi,"))
+        self.assertNotIn("Ignore this email", mail["text"] + mail["html"])

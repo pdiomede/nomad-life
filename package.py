@@ -365,9 +365,11 @@ def summary_blocks(data):
     else:
         blocks.append(("note", "No receipts uploaded for this year."))
     if data.missing:
-        blocks.append(("note", f"{len(data.missing)} receipt file(s) could not be found on the "
-                               "server and are not in this package. They are listed as missing "
-                               "in manifest.csv."))
+        n = len(data.missing)
+        blocks.append(("note", "1 receipt file could not be found on the server and is not in "
+                               "this package. It is listed as missing in manifest.csv." if n == 1
+                       else f"{n} receipt files could not be found on the server and are not in "
+                            "this package. They are listed as missing in manifest.csv."))
     return blocks
 
 

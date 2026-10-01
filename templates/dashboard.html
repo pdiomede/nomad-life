@@ -84,7 +84,8 @@
             <td class="right hide-sm">
               <div class="row-actions">
                 <a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}" aria-label="Edit movement to {{ m.city }}">Edit</a>
-                {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ m.city ~ ' and its ' ~ m.doc_count ~ ' receipt(s)', extra={'action': 'delete', 'page': pager.page}, aria_label='Delete movement to ' ~ m.city) }}
+                {% set receipts = '' if not m.doc_count else ' and its receipt' if m.doc_count == 1 else ' and its ' ~ m.doc_count ~ ' receipts' %}
+                {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ m.city ~ receipts, extra={'action': 'delete', 'page': pager.page}, aria_label='Delete movement to ' ~ m.city) }}
               </div>
             </td>
           </tr>

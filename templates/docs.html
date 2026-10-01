@@ -120,7 +120,7 @@
         <section id="edit-movement" class="doc-sub" data-doc-title="Edit or delete a movement">
           <h3>Edit or delete a movement</h3>
           <p>Press the city in the Movements table, or <strong>Edit</strong>. <strong>Delete</strong> removes the movement and its receipts after two confirmations.</p>
-          {{ shot('delete-dialog', 'The delete confirmation dialog on step 2 of 2: "Are you sure? This permanently deletes the movement to Madrid and its 2 receipt(s)." with Cancel and Yes, delete permanently', 'Every delete asks twice. The second step says what will be removed.') }}
+          {{ shot('delete-dialog', 'The delete confirmation dialog on step 2 of 2: "Are you sure? This permanently deletes the movement to Madrid and its 2 receipts." with Cancel and Yes, delete permanently', 'Every delete asks twice. The second step says what will be removed.') }}
           <p>Limits: city and country up to {{ place_max }} characters, and up to {{ '{:,}'.format(movements_max) }} movements a year.</p>
         </section>
         <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>

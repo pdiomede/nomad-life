@@ -81,7 +81,8 @@
         <h2>Delete movement</h2>
         <p class="muted small">This removes the movement and all its receipts.</p>
       </div>
-      {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ m.city ~ ' and its ' ~ docs|length ~ ' receipt(s)', extra={'action': 'delete'}, button_class='btn btn-danger') }}
+      {% set receipts = '' if not docs else ' and its receipt' if docs|length == 1 else ' and its ' ~ docs|length ~ ' receipts' %}
+      {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ m.city ~ receipts, extra={'action': 'delete'}, button_class='btn btn-danger') }}
     </div>
   </section>
   {% endif %}
