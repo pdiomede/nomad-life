@@ -158,6 +158,16 @@ server {
     # If you raise MAX_RECEIPT_MB above 50, raise this to MAX_RECEIPT_MB + 2.
     client_max_body_size 52m;
 
+    # Compress the app's text assets (style.css 66 KB -> 15 KB, theme.js 35 -> 10 KB, the
+    # world map SVG 113 -> 40 KB). Only in this server block, so other sites on the same
+    # nginx are unchanged. HTML is already compressed by nginx.conf's "gzip on".
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types text/css application/javascript text/javascript image/svg+xml application/manifest+json application/json;
+
     location / {
         proxy_pass http://127.0.0.1:5050;
         proxy_set_header Host $host;
@@ -180,6 +190,12 @@ Check both kinds of 404 once HTTPS works (section 8): each line should end with 
 
 ```bash
 for u in /this-page-does-not-exist /.env; do curl -s -w " %{http_code}\n" https://nomad.example.com$u | grep -oE "<title>[^<]*|[0-9]{3}$" | tr '\n' ' '; echo; done
+```
+
+Check that the styles and the map are compressed (`content-encoding: gzip` and `vary: Accept-Encoding`); photos, fonts and receipts are already compressed and are left alone:
+
+```bash
+curl -s -o /dev/null -D - -H 'Accept-Encoding: gzip' https://nomad.example.com/static/css/style.css | grep -iE 'content-encoding|vary'
 ```
 
 The app already sends its own security headers (Content-Security-Policy, X-Frame-Options, nosniff, Referrer-Policy, no-store for private pages), so nginx does not need to add them. Do not serve the `uploads` folder through nginx: receipts must only be reachable through the app, which checks who is signed in.
@@ -377,6 +393,8 @@ Always restart, never reload with `kill -HUP`: because of `--preload` the gunico
 A server set up from an older copy of this guide lacks `--graceful-timeout 120` and `TimeoutStopSec=150` in `/etc/systemd/system/nomad-life.service`. Add them as in section 6, then run `sudo systemctl daemon-reload` once.
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
+
+- **1.5.7** adds gzip for the styles, scripts and map to the nginx server block (section 7): add the `gzip` lines to an existing server, then `sudo nginx -t && sudo systemctl reload nginx`. Optional, but a first visit then downloads about 65 KB of them instead of 214 KB.
 
 - **1.5.6** switches the database to write-ahead logging on the first start (readers and writers stop waiting for each other); `nomad.db-wal` and `nomad.db-shm` appear next to `nomad.db`, private like it. Nothing to run: the nightly `scripts/backup.py` and the restic command stay as they are. Only restoring changes: delete those two files first (section 12). It also adds an index to the security history, built on start in well under a second.
 
