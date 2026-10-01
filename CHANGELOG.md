@@ -63,6 +63,8 @@ Fourth review (severity in bold):
 - **Low.** Pressing **Undo this change** after the address had been changed back from Settings said "Use the link we emailed there to choose a new password", although nothing was undone or sent. It now only says the account already uses that address again.
 - **Low.** A receipt could be renamed to invisible characters only (zero width spaces, blank letters such as U+3164), saved as "ㅤ.pdf" or "file.pdf". Such a name is refused like an empty one.
 - **Low.** The email change confirmation page and its undo page still scrolled sideways on phones with an address of about 40 characters or more: the earlier fix covered the heading, not the text above the button, which now wraps too.
+- **Low.** Pressing **Cancel this change** on a Settings page left open after the change was confirmed (or cancelled in another tab) said nothing, on a page that then showed another address. It now says no change is waiting any more and gives the address in use.
+- **Low.** On phones, the admin page of a support ticket scrolled sideways when the account's first or last name was one long word (up to 60 letters are allowed): the name above the conversation and under the bubbles did not wrap. It does now.
 
 ## [1.5.6] - 2026-10-01
 

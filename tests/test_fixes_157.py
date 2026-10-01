@@ -712,3 +712,31 @@ class UndoChainTests(AppTestCase):
         with self.db() as conn:
             self.assertEqual([r[0] for r in conn.execute("SELECT old_email FROM email_changes")],
                              ["x@example.com"])
+
+
+class StaleCancelAndLongNameTests(AppTestCase):
+    def test_cancel_on_a_page_left_open_after_the_change_was_confirmed(self):
+        self.signup()
+        self.age_emails()
+        self.client.post("/settings", data={"action": "email", "email": "b@example.com",
+                                            "current_password": "password1"})
+        self.client.get("/settings")  # the page with "Cancel this change", left open
+        self.app.test_client().post(self.last_link("b@example.com", kind="account/email"))
+        html = self.client.post("/settings", data={"action": "cancel_email"},
+                                follow_redirects=True).get_data(as_text=True)
+        # It said nothing at all, on a page that now showed another address.
+        self.assertIn("No email change is waiting any more. Your email address is "
+                      "b@example.com.", html)
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT email FROM users").fetchone()[0],
+                             "b@example.com")
+
+    def test_a_long_name_wraps_in_the_ticket_chat(self):
+        # A first name of one 60 letter word made the admin ticket page 453 px wide at 320.
+        with open(os.path.join(ROOT, "static", "css", "style.css"), encoding="utf-8") as fh:
+            css = fh.read()
+        self.assertIn(".chat-key { display: inline-flex; align-items: center; gap: 6px; "
+                      "min-width: 0; overflow-wrap: anywhere; }", css)
+        self.assertIn('.chat-key::before { content: ""; flex: none;', css)
+        self.assertIn(".bubble-meta { margin: 4px 6px 0; color: var(--muted); "
+                      "overflow-wrap: anywhere; }", css)

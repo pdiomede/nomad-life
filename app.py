@@ -3334,6 +3334,9 @@ def register_routes(app):
                     db.execute("UPDATE users SET pending_email = NULL WHERE id = ?", (row["id"],))
                     flash(f"The change to {row['pending_email']} was cancelled. The link we sent "
                           "no longer works.", "success")
+                else:  # a page left open: confirmed or cancelled meanwhile (the link, a tab)
+                    flash(f"No email change is waiting any more. Your email address is "
+                          f"{row['email']}.", "info")
                 return redirect(url_for("settings"))
             if action == "sessions":  # ending other sessions only takes access away
                 if not db.execute_rowcount("UPDATE users SET session_version = session_version "
