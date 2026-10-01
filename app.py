@@ -1,5 +1,6 @@
 """Nomad Life: track your yearly movements and keep your receipts in one place."""
 import base64
+import functools
 import hashlib
 import hmac
 import io
@@ -42,7 +43,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.5.6"
+APP_VERSION = "1.5.7"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -1530,10 +1531,23 @@ def send_verification(row):
 
 
 def parse_date(value):
+    """A "YYYY-MM-DD" date, or None. The day math reads every stay's dates many times (a year
+    of 1,000 stays: thousands of calls, each a slow strptime), and a year has 366 of them, so
+    stored dates are remembered. Only text of a date's length is: a form field can hold
+    megabytes, which must not stay in memory. Same answers as before for any value."""
+    if isinstance(value, str) and len(value) == 10:
+        return _cached_date(value)
+    return _read_date(value)
+
+
+def _read_date(value):
     try:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except (TypeError, ValueError):
         return None
+
+
+_cached_date = functools.lru_cache(maxsize=4096)(_read_date)
 
 
 def local_date(utc_timestamp):
@@ -2463,6 +2477,8 @@ def compute_stats(year_row, movements):
     base_days = per_country[base]
     counted_days = sum(per_country.values())
     return {"total": total, "rows": rows, "base_days": base_days, "counted": counted,
+            # Who gets each day ({date: movement id}), for movement_overlaps: worked out once.
+            "day_owner": assigned_mv,
             "abroad_days": counted_days - base_days, "upcoming": total - counted_days,
             "threshold": RESIDENCE_THRESHOLD,
             "base_ok": base_days >= RESIDENCE_THRESHOLD,
@@ -2907,7 +2923,7 @@ def register_routes(app):
                          lambda n, size: dashboard_url(year, n, size))
         stats = compute_stats(year_row, movements)
         # Every movement of the year, not only this page of the table.
-        overlaps, overlap_total = movement_overlaps(movements)
+        overlaps, overlap_total = movement_overlaps(movements, stats["day_owner"])
         overlap_text = (overlap_report(year, overlaps, movements, stats["counted"], overlap_total)
                         if overlaps else "")
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,

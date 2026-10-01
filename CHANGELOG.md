@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.7] - 2026-10-01
+
+### Changed
+
+- The day counts of a year are worked out 2 to 3 times faster: a year of 1,000 movements takes 9 ms instead of 25 ms, and the worst case (1,000 stays all overlapping) 200 ms instead of 311 ms. Each stored date is read once instead of at every use, and the dashboard works out who gets each day once, for the day counts and the overlap alert together.
+- `setup_vps.md` has a new section, **12. Restoring a backup**, step by step: stop the app, keep the current data aside, delete `nomad.db-wal` and `nomad.db-shm`, choose an archive (also from the off-site copy), unpack it, get the receipts back if needed, check the database with `PRAGMA integrity_check`, start and check the app. It also says who stays signed in, that `config.env` is not in the archive, and what happens to receipts uploaded or deleted after the backup. The sections after it moved down by one (Upgrading is now 14).
+
+### Fixed
+
+Found in the review of this release:
+
+- Remembering dates would also have kept the text of any date field sent to the server, up to 4,096 of them: someone sending huge "dates" again and again could have filled the server's memory. Only text of a date's length is remembered.
+
 ## [1.5.6] - 2026-10-01
 
 ### Added
@@ -14,7 +27,7 @@ All notable changes to this project are documented in this file.
 
 Faster, measured on a copy with 2,000 accounts, 61,000 receipts and 400,000 security events:
 
-- The database runs in write-ahead log mode. Pages no longer wait for a write in progress, and writes no longer wait for slow pages: in a test with long reads and constant writes, the slowest page read went from 560 ms to under 1 ms, and writes from 371 ms (95th percentile) to 0.4 ms. It is switched on by itself at the first start, and `nomad.db-wal` and `nomad.db-shm` appear next to the database, private like it. **Backups:** nothing changes for `scripts/backup.py` and the off-site copy. To restore, delete `nomad.db-wal` and `nomad.db-shm` first (setup_vps.md, section 11), and never copy `nomad.db` by hand while the app runs.
+- The database runs in write-ahead log mode. Pages no longer wait for a write in progress, and writes no longer wait for slow pages: in a test with long reads and constant writes, the slowest page read went from 560 ms to under 1 ms, and writes from 371 ms (95th percentile) to 0.4 ms. It is switched on by itself at the first start, and `nomad.db-wal` and `nomad.db-shm` appear next to the database, private like it. **Backups:** nothing changes for `scripts/backup.py` and the off-site copy. To restore, delete `nomad.db-wal` and `nomad.db-shm` first (setup_vps.md, section 12, Restoring a backup), and never copy `nomad.db` by hand while the app runs.
 - The admin page opens in 28 ms instead of 387 ms: an index finds when each account was confirmed, instead of reading every event of every account.
 - The Security activity table sorts in 53 to 66 ms instead of 347 to 713 ms by event or account, and the IP sort takes half the time. It looks up the accounts of the 20 events shown, not of every event of the year, and remembers the sort keys.
 - The accountant package no longer compresses photos again: it saved 0.4% of a JPEG at a high CPU cost. A year with 100 receipts streams in 0.4 s instead of 1 s.

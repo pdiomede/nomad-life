@@ -243,25 +243,76 @@ restic backup --exclude '*.tmp' /var/backups/nomad-life /var/www/nomad-life/uplo
 
 Receipts are deliberately not in the nightly archive: there they were stored `--keep` times over on the server's own disk, which fills up as receipts grow. For a one-off complete archive (before moving to a new server, or before `zip-receipts`), add `--with-receipts`.
 
-To restore: stop the service, delete `nomad.db-wal` and `nomad.db-shm` in `/var/www/nomad-life/data` if they are there (they belong to the database being replaced: left next to the restored one, SQLite would apply them to it), unpack an archive (`tar -xzf nomadlife-....tar.gz`), put `nomad.db` and `.secret_key` back in `/var/www/nomad-life/data` and the receipts from the off-site copy in `/var/www/nomad-life/uploads` (owned by `paolo`, mode 700), start the service:
+The database runs in write-ahead log mode (since 1.5.6): recent changes may sit in `nomad.db-wal` until SQLite folds them into `nomad.db`. Copy it only with `scripts/backup.py`, never `nomad.db` alone with `cp`, `rsync` or a backup tool reading `data/` while the app runs. To put a backup back, see section 12.
 
-```bash
-sudo systemctl stop nomad-life
-cd /var/www/nomad-life/data && rm -f nomad.db-wal nomad.db-shm
-tar -xzf /var/backups/nomad-life/nomadlife-YYYY-MM-DD_HHMMSS.tar.gz   # nomad.db and .secret_key
-sudo systemctl start nomad-life
-```
+## 12. Restoring a backup
 
-The database runs in write-ahead log mode (since 1.5.6): recent changes may sit in `nomad.db-wal` until SQLite folds them into `nomad.db`. Copy it only with `scripts/backup.py`, never `nomad.db` alone with `cp`, `rsync` or a backup tool reading `data/` while the app runs.
+Restore when the database is damaged, data was lost or changed by mistake, or on a new server. Everything that happened after the archive was made (sign ups, stays, receipts uploaded) is lost, so pick the newest archive that is still good. Work as `paolo`, `sudo` only where it says so.
 
-## 12. The first admin
+1. Stop the app, so nothing writes while you restore:
+
+   ```bash
+   sudo systemctl stop nomad-life
+   ```
+
+2. Keep the current state aside, in case you need something from it later (with the app stopped, a plain copy is complete):
+
+   ```bash
+   mkdir -p ~/before-restore && cp -a /var/www/nomad-life/data ~/before-restore/data-$(date +%F_%H%M)
+   ```
+
+3. Delete the write-ahead log files of the current database. They belong to the database being replaced: left next to the restored one, SQLite would apply them to it and could damage it.
+
+   ```bash
+   cd /var/www/nomad-life/data && rm -f nomad.db-wal nomad.db-shm
+   ```
+
+4. Choose an archive. The newest ones on the server:
+
+   ```bash
+   ls -lt /var/backups/nomad-life | head
+   ```
+
+   If the server's own copies are gone (a new server), get them back from the off-site copy first, for example with restic: `restic snapshots`, then `restic restore latest --target /tmp/restore --include /var/backups/nomad-life` and use the archive under `/tmp/restore`.
+
+5. Unpack it into `data/`. It holds `nomad.db` and, when the app created one, `.secret_key`; both replace the current files:
+
+   ```bash
+   tar -xzf /var/backups/nomad-life/nomadlife-YYYY-MM-DD_HHMMSS.tar.gz -C /var/www/nomad-life/data
+   chmod 600 /var/www/nomad-life/data/nomad.db /var/www/nomad-life/data/.secret_key 2>/dev/null
+   ```
+
+6. Only if receipts were lost too (a new server, a deleted folder): get `uploads/` back from the off-site copy, owned by `paolo`, mode 700:
+
+   ```bash
+   restic restore latest --target / --include /var/www/nomad-life/uploads
+   chmod 700 /var/www/nomad-life/uploads
+   ```
+
+7. Check the restored database (it should print `ok`), then start the app:
+
+   ```bash
+   sqlite3 /var/www/nomad-life/data/nomad.db "PRAGMA integrity_check"
+   sudo systemctl start nomad-life
+   ```
+
+8. Check that it is healthy, as after an upgrade (section 14, step 7), then sign in and open a few pages.
+
+Good to know:
+
+- With the archive's `.secret_key` back, everyone who was signed in when the archive was made stays signed in. Without it (a new key is made), everyone signs in again; nothing else is lost.
+- `config.env` is not in the archive (it holds the Gmail App Password). On a new server, set it up again from section 5, or keep a copy in your password manager.
+- Receipts uploaded after the archive stay on disk without a row pointing to them: they use space but nobody sees them. Receipts deleted after the archive are listed as missing in the accountant package.
+- The app turns the restored database back to write-ahead log mode on start (section 11); nothing to do.
+
+## 13. The first admin
 
 1. Make sure your address is in `ADMIN_EMAILS` in `config.env` and restart: `sudo systemctl restart nomad-life`.
 2. Sign up at `https://nomad.example.com/signup` and open the confirmation email.
 3. Sign in, open **Settings** from the menu at the top, and turn on **two-factor sign in** (scan the QR code with Google Authenticator or a similar app). The admin page only opens once it is on.
 4. The **Admin** link appears in the menu.
 
-## 13. Upgrading
+## 14. Upgrading
 
 Nobody has to be signed out for an upgrade. Sessions live in the signed cookie (`data/.secret_key`) and in the `user_sessions` table, so everyone is still signed in after the restart. Requests already running are allowed to finish (`--graceful-timeout`, section 6), and new ones get a 502 from nginx for the few seconds the app takes to start again.
 
@@ -319,7 +370,7 @@ Upgrade step by step, as `paolo`:
 
 8. Open https://nomad.example.com, sign in and look at the pages the release changed (its `CHANGELOG.md` entry). Browsers load the new styles by themselves after the restart.
 
-If something is wrong, go back to the previous version: find it with `git log --oneline -3`, then `git checkout <previous id> && sudo systemctl restart nomad-life`. Database upgrades only add tables, columns and indexes, so the previous version keeps working with the upgraded database. If the database itself is damaged, stop the service, delete `data/nomad.db-wal` and `data/nomad.db-shm`, unpack the archive from step 3 into `data/` (section 11) and start it again.
+If something is wrong, go back to the previous version: find it with `git log --oneline -3`, then `git checkout <previous id> && sudo systemctl restart nomad-life`. Database upgrades only add tables, columns and indexes, so the previous version keeps working with the upgraded database. If the database itself is damaged, stop the service, delete `data/nomad.db-wal` and `data/nomad.db-shm`, unpack the archive from step 3 into `data/` (section 12) and start it again.
 
 Always restart, never reload with `kill -HUP`: because of `--preload` the gunicorn master keeps the old code, so a reload would start the new workers on the old version.
 
@@ -327,7 +378,7 @@ A server set up from an older copy of this guide lacks `--graceful-timeout 120` 
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
 
-- **1.5.6** switches the database to write-ahead logging on the first start (readers and writers stop waiting for each other); `nomad.db-wal` and `nomad.db-shm` appear next to `nomad.db`, private like it. Nothing to run: the nightly `scripts/backup.py` and the restic command stay as they are. Only restoring changes: delete those two files first (section 11). It also adds an index to the security history, built on start in well under a second.
+- **1.5.6** switches the database to write-ahead logging on the first start (readers and writers stop waiting for each other); `nomad.db-wal` and `nomad.db-shm` appear next to `nomad.db`, private like it. Nothing to run: the nightly `scripts/backup.py` and the restic command stay as they are. Only restoring changes: delete those two files first (section 12). It also adds an index to the security history, built on start in well under a second.
 
 - **1.4.0** records the IP address of each sign up and sign in (two columns added on start; the last sign in IP of existing accounts is taken from the security history), and the email confirmation link now opens a page with a button. Accounts that company mail scanners confirmed before, by opening the link (confirmed seconds after signing up, never signed in), stay until you delete them from their admin page.
 
@@ -345,7 +396,7 @@ The database is upgraded by the app on start (new columns are added automaticall
 
   It rewrites receipts, so take a complete archive first (`scripts/backup.py --dest /var/backups/nomad-life --with-receipts`). It prints how much space was saved and can be run again safely.
 
-## 14. Day to day
+## 15. Day to day
 
 | Task | Command |
 |---|---|
@@ -358,7 +409,7 @@ The database is upgraded by the app on start (new columns are added automaticall
 | Accounts that look fake (confirmed, never signed in, no data) | `./checkFakeUsers.sh --dry-run` to see them, `./checkFakeUsers.sh` to choose and delete them (from `/var/www/nomad-life`, after a backup) |
 | Many "Too many attempts" in the log | Somebody is guessing passwords; the limits hold them. With fail2ban you can also block the IP. |
 
-## 15. Checklist
+## 16. Checklist
 
 - [ ] `https://nomad.example.com` opens with a valid certificate and `http://` redirects to it
 - [ ] `config.env`: `APP_BASE_URL` is https, `PROXY_COUNT=1`, Gmail set, `ADMIN_EMAILS` set, file mode 600

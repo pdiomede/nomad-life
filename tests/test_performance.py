@@ -149,6 +149,43 @@ class ActivityTableTests(AppTestCase):
         self.assertGreater(info.hits, info.misses)
 
 
+class DayMathTests(AppTestCase):
+    def test_dates_are_read_once_with_the_same_answers(self):
+        for value, expected in (("2027-03-01", datetime.date(2027, 3, 1)),
+                                ("2027-3-1", datetime.date(2027, 3, 1)),  # as typed before
+                                ("2027-02-30", None), ("2027-13-01", None), ("", None),
+                                (None, None), ("x" * 10, None)):
+            self.assertEqual(appmod.parse_date(value), expected, value)
+        appmod._cached_date.cache_clear()
+        for _ in range(3):
+            appmod.parse_date("2027-03-01")
+        self.assertEqual(appmod._cached_date.cache_info().hits, 2)
+        # A huge form field is read, not kept: the cache would hold up to 4,096 of them.
+        appmod.parse_date("2027-03-01" + "x" * 1_000_000)
+        self.assertEqual(appmod._cached_date.cache_info().currsize, 1)
+
+    def test_the_dashboard_works_out_who_gets_each_day_once(self):
+        self.signup()
+        self.new_year(2027)
+        self.add_movement(2027, "Vienna", "Austria", "2027-01-01", "2027-01-10")
+        self.add_movement(2027, "Sidney", "Australia", "2027-01-08", "2027-01-10")
+        with mock.patch.object(appmod, "assign_days", wraps=appmod.assign_days) as spy:
+            html = self.client.get("/year/2027").get_data(as_text=True)
+        self.assertEqual(spy.call_count, 1)  # compute_stats; the overlap alert reuses it
+        self.assertIn("They count for Sidney, Australia, so Vienna, Austria counts 7 of its "
+                      "10 days.", html)
+
+    def test_day_owner_is_the_assignment(self):
+        ms = [{"id": 1, "city": "A", "country": "Spain", "start_date": "2027-02-01",
+               "end_date": "2027-02-20"},
+              {"id": 2, "city": "B", "country": "Italy", "start_date": "2027-02-10",
+               "end_date": "2027-02-12"}]
+        stats = appmod.compute_stats({"year": 2027, "base_country": "Portugal"}, ms)
+        self.assertEqual(stats["day_owner"], appmod.assign_days(ms))
+        self.assertEqual(appmod.movement_overlaps(ms, stats["day_owner"]),
+                         appmod.movement_overlaps(ms))
+
+
 class PackageCompressionTests(AppTestCase):
     def test_photos_are_not_deflated_again(self):
         self.assertEqual([package.compress_level(e) for e in ("jpg", "JPEG", "png", "heic",
