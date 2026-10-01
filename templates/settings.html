@@ -8,7 +8,8 @@
     <div>
       <p class="eyebrow">Settings</p>
       <h1>{{ current_user.name or row.email }}</h1>
-      <p class="muted">{% if current_user.name %}{{ row.email }} &middot; {% endif %}Member since {{ row.created_at | localdate }} &middot; {{ counts.years }} year{{ '' if counts.years == 1 else 's' }} &middot; {{ counts.documents }} document{{ '' if counts.documents == 1 else 's' }} &middot; {{ account_storage.used | filesize('down') }} used of {{ account_storage.quota | filesize('down') }}</p>
+      {# Each part stays whole: a narrow line breaks only between them, after a dot. #}
+      <p class="muted">{% if current_user.name %}<span dir="auto">{{ row.email }}</span> &middot; {% endif %}<span class="nowrap">Member since {{ row.created_at | localdate }} &middot;</span> <span class="nowrap">{{ counts.years }} year{{ '' if counts.years == 1 else 's' }} &middot;</span> <span class="nowrap">{{ counts.documents }} document{{ '' if counts.documents == 1 else 's' }} &middot;</span> <span class="nowrap">{{ account_storage.used | filesize('down') }} used of {{ account_storage.quota | filesize('down') }}</span></p>
     </div>
   </div>
 

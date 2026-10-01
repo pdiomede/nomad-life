@@ -1,11 +1,14 @@
 """Regression tests for the bugs found in the 1.5.2 review of the overlap math and the overlap
 alert."""
+import os
 import time
 import unittest
 from datetime import date
 
 import app as appmod
 from tests.helpers import AppTestCase
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def mv(mid, city, start, end):
@@ -70,3 +73,24 @@ class SaveWarningTests(AppTestCase):
         self.assertNotIn("Stay5 (", html)
         # The session cookie stays small, so nobody is signed out by a long message.
         self.assertIn("/year/2027", self.client.get("/app").headers["Location"])
+
+
+class SmallLayoutTests(AppTestCase):
+    def test_settings_summary_breaks_only_between_its_parts(self):
+        self.signup()
+        html = self.client.get("/settings").get_data(as_text=True)
+        # "0 B used of 500 MB" was split as "0" / "B used of 500 MB" on narrow screens.
+        self.assertRegex(html, r'<span class="nowrap">0 B used of \d+ MB</span></p>')
+        self.assertIn('<span class="nowrap">0 documents &middot;</span>', html)
+
+    def test_accounts_search_is_half_as_wide_with_the_button_centered(self):
+        self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
+        self.app.config["ADMIN_REQUIRE_2FA"] = False
+        self.signup("admin@example.com")
+        html = self.client.get("/admin").get_data(as_text=True)
+        self.assertIn('<div class="field grow admin-search">', html)
+        with open(os.path.join(ROOT, "static", "css", "style.css"), encoding="utf-8") as fh:
+            css = fh.read()
+        self.assertIn(".support-filters .admin-search { flex: 0 1 50%; }", css)
+        self.assertIn(".support-filter-actions { display: flex; align-items: center; gap: 8px; "
+                      "min-height: calc(1.5em + 20px); }", css)

@@ -11,6 +11,8 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - The header shows Documentation, Contact support and the light or dark mode button first, then your name with its menu. On screens wider than a phone the header buttons have a little more space between them.
+- The admin accounts search box is half as wide, and the Search button (like the Filter button of the Security activity and the support ticket filters) sits centered on the field instead of on its bottom edge.
+- The summary under your name on Settings breaks only between its parts, so "0 B used of 500 MB" is never split as "0" / "B used of 500 MB".
 - Who gets each day is worked out in one place for the day counts, the "N counted" notes, the map and the overlap report, so they always agree.
 
 ### Fixed

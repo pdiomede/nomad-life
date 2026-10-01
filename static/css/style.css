@@ -770,7 +770,9 @@ main:focus { outline: none; }
 .support-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; margin-bottom: 14px; }
 .support-filters .field { min-width: 130px; }
 .support-filters .grow { flex: 1 1 200px; }
-.support-filter-actions { display: flex; gap: 8px; }
+.support-filter-actions { display: flex; align-items: center; gap: 8px; min-height: calc(1.5em + 20px); }  /* the height of a text field, so the buttons sit centered on it */
+.support-filters .admin-search { flex: 0 1 50%; }  /* the accounts search: half the card is plenty */
+@media (max-width: 600px) { .support-filters .admin-search { flex: 1 1 200px; } }
 .support-table td { vertical-align: top; overflow-wrap: break-word; }
 /* Subject and user keep a readable width; on phones the table scrolls inside its card. */
 .support-table td:nth-child(3) { min-width: 12rem; }
