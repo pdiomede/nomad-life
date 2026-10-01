@@ -1360,6 +1360,7 @@ AUDIT_LABELS = {
     "sign_in_failed": "Wrong password at sign in",
     "sign_in_code_failed": "Wrong two-factor code at sign in",
     "code_failed": "Wrong two-factor code on the Settings page",
+    "password_check_failed": "Wrong current password on the Settings page",
     "email_reverted": "Email change undone from the old address",
     "account_confirmed": "Account confirmed",
     "password_changed": "Password changed",
@@ -1541,7 +1542,7 @@ def send_password_link(row, template, subject, background=False):
                                hours=RESET_TOKEN_MAX_AGE // 3600, minutes=minutes)
 
 
-def send_verification(row):
+def send_verification(row, background=False, on_failure=None):
     # "c" lets a link for an account that is gone say whether it expired or was replaced.
     token = serializer("email-verify").dumps(
         {"uid": row["id"], "h": password_fingerprint(row["password_hash"]),
@@ -1549,6 +1550,7 @@ def send_verification(row):
          # "c" lets a link for an account that is gone say whether it expired.
          "c": row["created_at"]})
     return send_template_email(row["email"], "Confirm your Nomad Life account", "verify",
+                               background=background, on_failure=on_failure,
                                link=email_link("verify", token=token), minutes=minutes_left(row))
 
 
@@ -2543,8 +2545,10 @@ def register_routes(app):
                 sent = (f"We sent an email to {email}. Open the link in it within "
                         f"{VERIFY_MINUTES} minutes to continue.")
                 old = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
+                # Hashed for every address, and every email sent after answering (as for Forgot
+                # password): a known address must not answer sooner or later than a new one.
+                pw_hash = hash_password(password)
                 if not old:
-                    pw_hash = hash_password(password)  # only for a new account: it is costly
                     with db.transaction() as conn:
                         old = conn.execute("SELECT * FROM users WHERE email = ?",
                                            (email,)).fetchone()
@@ -2555,11 +2559,12 @@ def register_routes(app):
                                 (email, pw_hash, client_ip())).lastrowid
                 if old and (old["verified_at"] is not None or old["disabled"]):
                     if not old["disabled"] and email_allowed(old["id"]):
-                        if not send_template_email(email, "You already have a Nomad Life account",
-                                                   "account_exists", email=email,
-                                                   link=email_link("login"),
-                                                   forgot_link=email_link("forgot")):
-                            release_email_wait(old["id"])
+                        old_id = old["id"]
+                        send_template_email(email, "You already have a Nomad Life account",
+                                            "account_exists", background=True,
+                                            on_failure=lambda: release_email_wait(old_id),
+                                            email=email, link=email_link("login"),
+                                            forgot_link=email_link("forgot"))
                     flash(sent, "info")
                     return redirect(url_for("login"))
                 if old:
@@ -2575,14 +2580,17 @@ def register_routes(app):
                                (old["id"],))
                     old = db.query("SELECT * FROM users WHERE id = ?", (old["id"],), one=True)
                     if not send_password_link(old, "finish_signup",
-                                              "Finish setting up your Nomad Life account"):
+                                              "Finish setting up your Nomad Life account",
+                                              background=True):
                         flash("We could not send the email. Please try again in a few minutes.",
                               "error")
                         return render_template("auth/signup.html")
                     flash(sent, "info")
                     return redirect(url_for("login"))
                 row = db.query("SELECT * FROM users WHERE id = ?", (uid,), one=True)
-                if not send_verification(row):
+                # Nothing sent: the account cannot be confirmed, so it gives way at once.
+                if not send_verification(row, background=True, on_failure=lambda: db.execute(
+                        "DELETE FROM users WHERE id = ? AND verified_at IS NULL", (uid,))):
                     db.execute("DELETE FROM users WHERE id = ? AND verified_at IS NULL", (uid,))
                     flash("We could not send the confirmation email. Please try again in a few "
                           "minutes.", "error")
@@ -2600,8 +2608,9 @@ def register_routes(app):
             uid = expired_payload(serializer("email-verify"), exc).get("uid")
             done = db.query("SELECT email FROM users WHERE id = ? AND verified_at IS NOT NULL",
                             (uid,), one=True) if uid else None
-            if done:  # the link worked earlier and was opened again
-                flash(f"{done['email']} is already confirmed. Please sign in.", "info")
+            if done:  # the link worked earlier and was opened again (the address may have
+                # changed since: never show the current one to whoever reads the old mailbox)
+                flash("This account is already confirmed. Please sign in.", "info")
                 return redirect(url_for("index" if current_user.is_authenticated else "login"))
             flash("This confirmation link has expired, so the account was removed. Please sign "
                   "up again.", "error")
@@ -2615,7 +2624,7 @@ def register_routes(app):
             if signed_in and current_user.id == row["id"]:
                 flash("Your email is already confirmed.", "info")
                 return redirect(url_for("index"))
-            flash(f"{row['email']} is already confirmed. "
+            flash("This account is already confirmed. "
                   + ("To use it, sign out and sign in with it." if signed_in else "Please sign in."),
                   "info")
             return redirect(url_for("index" if signed_in else "login"))
@@ -2652,7 +2661,7 @@ def register_routes(app):
                 (row["id"], row["session_version"], row["password_hash"])):
             again = db.query("SELECT verified_at FROM users WHERE id = ?", (row["id"],), one=True)
             if again and again["verified_at"]:
-                flash(f"{row['email']} is already confirmed. Please sign in.", "info")
+                flash("This account is already confirmed. Please sign in.", "info")
                 return redirect(url_for("index" if signed_in else "login"))
             flash("This confirmation link is no longer valid. If you signed up more than once, "
                   "use the link in the newest email; otherwise, sign up again.", "error")
@@ -3197,6 +3206,7 @@ def register_routes(app):
         if wait:
             return too_many_message(wait, scope, "wrong passwords")
         if not password_matches(row["password_hash"], request.form.get("current_password", "")):
+            audit("password_check_failed", row["id"], row["email"])
             return "Your current password is not correct."
         forgive(attempt, row["email"], device)
         return None
@@ -3311,7 +3321,7 @@ def register_routes(app):
                                            old_email=row["email"],
                                            hours=EMAIL_CHANGE_MAX_AGE // 3600):
                         flash(f"We sent a confirmation link to {new}. Your email changes when you "
-                              "open it.", "info")
+                              "press Confirm my new email on the page it opens.", "info")
                     else:
                         # Nothing went out, so do not make the user wait for a minute.
                         db.execute("UPDATE users SET email_sent_at = NULL, pending_email = NULL "
@@ -3349,7 +3359,12 @@ def register_routes(app):
                         return account_gone()
                     audit("2fa_enabled", row["id"], row["email"])
                     security_alert(row["email"], "Two-factor sign in was turned on for your "
-                                   "Nomad Life account.")
+                                   "Nomad Life account.",
+                                   advice=("If this was you, there is nothing to do. If it was "
+                                           "not you, a new password alone does not remove "
+                                           "someone else's two-factor sign in: write to "
+                                           f"{SUPPORT_EMAIL} from this address, and reset your "
+                                           "password with the link below."))
                     flash("Two-factor sign in is on. From now on, signing in also asks for a code "
                           "from your authenticator app. Other devices have been signed out.",
                           "success")
@@ -3482,8 +3497,8 @@ def register_routes(app):
                        advice=("If this was you, there is nothing to do. If it was not you, undo "
                                f"the change with the link below within "
                                f"{EMAIL_REVERT_MAX_AGE // 86400} days: it puts this address "
-                               "back, signs out every browser and device, and sends you a link "
-                               "to choose a new password."),
+                               "back, signs out every browser and device, turns off two-factor "
+                               "sign in, and sends you a link to choose a new password."),
                        button="Undo this change")
         if current_user.is_authenticated and current_user.id != row["id"]:
             flash(f"That link was for another account; its email address is now {new}.", "info")
@@ -3504,7 +3519,11 @@ def register_routes(app):
             flash("This link is not valid.", "error")
             return redirect(url_for("login"))
         row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
-        if not row or row["email"] != data.get("new"):  # already undone, or changed again
+        if row and row["email"] == data.get("old"):  # pressed twice: the first one worked
+            flash(f"The account already uses {data['old']} again. Use the link we emailed "
+                  "there to choose a new password.", "info")
+            return redirect(url_for("login"))
+        if not row or row["email"] != data.get("new"):  # changed again since
             flash("This link is no longer valid.", "error")
             return redirect(url_for("login"))
         if request.method == "GET":  # a mail scanner opening the link must not act on it
@@ -3518,10 +3537,21 @@ def register_routes(app):
                              "disabled = 0 AND NOT EXISTS (SELECT 1 FROM years WHERE "
                              "years.user_id = users.id)",
                              (data["old"],))
-                conn.execute("UPDATE users SET email = ?, pending_email = NULL, password_hash = ?, "
-                             "session_version = session_version + 1 WHERE id = ?",
-                             (data["old"], locked_hash, row["id"]))
+                # Only while the account still uses the new address: the same link pressed
+                # twice at once undoes once (one reset email, one record). Two-factor sign in
+                # goes too: whoever made the change may have turned it on with their own phone,
+                # which would keep the owner out after the reset.
+                if not conn.execute(
+                        "UPDATE users SET email = ?, pending_email = NULL, password_hash = ?, "
+                        "totp_secret = NULL, totp_step = 0, session_version = session_version + 1 "
+                        "WHERE id = ? AND email = ?",
+                        (data["old"], locked_hash, row["id"], data["new"])).rowcount:
+                    raise LinkUsed
                 conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
+        except LinkUsed:  # the other press of the same link got there first
+            flash(f"The account already uses {data['old']} again. Use the link we emailed "
+                  "there to choose a new password.", "info")
+            return redirect(url_for("login"))
         except db.IntegrityError:
             flash(f"{data['old']} is used by another account now. Please contact the person who "
                   "runs this Nomad Life server.", "error")
@@ -3627,9 +3657,10 @@ def register_routes(app):
             return "1 = 1", ()
         owner = db.query("SELECT id FROM users WHERE email = ?", (q,), one=True)
         if owner:
-            return ("(a.user_id = ? OR a.actor = ? OR (a.email = ? AND NOT EXISTS ("
-                    "SELECT 1 FROM users o WHERE o.id = a.user_id AND o.id != ?)))",
-                    (owner["id"], q, q, owner["id"]))
+            # Events under the address without an account (failed sign ins for it before it
+            # existed); never those of another account that used it, live or deleted.
+            return ("(a.user_id = ? OR a.actor = ? OR (a.user_id IS NULL AND a.email = ?))",
+                    (owner["id"], q, q))
         like = db.search_like(q)
         # The event as shown ("Password changed", "fake") or its key, and its detail ("Pro",
         # "#2026-3", "7 accounts"), besides the email, actor and IP.

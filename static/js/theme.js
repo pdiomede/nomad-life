@@ -295,6 +295,8 @@
       empty.textContent = items.length ? "" : noMatch;
       input.setAttribute("aria-expanded", items.length ? "true" : "false");
       active = -1;
+      // The old options are gone: never leave the input pointing at one of them.
+      input.removeAttribute("aria-activedescendant");
       if (items.length && highlight >= 0) setActive(highlight);
     };
     var open = function (filter) {

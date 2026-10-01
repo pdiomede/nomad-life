@@ -26,14 +26,19 @@ class SignupTests(AppTestCase):
         self.assertEqual(resp.status_code, 429)
         self.assertIn(b"Too many sign ups from this network.", resp.data)
 
-    def test_no_password_hash_for_an_address_that_has_an_account(self):
+    def test_one_password_hash_for_every_address(self):
+        # Since 1.5.7 an address with an account is hashed too, once, like a new one: skipping it
+        # made a known address answer sooner. The cost stays bounded by HASH_SLOTS and the
+        # sign up limit per network.
         self.signup()
         self.age_emails()
-        with mock.patch.object(appmod, "generate_password_hash",
-                               side_effect=AssertionError("hashed")):
-            resp = self.app.test_client().post("/signup", data={
-                "email": "a@example.com", "password": "password2", "confirm": "password2"})
-        self.assertEqual(resp.status_code, 302)
+        for email in ("a@example.com", "b@example.com"):
+            with mock.patch.object(appmod, "generate_password_hash",
+                                   wraps=appmod.generate_password_hash) as spy:
+                resp = self.app.test_client().post("/signup", data={
+                    "email": email, "password": "password2", "confirm": "password2"})
+            self.assertEqual(resp.status_code, 302)
+            self.assertEqual(spy.call_count, 1, email)
 
     def test_same_answer_for_new_and_existing_addresses(self):
         self.signup()

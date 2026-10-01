@@ -389,7 +389,8 @@ main:focus { outline: none; }
 .plan-card .btn-block { white-space: normal; text-align: center; }
 
 /* Table */
-.table-wrap { overflow-x: auto; margin: 0 -20px; }
+.table-wrap { position: relative; overflow-x: auto; margin: 0 -20px; }  /* relative: hidden labels inside stay in the scroll box */
+.docs-body .table-wrap { margin: 0; }  /* no card padding to cancel on the docs page */
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 14px; border-bottom: 1px solid var(--border); }
 .table td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }

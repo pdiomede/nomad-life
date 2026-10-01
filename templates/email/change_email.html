@@ -4,7 +4,7 @@
 {% block heading %}Confirm your new email{% endblock %}
 {% block body %}
 <p class="nl-text" style="{{ p }}">You asked to use <strong style="word-break:break-word; overflow-wrap:anywhere;">{{ email }}</strong> for your Nomad Life account instead of <strong style="word-break:break-word; overflow-wrap:anywhere;">{{ old_email }}</strong>.</p>
-<p class="nl-text" style="{{ p }}">Use the button below to confirm the new address. The link expires in <strong>{{ hours }} hour{{ "s" if hours != 1 }}</strong>. Until then you keep signing in with your current address.</p>
+<p class="nl-text" style="{{ p }}">Use the button below, then press <strong>Confirm my new email</strong> on the page it opens. The link expires in <strong>{{ hours }} hour{{ "s" if hours != 1 }}</strong>. Until then you keep signing in with your current address.</p>
 {% endblock %}
 {% block button %}Confirm new email{% endblock %}
 {% block note %}If you did not ask for this, you can ignore this email.{% endblock %}

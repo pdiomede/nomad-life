@@ -38,6 +38,18 @@ Other:
 - Renaming a receipt to a name ending in a dot saved "Hotel..pdf".
 - In the dark theme, the "today" line of the diagram on the documentation page was too faint.
 
+Third review:
+
+- Sign up still showed by its response time whether an address has an account (it waited for Gmail only for new addresses, and hashed only their password), as Forgot password did before 1.5.5. Every sign up email is now sent after answering, and every address is hashed once.
+- Opening an old confirmation link again showed the account's current email address, also after it was changed: whoever reads the old mailbox learned the new one. The message no longer names the address.
+- After an intruder who knew the password turned on two-factor sign in with their own phone, undoing their email change and resetting the password still asked the owner for the intruder's code. Undoing an email change now also turns two-factor sign in off (turn it on again after), and the "two-factor sign in was turned on" alert says to write to support@nomadlife.pro, since a new password alone does not remove it.
+- Pressing **Undo the change** twice (or twice at once) said "no longer valid" although it worked, or sent two password links of which the first did not work. It undoes once and says the account already uses the old address again; the form is sent once.
+- An admin account page listed the history of a deleted account that had used the same address before (for example one removed as fake, whose address someone signed up with later).
+- A wrong current password on the Settings page was counted against the sign in limits but left no row in the Security activity, unlike a wrong password at sign in. It is recorded as "Wrong current password on the Settings page".
+- The email change message, the email and the Settings page still said the email changes when the link is opened; since this version it takes the **Confirm my new email** button on that page.
+- The admin page scrolled sideways between about 600 and 930 pixels wide (a hidden "Actions" label escaped the accounts table), and the documentation page 4 pixels too (its tables).
+- In the country list, screen readers could be pointed at an option that no longer existed, or at "Afghanistan" after the field was cleared, although Enter then sends the form.
+
 ## [1.5.6] - 2026-10-01
 
 ### Added

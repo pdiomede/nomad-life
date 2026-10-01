@@ -3,9 +3,9 @@
 {% block heading %}Undo the email change{% endblock %}
 {% block sub %}Put {{ old }} back as the address of this account instead of {{ new }}.{% endblock %}
 {% block form %}
-<form method="post" class="stack">
+<form method="post" class="stack" data-submit-once>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <p class="muted small">Every browser and device is signed out, and we email {{ old }} a link to choose a new password.</p>
+  <p class="muted small">Every browser and device is signed out, two-factor sign in is turned off (turn it on again after), and we email {{ old }} a link to choose a new password.</p>
   <button class="btn btn-primary btn-block" type="submit">Undo the change</button>
 </form>
 {% endblock %}

@@ -169,7 +169,8 @@ class AlertFixTests(AppTestCase):
         self.assertEqual(self.client.get("/settings").status_code, 302)  # the thief is out
         self.assertEqual(self.outbox[-1]["to"], "a@example.com")
         self.assertIn("/reset/", self.outbox[-1]["text"])
-        self.assertIn(b"no longer valid", owner.post(undo, follow_redirects=True).data)
+        self.assertIn(b"The account already uses a@example.com again",
+                      owner.post(undo, follow_redirects=True).data)
 
     def test_finishing_a_sign_up_is_not_a_password_reset(self):
         self.client.post("/signup", data={"email": "new@example.com", "password": "password1",

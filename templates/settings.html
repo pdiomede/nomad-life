@@ -120,7 +120,7 @@
     <div class="card-head"><h2 id="email-title">Change email</h2></div>
     {% if row.pending_email %}
     <div class="pending-email">
-      <p class="small">Waiting for confirmation: <strong>{{ row.pending_email }}</strong>. Until the link we sent there is opened, you keep {{ row.email }}.</p>
+      <p class="small">Waiting for confirmation: <strong>{{ row.pending_email }}</strong>. Until you confirm it with the link we sent there, you keep {{ row.email }}.</p>
       <form method="post">
         {{ ui.csrf() }}
         <input type="hidden" name="action" value="cancel_email">
@@ -141,7 +141,7 @@
           <input id="email-current" name="current_password" type="password" autocomplete="current-password" required>
         </div>
       </div>
-      <p class="muted small">We send a confirmation link to the new address. Your email changes when you open it.</p>
+      <p class="muted small">We send a confirmation link to the new address. Your email changes when you open it and press <strong>Confirm my new email</strong>.</p>
       <div><button class="btn btn-primary" type="submit">Send confirmation link</button></div>
     </form>
   </section>

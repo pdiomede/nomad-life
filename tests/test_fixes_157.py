@@ -137,7 +137,7 @@ class AccountFixTests(AppTestCase):
         later = time.time() + 30 * 60
         with mock.patch.object(itsdangerous.timed.time, "time", return_value=later):
             html = self.app.test_client().get(link, follow_redirects=True).get_data(as_text=True)
-        self.assertIn("a@example.com is already confirmed. Please sign in.", html)
+        self.assertIn("This account is already confirmed. Please sign in.", html)
         self.assertNotIn("the account was removed", html)
 
     def test_a_reset_meanwhile_wins_over_a_password_change(self):
@@ -300,3 +300,131 @@ class StyleFixTests(AppTestCase):
         self.assertIn("max-width: 560px; overflow-wrap: anywhere; }", css)
         self.assertIn(".tl-today { stroke: var(--error-text);", css)
         self.assertIn(".tl-today-label { fill: var(--error-text);", css)
+
+
+class ThirdReviewTests(AppTestCase):
+    """The third review of 1.5.7."""
+
+    def setUp(self):
+        super().setUp()
+        self.signup()
+        self.age_emails()
+
+    def change_and_undo(self, new="thief@example.com"):
+        self.client.post("/settings", data={"action": "email", "email": new,
+                                            "current_password": "password1"})
+        self.client.post(self.last_link(new, kind="account/email"))
+        return self.last_link("a@example.com", kind="account/email/undo")
+
+    def test_sign_up_answers_before_its_email_is_sent(self):
+        import threading
+        self.app.config["EMAIL_IN_BACKGROUND"] = True
+        started, release = threading.Event(), threading.Event()
+
+        def slow_send(to, subject, text, html=None):
+            started.set()
+            release.wait(5)
+            return self._record_email(to, subject, text, html)
+
+        self.send_email.side_effect = slow_send
+        resp = self.app.test_client().post("/signup", data={
+            "email": "new@example.com", "password": "password1", "confirm": "password1"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(started.wait(5))
+        self.assertFalse(release.is_set())  # answered while Gmail was still busy
+        release.set()
+        for thread in threading.enumerate():
+            if thread.name == "email":
+                thread.join(5)
+        self.assertEqual(self.outbox[-1]["to"], "new@example.com")
+
+    def test_undo_turns_off_two_factor_and_works_once(self):
+        with self.db() as conn:
+            conn.execute("UPDATE users SET totp_secret = 'JBSWY3DPEHPK3PXP'")  # the intruder's
+        undo = self.change_and_undo()
+        owner = self.app.test_client()
+        owner.post(undo)
+        with self.db() as conn:
+            self.assertIsNone(conn.execute("SELECT totp_secret FROM users").fetchone()[0])
+        # Pressed again: it says so instead of "no longer valid", and records nothing more.
+        html = owner.post(undo, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("The account already uses a@example.com again.", html)
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM audit_log WHERE event = "
+                                          "'email_reverted'").fetchone()[0], 1)
+        with open(os.path.join(ROOT, "templates", "auth", "revert_email.html"),
+                  encoding="utf-8") as fh:
+            self.assertIn('<form method="post" class="stack" data-submit-once>', fh.read())
+
+    def test_undo_pressed_twice_at_once_undoes_once(self):
+        undo = self.change_and_undo()
+        hash_password = appmod.hash_password
+
+        def other_press_first(password):
+            with other_connection(self) as conn:  # the other press commits first
+                conn.execute("UPDATE users SET email = 'a@example.com'")
+            return hash_password(password)
+
+        with mock.patch.object(appmod, "hash_password", side_effect=other_press_first):
+            html = self.app.test_client().post(undo, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("The account already uses a@example.com again.", html)
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM audit_log WHERE event = "
+                                          "'email_reverted'").fetchone()[0], 0)
+
+    def test_two_factor_alert_gives_advice_that_works(self):
+        html = self.client.get("/settings").get_data(as_text=True)
+        secret = re.search(r'<code class="tfa-key">([\w ]+)</code>', html).group(1).replace(" ", "")
+        code = appmod.totp_code(secret, int(time.time() // appmod.TOTP_STEP_SECONDS))
+        self.client.post("/settings", data={"action": "2fa_enable", "code": code,
+                                            "current_password": "password1"})
+        self.assertIn("write to support@nomadlife.pro from this address", self.outbox[-1]["text"])
+
+    def test_wrong_current_password_on_settings_is_recorded(self):
+        self.client.post("/settings", data={"action": "password", "current_password": "nope",
+                                            "password": "password2", "confirm": "password2"})
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM audit_log WHERE event = "
+                                          "'password_check_failed'").fetchone()[0], 1)
+
+    def test_email_change_texts_name_the_button(self):
+        html = self.client.post("/settings", data={
+            "action": "email", "email": "b@example.com", "current_password": "password1"},
+            follow_redirects=True).get_data(as_text=True)
+        self.assertIn("press Confirm my new email on the page it opens", html)
+        self.assertIn("press Confirm my new email on the page it opens", self.outbox[-1]["text"])
+        self.assertIn("Until you confirm it with the link we sent there", html)
+
+
+class PreviousOwnerTests(AppTestCase):
+    def test_an_account_history_leaves_out_a_deleted_previous_owner(self):
+        self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
+        self.signup("admin@example.com")
+        with self.db() as conn:
+            alice = conn.execute("INSERT INTO users (email, password_hash, verified_at) "
+                                 "VALUES ('reused@example.com', 'x', '2026-01-01')").lastrowid
+            conn.execute("INSERT INTO audit_log (user_id, email, event, detail) VALUES "
+                         "(?, 'reused@example.com', 'sign_in', 'alice')", (alice,))
+            conn.execute("DELETE FROM users WHERE id = ?", (alice,))
+            bob = conn.execute("INSERT INTO users (email, password_hash, verified_at) "
+                               "VALUES ('reused@example.com', 'x', '2026-01-02')").lastrowid
+            conn.execute("INSERT INTO audit_log (user_id, email, event, detail) VALUES "
+                         "(?, 'reused@example.com', 'sign_in', 'bob')", (bob,))
+        page = self.client.get(f"/admin/users/{bob}").get_data(as_text=True)
+        self.assertIn("(bob)", page)
+        self.assertNotIn("(alice)", page)
+
+
+class LayoutReviewTests(AppTestCase):
+    def test_tables_stay_inside_the_page_and_the_picker_drops_old_options(self):
+        with open(os.path.join(ROOT, "static", "css", "style.css"), encoding="utf-8") as fh:
+            css = fh.read()
+        # A hidden "Actions" label escaped the scrolling admin table (the page scrolled sideways
+        # from 601 to 930 px); the docs tables bled 4 px past the page.
+        self.assertIn(".table-wrap { position: relative; overflow-x: auto;", css)
+        self.assertIn(".docs-body .table-wrap { margin: 0; }", css)
+        with open(os.path.join(ROOT, "static", "js", "theme.js"), encoding="utf-8") as fh:
+            js = fh.read()
+        self.assertIn('active = -1;\n      // The old options are gone: never leave the input '
+                      'pointing at one of them.\n      input.removeAttribute('
+                      '"aria-activedescendant");', js)
