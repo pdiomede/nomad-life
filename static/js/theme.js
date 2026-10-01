@@ -175,8 +175,9 @@
   var countryData = document.getElementById("country-data");
   var countries = [];
   try { countries = countryData ? JSON.parse(countryData.textContent) : []; } catch (e) { countries = []; }
-  var fold = function (s) {
+  var fold = function (s) {  // the same key as fold() in app.py
     return (s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/’/g, "'")
+      .replace(/[-\u2010-\u2015]/g, " ").replace(/&/g, " and ")
       .toLowerCase().replace(/\s+/g, " ").trim();
   };
   var flagOf = function (code) {
@@ -313,7 +314,11 @@
       input.focus();
     };
 
-    input.addEventListener("input", function () { updateFlag(); render(search(input.value), 0); });
+    input.addEventListener("input", function () {
+      updateFlag();
+      // An emptied field lists every country with none highlighted: Enter then submits.
+      render(search(input.value), fold(input.value) ? 0 : -1);
+    });
     input.addEventListener("click", function () { if (list.hidden) open(false); });
     input.addEventListener("keydown", function (e) {
       var isOpen = !list.hidden;

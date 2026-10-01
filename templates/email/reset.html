@@ -1,10 +1,10 @@
 {% extends "email/_layout.html" %}
 {% set p = "margin:0 0 14px; font-size:15px; line-height:1.6; color:#303549;" %}
-{% block preheader %}Choose a new password for your Nomad Life account. The link expires in {{ hours }} hour{{ "s" if hours != 1 }}.{% endblock %}
+{% block preheader %}Choose a new password for your Nomad Life account. The link expires in {% if minutes %}{{ minutes }} minute{{ "s" if minutes != 1 }}{% else %}{{ hours }} hour{{ "s" if hours != 1 }}{% endif %}.{% endblock %}
 {% block heading %}Reset your password{% endblock %}
 {% block body %}
 <p class="nl-text" style="{{ p }}">We received a request to reset the password of the Nomad Life account for <strong style="word-break:break-word; overflow-wrap:anywhere;">{{ email }}</strong>.</p>
-<p class="nl-text" style="{{ p }}">Use the button below to choose a new one. The link expires in <strong>{{ hours }} hour{{ "s" if hours != 1 }}</strong> and works only once.</p>
+<p class="nl-text" style="{{ p }}">Use the button below to choose a new one. The link expires in <strong>{% if minutes %}{{ minutes }} minute{{ "s" if minutes != 1 }}{% else %}{{ hours }} hour{{ "s" if hours != 1 }}{% endif %}</strong> and works only once.</p>
 {% endblock %}
 {% block button %}Choose a new password{% endblock %}
 {% block note %}If you did not ask for this, you can ignore this email. Your password stays the same.{% endblock %}

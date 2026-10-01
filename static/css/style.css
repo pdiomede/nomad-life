@@ -345,6 +345,7 @@ main:focus { outline: none; }
 .map-pin:hover .map-tip, .map-pin:focus .map-tip { display: flex; }
 .map-tip-country { font-weight: 700; overflow-wrap: anywhere; }
 .map-tip-cities { color: var(--muted); overflow-wrap: anywhere; }
+.map-off { overflow-wrap: anywhere; }  /* a long free text country must not widen the page */
 .map-tip-days { font-weight: 600; }
 .tip-right .map-tip { left: -8px; transform: none; }
 .tip-right .map-tip::after { left: 14px; }
@@ -974,7 +975,7 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 /* Overlapping movements: a slowly blinking red triangle next to the Movements title opens the
    report (theme.js). */
 .movements-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.overlap-alert { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--danger); cursor: pointer; }
+.overlap-alert { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--error-text); cursor: pointer; }  /* --danger is too dark on the dark card */
 /* Only the triangle blinks, never its tooltip (a child of the button would fade with it). */
 .overlap-alert svg { animation: overlap-blink 1.6s ease-in-out infinite; }
 .overlap-alert:hover { background: var(--error-bg); }

@@ -20,7 +20,6 @@ import uuid
 from collections import OrderedDict
 import unicodedata
 import zipfile
-import zlib
 from datetime import date, datetime, timedelta, timezone
 
 import click
@@ -43,7 +42,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.5.4"
+APP_VERSION = "1.5.5"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -60,11 +59,17 @@ MIME_TYPES = {
     "webp": "image/webp",
 }
 ALLOWED_EXTENSIONS = set(MIME_TYPES)
+# Hyphens and dashes count as a space, so "Guinea Bissau" is Guinea-Bissau (theme.js folds
+# the same way).
+FOLD_SPACES = {ord(ch): " " for ch in "-\u2010\u2011\u2012\u2013\u2014\u2015"}
+
+
 def fold(value):
-    """Search key: no accents, no case, single spaces ("Côte d’Ivoire" -> "cote d'ivoire")."""
+    """Search key: no accents, no case, single spaces, a hyphen as a space and "&" as "and"
+    ("Côte d’Ivoire" -> "cote d'ivoire", "Trinidad & Tobago" -> "trinidad and tobago")."""
     value = unicodedata.normalize("NFKD", value.replace("\u2019", "'"))
     value = "".join(ch for ch in value if not unicodedata.combining(ch))
-    return " ".join(value.casefold().split())
+    return " ".join(value.translate(FOLD_SPACES).replace("&", " and ").casefold().split())
 
 
 # Canonical names win over codes, and codes over aliases, when keys collide.
@@ -434,6 +439,9 @@ def create_app(overrides=None):
         REMEMBER_COOKIE_DURATION=timedelta(days=30),
         # The admin page needs two-factor sign in (tests of other features turn this off).
         ADMIN_REQUIRE_2FA=True,
+        # "Forgot password" sends its email after answering, so how long Gmail takes does not
+        # tell whether the address has an account (tests send at once, to read the outbox).
+        EMAIL_IN_BACKGROUND=True,
         # Refuse passwords found in data breaches (Have I Been Pwned). Set PWNED_CHECK=0 in
         # config.env on a server that cannot reach api.pwnedpasswords.com.
         PWNED_CHECK=os.getenv("PWNED_CHECK", "1").strip().lower() not in ("0", "false", "no", "off"),
@@ -582,7 +590,7 @@ def create_app(overrides=None):
 
     @app.context_processor
     def inject_globals():
-        return {"app_version": APP_VERSION, "contact_email": CONTACT_EMAIL, "asset_version": asset_version, "countries": COUNTRIES, "country_data": COUNTRY_DATA,
+        return {"app_version": APP_VERSION, "contact_email": CONTACT_EMAIL, "support_email": SUPPORT_EMAIL, "asset_version": asset_version, "countries": COUNTRIES, "country_data": COUNTRY_DATA,
                 "document_kinds": DOCUMENT_KINDS,
                 "max_receipt_bytes": receipt_limit(),
                 "max_receipt_label": format_size(receipt_limit(), "down"),
@@ -953,7 +961,8 @@ def client_ip():
 def limit_keys(kind, email=None, device=None):
     keys = [("ip", f"ip:{client_ip()}")]
     if device:
-        keys.append(("device", f"device:{device}"))
+        # The account is part of the key, so a password reset can lift every device's lock.
+        keys.append(("device", f"device:{email}:{device}"))
     elif email:
         keys.append(("email", f"email:{email}"))
     return [(scope, key) for scope, key in keys if (kind, scope) in LIMITS]
@@ -1001,7 +1010,7 @@ def forgive(ids, email, device=None):
     if ids:
         db.execute(f"DELETE FROM auth_events WHERE id IN ({','.join('?' * len(ids))})", ids)
     db.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key IN (?, ?)",
-               (f"email:{email}", f"device:{device}"))
+               (f"email:{email}", f"device:{email}:{device}"))
 
 
 _dummy_hash = []
@@ -1436,8 +1445,10 @@ def email_link(endpoint, **values):
     return current_app.config["APP_BASE_URL"].rstrip("/") + url_for(endpoint, **values)
 
 
-def send_template_email(to, subject, name, **context):
-    """Render templates/email/<name>.txt and .html and send them as one email."""
+def send_template_email(to, subject, name, *, background=False, on_failure=None, **context):
+    """Render templates/email/<name>.txt and .html and send them as one email. background
+    sends it from a thread once rendered (the answer then does not wait for Gmail) and returns
+    True; on_failure runs there, inside the app context, if sending fails."""
     from flask import current_app
     site = current_app.config["APP_BASE_URL"].rstrip("/") + "/"
     if "first_name" not in context:
@@ -1449,7 +1460,21 @@ def send_template_email(to, subject, name, **context):
                    site_host=site.split("://", 1)[-1].rstrip("/"))
     text = render_template(f"email/{name}.txt", **context)
     html = render_template(f"email/{name}.html", **context)
-    return send_email(to, subject, text, html)
+    if background and current_app.config.get("EMAIL_IN_BACKGROUND", True):
+        app = current_app._get_current_object()
+
+        def deliver():
+            with app.app_context():
+                if not send_email(to, subject, text, html) and on_failure:
+                    on_failure()
+
+        # Not a daemon: a server restart waits for the email instead of dropping it.
+        threading.Thread(target=deliver, name="email").start()
+        return True
+    sent = send_email(to, subject, text, html)
+    if not sent and on_failure:
+        on_failure()
+    return sent
 
 
 def release_email_wait(user_id):
@@ -1457,16 +1482,21 @@ def release_email_wait(user_id):
     db.execute("UPDATE users SET email_sent_at = NULL WHERE id = ?", (user_id,))
 
 
-def send_password_link(row, template, subject):
+def send_password_link(row, template, subject, background=False):
     """Email a link to choose a new password (it also confirms a pending account)."""
     token = serializer().dumps({"uid": row["id"], "h": password_fingerprint(row["password_hash"]),
                                 "e": row["email"]})
-    sent = send_template_email(row["email"], subject, template,
+    # An account still waiting for confirmation is deleted VERIFY_MINUTES after its sign up
+    # (unless it holds data), so its link works only until then, not RESET_TOKEN_MAX_AGE.
+    minutes = None
+    if row["verified_at"] is None and not db.query(
+            "SELECT 1 FROM years WHERE user_id = ? LIMIT 1", (row["id"],), one=True):
+        minutes = min(minutes_left(row), RESET_TOKEN_MAX_AGE // 60)
+    user_id = row["id"]
+    return send_template_email(row["email"], subject, template, background=background,
+                               on_failure=lambda: release_email_wait(user_id),
                                link=email_link("reset", token=token),
-                               hours=RESET_TOKEN_MAX_AGE // 3600)
-    if not sent:
-        release_email_wait(row["id"])
-    return sent
+                               hours=RESET_TOKEN_MAX_AGE // 3600, minutes=minutes)
 
 
 def send_verification(row):
@@ -1930,7 +1960,7 @@ def receipt_readable(path):
     try:
         with zipfile.ZipFile(path) as zf:
             return bool(zf.infolist()) and zf.testzip() is None
-    except (OSError, zipfile.BadZipFile, zlib.error):
+    except package.RECEIPT_ERRORS:  # a damaged header too: listed as missing, never a 500
         return False
 
 
@@ -2668,7 +2698,10 @@ def register_routes(app):
                 return render_template("auth/forgot.html"), 429
             row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
             if row and not row["disabled"] and email_allowed(row["id"]):
-                send_password_link(row, "reset", "Reset your Nomad Life password")
+                # Sent after answering: an unknown address, which sends nothing, must not
+                # answer seconds sooner than a registered one.
+                send_password_link(row, "reset", "Reset your Nomad Life password",
+                                   background=True)
             flash("If that email is registered, a reset link is on its way.", "info")
             return redirect(url_for("login"))
         return render_template("auth/forgot.html")
@@ -2710,12 +2743,16 @@ def register_routes(app):
                     # submits at once (two tabs) must not both succeed.
                     used = conn.execute(
                         "UPDATE users SET password_hash = ?, verified_at = COALESCE(verified_at, "
-                        "CURRENT_TIMESTAMP) WHERE id = ? AND password_hash = ?",
+                        "CURRENT_TIMESTAMP), pending_email = NULL "
+                        "WHERE id = ? AND password_hash = ?",
                         (new_hash, row["id"], row["password_hash"])).rowcount
                     if used:
-                        # Proving the mailbox ends a lock from wrong guesses (by anyone).
-                        conn.execute("DELETE FROM auth_events WHERE kind = 'fail' AND key = ?",
-                                     (f"email:{row['email']}",))
+                        # Proving the mailbox ends a lock from wrong guesses (by anyone),
+                        # also the one of each browser the account signed in from.
+                        device_prefix = f"device:{row['email']}:"
+                        conn.execute("DELETE FROM auth_events WHERE kind = 'fail' AND (key = ? "
+                                     "OR substr(key, 1, ?) = ?)",
+                                     (f"email:{row['email']}", len(device_prefix), device_prefix))
                         # The new password already ends every session; forget their rows too.
                         conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
                 if not used:
@@ -2868,6 +2905,16 @@ def register_routes(app):
     @app.route("/year/<int:year>/base", methods=["GET", "POST"])
     @login_required
     def base(year):
+        if request.method == "POST" and not db.query(
+                "SELECT 1 FROM years WHERE user_id = ? AND year = ?", (current_user.id, year),
+                one=True):
+            # Deleted in another tab while this page was open (see movement_edit).
+            action = request.form.get("action")
+            flash({"delete_year": f"Year {year} was already deleted.",
+                   "upload": UPLOAD_GONE}.get(action, f"The year {year} no longer exists, so "
+                                                      "the changes were not saved."),
+                  "info" if action == "delete_year" else "error")
+            return redirect(url_for("index"))
         year_row = get_year_or_404(year)
         if request.method == "POST":
             action = request.form.get("action")
@@ -2929,7 +2976,7 @@ def register_routes(app):
                     # limit together, nor a form sent twice (a double click) save two copies.
                     with db.transaction() as conn:
                         duplicate = conn.execute(
-                            "SELECT id FROM movements WHERE year_id = ? AND city = ? AND "
+                            "SELECT id, notes FROM movements WHERE year_id = ? AND city = ? AND "
                             "country = ? AND start_date = ? AND end_date = ? ORDER BY id LIMIT 1",
                             (year_row["id"], data["city"], data["country"], data["start_date"],
                              data["end_date"])).fetchone()
@@ -2955,6 +3002,19 @@ def register_routes(app):
                 # The same place and dates are already saved (the form sent twice, or typed
                 # again): a second copy would only count 0 days and trigger the overlap alert.
                 flash(f"This movement to {data['city']} is already saved.", "info")
+                # A receipt or notes sent with it are not added to the saved one (a form sent
+                # twice would store the receipt twice), so say so instead of dropping them.
+                upload = request.files.get("file")
+                saved = {stem(d["original_name"])
+                         for d in documents_for(year_row["id"], duplicate["id"])}
+                lost_file = bool(upload and upload.filename) and stem(
+                    display_name(upload.filename)) not in saved
+                lost_notes = bool(data["notes"]) and data["notes"] != duplicate["notes"]
+                if lost_file or lost_notes:
+                    what = ("The receipt you chose and your notes were" if lost_file and lost_notes
+                            else "The receipt you chose was" if lost_file else "Your notes were")
+                    flash(f"{what} not added: add {'it' if what.endswith(' was') else 'them'} "
+                          "on this page.", "error")
                 return redirect(url_for("movement_edit", movement_id=duplicate["id"]))
             else:
                 err = save_upload(request.files.get("file"), request.form.get("kind"),
@@ -3101,8 +3161,10 @@ def register_routes(app):
                 elif problem := password_problem(password, request.form.get("confirm", "")):
                     flash(problem, "error")
                 else:
-                    db.execute("UPDATE users SET password_hash = ? WHERE id = ?",
-                               (hash_password(password), row["id"]))
+                    # A pending email change ends too: its link carries the old password, so
+                    # Settings would wait for a confirmation that can no longer come.
+                    db.execute("UPDATE users SET password_hash = ?, pending_email = NULL "
+                               "WHERE id = ?", (hash_password(password), row["id"]))
                     # The new password changes the session fingerprint: stay signed in here,
                     # every other browser and remember cookie is signed out.
                     stay_signed_in_here(row["id"])
@@ -3266,8 +3328,9 @@ def register_routes(app):
             with db.transaction() as conn:
                 # Opening the link proves this mailbox is theirs: an unconfirmed sign up with
                 # the same address (anyone can start one) gives way, as it does on sign up.
-                conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL AND NOT "
-                             "EXISTS (SELECT 1 FROM years WHERE years.user_id = users.id)", (new,))
+                conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL AND "
+                             "disabled = 0 AND NOT EXISTS (SELECT 1 FROM years WHERE "
+                             "years.user_id = users.id)", (new,))
                 # The checks above hold only if nothing changed meanwhile (the same link opened
                 # twice at once, by the user and a mail scanner, would apply and alert twice).
                 if not conn.execute("UPDATE users SET email = ?, pending_email = NULL WHERE id = ? "
@@ -3323,8 +3386,9 @@ def register_routes(app):
             return render_template("auth/revert_email.html", old=data["old"], new=data["new"])
         try:
             with db.transaction() as conn:
-                conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL AND NOT "
-                             "EXISTS (SELECT 1 FROM years WHERE years.user_id = users.id)",
+                conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL AND "
+                             "disabled = 0 AND NOT EXISTS (SELECT 1 FROM years WHERE "
+                             "years.user_id = users.id)",
                              (data["old"],))
                 conn.execute("UPDATE users SET email = ?, pending_email = NULL, session_version "
                              "= session_version + 1 WHERE id = ?", (data["old"], row["id"]))
@@ -3333,13 +3397,19 @@ def register_routes(app):
             flash(f"{data['old']} is used by another account now. Please contact the person who "
                   "runs this Nomad Life server.", "error")
             return redirect(url_for("login"))
-        if current_user.is_authenticated:
+        # This account's sessions ended above; a browser signed in to another account (the
+        # link opened where someone else is signed in) stays signed in.
+        if current_user.is_authenticated and current_user.id == row["id"]:
             sign_out()
         audit("email_reverted", row["id"], data["old"], f"{data['new']} to {data['old']}")
         fresh = db.query("SELECT * FROM users WHERE id = ?", (row["id"],), one=True)
-        send_password_link(fresh, "reset", "Reset your Nomad Life password")
-        flash(f"The account uses {data['old']} again and every device was signed out. We sent "
-              "you a link to choose a new password.", "success")
+        if send_password_link(fresh, "reset", "Reset your Nomad Life password"):
+            flash(f"The account uses {data['old']} again and every device was signed out. We "
+                  "sent you a link to choose a new password.", "success")
+        else:
+            flash(f"The account uses {data['old']} again and every device was signed out. We "
+                  "could not send the link to choose a new password: use Forgot password in a "
+                  "few minutes.", "success")
         return redirect(url_for("login"))
 
     # --- admin ---
@@ -3883,7 +3953,8 @@ def register_routes(app):
 
     def admin_support_args(**values):
         # "all" is the default of the filters only: a search for the word "all" is kept.
-        return {k: v for k, v in values.items() if v not in (None, "", 1, "1")
+        return {k: v for k, v in values.items() if v not in (None, "")
+                and not (k == "page" and v in (1, "1"))
                 and not (k in ("status", "kind") and v == "all")}
 
     def admin_support_url(**values):
@@ -4069,6 +4140,13 @@ def register_routes(app):
             abort(404)
         return row
 
+    def document_gone(message):
+        """A receipt form left open after the receipt (or its stay or year) was deleted in
+        another tab: say so instead of a bare "Page not found". Another user's receipt gets the
+        same answer, so nothing tells the two apart. The page it came from may be gone too."""
+        flash(message, "info" if "already deleted" in message else "error")
+        return redirect(url_for("index"))
+
     @app.route("/year/<int:year>/package")
     @login_required
     def year_package(year):
@@ -4120,7 +4198,9 @@ def register_routes(app):
     @app.route("/documents/<int:doc_id>/delete", methods=["POST"])
     @login_required
     def document_delete(doc_id):
-        get_document_or_404(doc_id)
+        if not db.query("SELECT 1 FROM documents WHERE id = ? AND user_id = ?",
+                        (doc_id, current_user.id), one=True):
+            return document_gone("This document was already deleted.")
         if delete_confirmed():
             # List and delete together, like the year delete: the file to remove is the one the
             # row points to at the moment it goes (zip-receipts may have replaced it meanwhile).
@@ -4136,7 +4216,11 @@ def register_routes(app):
     @app.route("/documents/<int:doc_id>/edit", methods=["POST"])
     @login_required
     def document_edit(doc_id):
-        doc = get_document_or_404(doc_id)
+        doc = db.query("SELECT * FROM documents WHERE id = ? AND user_id = ?",
+                       (doc_id, current_user.id), one=True)
+        if doc is None:
+            return document_gone("This document no longer exists, so the changes were not "
+                                 "saved.")
         # A typed name is not a path: keep "Rent 03/2026" instead of dropping "Rent 03/".
         typed = request.form.get("name", "").replace("/", "-").replace("\\", "-").strip()
         name = display_name(typed) if typed else ""
@@ -4147,13 +4231,16 @@ def register_routes(app):
         elif kind not in DOCUMENT_KINDS:
             flash("Please choose a document type.", "error")
         else:
-            if file_ext(name) != ext:
+            if {file_ext(name), ext} == {"jpg", "jpeg"}:
+                name = f"{stem(name)}.{ext}"  # the same type: no "photo.jpg.jpeg"
+            elif file_ext(name) != ext:
                 name = f"{name}.{ext}"  # keep the real extension so downloads still open
             # The file inside the ZIP carries the name too. It is rewritten into a temporary file
             # outside the database write lock (a big receipt takes seconds and would stall every
             # other request), then moved into place under the lock only if nobody changed the
             # receipt meanwhile; two renames at once (a double click, two tabs) simply retry.
             folder = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id))
+            changed = 0
             for _attempt in range(3):
                 current = db.query("SELECT * FROM documents WHERE id = ? AND user_id = ?",
                                    (doc_id, current_user.id), one=True)
@@ -4166,7 +4253,7 @@ def register_routes(app):
                     try:
                         _member, data = read_receipt(path)
                         size = write_receipt_zip(tmp, zip_member_name(name, ext), data)
-                    except (OSError, zipfile.BadZipFile, zlib.error, IndexError) as exc:
+                    except package.RECEIPT_ERRORS as exc:
                         app.logger.error("Could not rename the file in %s: %s", path, exc)
                         size = current["size"]
                         if os.path.exists(tmp):
@@ -4187,7 +4274,11 @@ def register_routes(app):
                         os.remove(tmp)
                 if changed:
                     break
-            flash("Document updated.", "success")
+            if current is None:  # deleted in another tab while the file was rewritten
+                return document_gone("This document no longer exists, so the changes were not "
+                                     "saved.")
+            flash("Document updated." if changed else "The document was changed elsewhere "
+                  "at the same time. Please try again.", "success" if changed else "error")
         return redirect(request.referrer or url_for("index"))
 
 

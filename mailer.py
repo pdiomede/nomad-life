@@ -1,6 +1,7 @@
 """Gmail SMTP mailer used for account confirmation and password reset emails."""
 import os
 import smtplib
+import ssl
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 
@@ -48,12 +49,19 @@ def send_email(to, subject, text, html=None):
     logo_path = os.path.join(current_app.static_folder, "img", "logo-mark.png")
     msg = build_message(user, to, subject, text, html, logo_path)
 
+    sent = False
     try:
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as smtp:
-            smtp.starttls()
+            # smtplib's own default checks neither the certificate nor the host name, so
+            # anyone on the network path could read the App Password and every reset link.
+            smtp.starttls(context=ssl.create_default_context())
             smtp.login(user, password)
             smtp.send_message(msg)
-        return True
+            sent = True
     except (smtplib.SMTPException, OSError) as exc:
+        if sent:  # Gmail accepted the message; only saying goodbye (QUIT) failed
+            current_app.logger.warning("Email sent, but closing the connection failed: %s", exc)
+            return True
         current_app.logger.error("Could not send email: %s", exc)
         return False
+    return True

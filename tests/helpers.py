@@ -36,6 +36,8 @@ class AppTestCase(unittest.TestCase):
             "ADMIN_REQUIRE_2FA": False,
             # Tests never call Have I Been Pwned; test_security_1210.py checks it with a fake.
             "PWNED_CHECK": False,
+            # Emails are recorded at once, so tests can read the outbox right after a request.
+            "EMAIL_IN_BACKGROUND": False,
         })
         self.client = self.app.test_client()
         self.outbox = []

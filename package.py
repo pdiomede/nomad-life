@@ -35,6 +35,10 @@ RULES = [
     "The 183 day line means at least 183 days in the base country.",
 ]
 CHUNK = 64 * 1024
+# What reading a damaged receipt ZIP can raise: besides BadZipFile and zlib errors, a changed
+# byte in a header asks for a password (RuntimeError) or an unknown method (NotImplementedError).
+RECEIPT_ERRORS = (OSError, zipfile.BadZipFile, zlib.error, IndexError, EOFError, RuntimeError,
+                  NotImplementedError, ValueError)
 # Every entry is deflated: while streaming, zipfile writes sizes after the data (a data
 # descriptor), and strict streaming readers (for example Java's ZipInputStream) only accept
 # that for deflated entries. Formats that are already compressed use the fastest level.
@@ -673,7 +677,7 @@ def stream(data, entries):
             digest, written = hashlib.sha256(), 0
             try:
                 fh, size = open_receipt(source.path)
-            except (OSError, zipfile.BadZipFile, zlib.error, IndexError):
+            except RECEIPT_ERRORS:
                 source.exists = False
                 continue
             with fh, zf.open(_info(arcname, when, size, fast), "w") as dest:

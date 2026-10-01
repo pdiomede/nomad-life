@@ -10,6 +10,6 @@
     <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required autofocus>
   </div>
   <button class="btn btn-primary btn-block" type="submit">Sign in</button>
-  <p class="center muted small">Lost your phone? Ask the person who runs this Nomad Life server to remove two-factor sign in from your account. <a href="{{ url_for('login') }}">Start over</a></p>
+  <p class="center muted small">Lost your phone? Write to <a href="mailto:{{ support_email }}">{{ support_email }}</a> from your account's email address. <a href="{{ url_for('login') }}">Start over</a></p>
 </form>
 {% endblock %}

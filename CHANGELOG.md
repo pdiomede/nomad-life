@@ -2,6 +2,54 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.5] - 2026-10-01
+
+### Security
+
+- Emails went to Gmail over a connection whose certificate was never checked (Python's default for STARTTLS), so anyone on the network path could have read the Gmail App Password and every reset and confirmation link. The certificate and host name are checked now.
+- **Forgot password** answered a registered address seconds later than an unknown one (it waited for Gmail), which told anyone whether an address has an account. The email is now sent after the answer.
+- An address an admin had blocked by disabling its unconfirmed account could still be taken by changing another account's email to it (or by the undo link of an email change). It stays blocked, as on sign up.
+
+### Fixed
+
+Dashboard and movements:
+
+- Adding a movement that was already saved (same place and dates) dropped the receipt and the notes sent with it without a word. The message now says they were not added and to add them on the movement's page (a form sent twice, whose receipt is already there, still gets no warning).
+- The base page and the receipt forms left open after the year, stay or receipt was deleted in another tab showed a bare "Page not found" on Save location, Upload, Delete year, Rename and Delete. They now go back to your dashboard and say what happened, as the movement pages do since 1.5.4. A rename of a receipt deleted meanwhile no longer says "Document updated."
+- In the dark theme the red overlap triangle was too faint to see on its card. It now uses the readable red of error messages.
+- Renaming a `.jpeg` receipt to "Hotel Rome.jpg" saved it as "Hotel Rome.jpg.jpeg" (also in the accountant package). JPG and JPEG count as one type.
+- A very long place in "Not on the map" made the dashboard wider than a phone.
+
+Accountant package:
+
+- A receipt with one damaged byte in its ZIP header made the whole package download fail with a server error, instead of listing that receipt as missing.
+
+Countries:
+
+- "Guinea Bissau", "Timor Leste" or "Bosnia & Herzegovina", typed without the hyphen or with "&", found no country: the place was kept as free text, without flag or map pin, and counted apart from the same country picked from the list. Hyphens count as spaces and "&" as "and" now, in the list and in the day counts.
+- Common short names found nothing or were saved as typed: Brunei, Macau, The Gambia, The Bahamas, Falkland Islands, Saint Martin, Sint Maarten, Saint Helena and "St" for the Saint countries (St Lucia, St Kitts and Nevis...). They are names of their country now.
+- Clearing a country field and pressing Enter filled in "Afghanistan" instead of sending the form.
+
+Sign in and account:
+
+- A password reset did not lift the "Too many failed sign in attempts on this device" lock, although the message offers it as the way out: the same browser stayed refused for up to 15 minutes.
+- The "Finish setting up your account" and reset emails sent to an account still waiting for confirmation said the link works for 1 hour, but the account is removed 20 minutes after signing up. They now give the real time left.
+- After a password change or reset, Settings kept "Waiting for confirmation" for an email change whose link could no longer work. The new password now ends the pending change.
+- The undo link of an email change signed out whatever account was signed in on the browser that opened it, and said a password link was sent even when sending failed.
+- The confirm page said "within 1 minutes".
+- The two-factor code page told people who lost their phone to ask "the person who runs this server"; it now gives support@nomadlife.pro, as the documentation does.
+- Screen readers did not read "At least 8 characters" with the password field on the sign up and reset pages.
+- The text version of security alerts left out why the email was sent, which the HTML version says.
+
+Admin:
+
+- Searching the support tickets for "1" lost the search on the next page and in the ticket links, which then listed every ticket.
+
+Other:
+
+- `checkFakeUsers.sh` failed with "No such command 'check-fake-users'" when another project's virtual environment was active (or a Python with Flask but not the app's other packages came first). It now uses the first Python that can load the app; `$PYTHON` is still used as given.
+- An email Gmail had accepted was reported as not sent when only closing the connection failed, so the user was asked to try again.
+
 ## [1.5.4] - 2026-10-01
 
 ### Fixed

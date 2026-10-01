@@ -6,6 +6,6 @@
 <form method="post" class="stack" data-submit-once>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <button class="btn btn-primary btn-block" type="submit">Confirm my account</button>
-  <p class="muted small">Did not sign up? Close this page: without the button the account is removed within {{ minutes }} minutes.</p>
+  <p class="muted small">Did not sign up? Close this page: without the button the account is removed within {{ minutes }} minute{{ 's' if minutes != 1 }}.</p>
 </form>
 {% endblock %}

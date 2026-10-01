@@ -1,6 +1,6 @@
 Hi{% if first_name %} {{ first_name }}{% endif %},
 
-We received a request to reset the password of the Nomad Life account for {{ email }}. Use the link below to choose a new one. It expires in {{ hours }} hour{{ "s" if hours != 1 }} and works only once.
+We received a request to reset the password of the Nomad Life account for {{ email }}. Use the link below to choose a new one. It expires in {% if minutes %}{{ minutes }} minute{{ "s" if minutes != 1 }}{% else %}{{ hours }} hour{{ "s" if hours != 1 }}{% endif %} and works only once.
 
 {{ link }}
 

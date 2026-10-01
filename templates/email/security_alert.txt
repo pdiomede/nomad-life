@@ -10,5 +10,7 @@ From network address: {{ ip }}{% endif %}
 
 {{ link }}
 
+You get this email for every change to your password, email address or two-factor sign in.
+
 Nomad Life
 {{ site_url }}
