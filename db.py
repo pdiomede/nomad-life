@@ -117,6 +117,21 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
 
+-- Every confirmed email change, numbered by its id, which the undo link sent to the old
+-- address carries. The link works while its change stands (undone_at NULL), also after later
+-- changes, and undoing it undoes every later change of the account too: changing the address
+-- once more cannot take the owner's way back, and the undo of a later change cannot take the
+-- account from the owner again. Rows are pruned once the links have expired.
+CREATE TABLE IF NOT EXISTS email_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    old_email TEXT NOT NULL,
+    new_email TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    undone_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_email_changes_user ON email_changes(user_id, id);
+
 -- Support tickets: one row per ticket, its messages apart. updated_at moves with every message
 -- or status change; closed_at is NULL while open. The *_seen_id columns hold the last message
 -- the user (or any admin) has seen, for the "new reply" badges. ref_year and ref_seq make the

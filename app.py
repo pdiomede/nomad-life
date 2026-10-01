@@ -565,6 +565,9 @@ def create_app(overrides=None):
                            (f"-{AUDIT_DAYS} days",))
             db.try_execute("DELETE FROM user_sessions WHERE last_seen_at < datetime('now', ?)",
                            (f"-{SESSION_IDLE_DAYS} days",))
+            # Numbered email changes are only read by their undo links (a day of margin).
+            db.try_execute("DELETE FROM email_changes WHERE created_at < datetime('now', ?)",
+                           (f"-{EMAIL_REVERT_MAX_AGE // 86400 + 1} days",))
 
     @app.after_request
     def security_headers(resp):
@@ -1487,6 +1490,42 @@ def expired_payload(ser, exc):
     except Exception:  # noqa: BLE001 - any unreadable payload is simply unknown
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def undo_status(conn, data, user):
+    """Where an email change undo link (its payload) stands for the account (a users row or
+    None), read through conn (a db.transaction() connection, or db.get_db()): "back" when the
+    account uses the old address again, "ok" while the change can be undone, else "stale". A
+    numbered change ("n", a row of email_changes) can be undone while it stands, whatever
+    address the account moved on to since. Links from before the numbering only while the
+    account still uses the new address."""
+    if user is None:
+        return "stale"
+    if user["email"] == data.get("old"):
+        return "back"
+    if "n" not in data:
+        return "ok" if user["email"] == data.get("new") else "stale"
+    standing = conn.execute("SELECT 1 FROM email_changes WHERE id = ? AND user_id = ? AND "
+                            "old_email = ? AND undone_at IS NULL",
+                            (data["n"], user["id"], data.get("old"))).fetchone()
+    return "ok" if standing else "stale"
+
+
+def undo_already_done(data, user):
+    """The answer of an undo link when the account uses the old address again: an undo did it
+    (this link pressed twice, or an earlier change's) and emailed a password link, or the
+    address was changed back from Settings, and nothing was sent."""
+    if "n" in data:
+        undone = db.query("SELECT 1 FROM email_changes WHERE id = ? AND undone_at IS NOT NULL",
+                          (data["n"],), one=True)
+    else:
+        undone = db.query("SELECT 1 FROM audit_log WHERE user_id = ? AND event = "
+                          "'email_reverted' AND detail = ?",
+                          (user["id"], f"{data['new']} to {data['old']}"), one=True)
+    flash(f"The account already uses {data['old']} again."
+          + (" Use the link we emailed there to choose a new password." if undone else ""),
+          "info")
+    return redirect(url_for("login"))
 
 
 def send_template_email(to, subject, name, *, background=False, on_failure=None, **context):
@@ -3543,6 +3582,9 @@ def register_routes(app):
                                     (new, row["id"], row["email"], new,
                                      row["password_hash"])).rowcount:
                     raise LinkUsed
+                # The change's number, for its undo link (see email_changes in db.py).
+                change = conn.execute("INSERT INTO email_changes (user_id, old_email, new_email) "
+                                      "VALUES (?, ?, ?)", (row["id"], row["email"], new)).lastrowid
         except LinkUsed:
             flash("This link is no longer valid. Please ask for the email change again.", "error")
             return redirect(url_for("settings") if current_user.is_authenticated else url_for("login"))
@@ -3555,13 +3597,14 @@ def register_routes(app):
         # This address has no account any more, so a password reset link would not work here:
         # it gets a link that puts itself back instead.
         revert = serializer("email-revert").dumps({"uid": row["id"], "old": row["email"],
-                                                    "new": new})
+                                                    "new": new, "n": change})
         security_alert(row["email"], f"The email address of your Nomad Life account was changed "
                        f"from {row['email']} to {new}. This address can no longer sign in.",
                        account=new, link=email_link("revert_email", token=revert),
                        advice=("If this was you, there is nothing to do. If it was not you, undo "
                                f"the change with the link below within "
-                               f"{EMAIL_REVERT_MAX_AGE // 86400} days: it puts this address "
+                               f"{EMAIL_REVERT_MAX_AGE // 86400} days, also if the address is "
+                               "changed again meanwhile: it puts this address "
                                "back, signs out every browser and device, turns off two-factor "
                                "sign in, and sends you a link to choose a new password."),
                        button="Undo this change")
@@ -3584,44 +3627,50 @@ def register_routes(app):
             flash("This link is not valid.", "error")
             return redirect(url_for("login"))
         row = db.query("SELECT * FROM users WHERE id = ?", (data.get("uid"),), one=True)
-        if row and row["email"] == data.get("old"):
-            # Pressed twice: the first press undid it and emailed a password link. Or the
-            # address was changed back from Settings: nothing was undone, nothing was sent.
-            undone = db.query("SELECT 1 FROM audit_log WHERE user_id = ? AND event = "
-                              "'email_reverted' AND detail = ?",
-                              (row["id"], f"{data['new']} to {data['old']}"), one=True)
-            flash(f"The account already uses {data['old']} again."
-                  + (" Use the link we emailed there to choose a new password." if undone
-                     else ""), "info")
-            return redirect(url_for("login"))
-        if not row or row["email"] != data.get("new"):  # changed again since
+        status = undo_status(db.get_db(), data, row)
+        if status == "back":  # pressed twice, or changed back from Settings
+            return undo_already_done(data, row)
+        if status == "stale":  # this change, or an earlier one, was undone since
             flash("This link is no longer valid.", "error")
             return redirect(url_for("login"))
         if request.method == "GET":  # a mail scanner opening the link must not act on it
-            return render_template("auth/revert_email.html", old=data["old"], new=data["new"])
+            # The address it moved on to since is not named: this mailbox may not be the owner's.
+            return render_template("auth/revert_email.html", old=data["old"],
+                                   new=data["new"] if row["email"] == data["new"] else None)
         # Whoever changed the address knew the password: it stops working, and only the link
         # emailed below can set a new one (hashed before the write lock: it is slow).
         locked_hash = hash_password(secrets.token_hex(32))
         try:
             with db.transaction() as conn:
+                # Checked again under the write lock: the same link pressed twice at once
+                # undoes once (one reset email, one record), and an undo or a change meanwhile
+                # is seen.
+                current = conn.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
+                if undo_status(conn, data, current) != "ok":
+                    raise LinkUsed
                 conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL AND "
                              "disabled = 0 AND NOT EXISTS (SELECT 1 FROM years WHERE "
                              "years.user_id = users.id)",
                              (data["old"],))
-                # Only while the account still uses the new address: the same link pressed
-                # twice at once undoes once (one reset email, one record). Two-factor sign in
-                # goes too: whoever made the change may have turned it on with their own phone,
-                # which would keep the owner out after the reset.
-                if not conn.execute(
-                        "UPDATE users SET email = ?, pending_email = NULL, password_hash = ?, "
-                        "totp_secret = NULL, totp_step = 0, session_version = session_version + 1 "
-                        "WHERE id = ? AND email = ?",
-                        (data["old"], locked_hash, row["id"], data["new"])).rowcount:
-                    raise LinkUsed
+                # From whatever address the account uses now. Two-factor sign in goes too:
+                # whoever made the change may have turned it on with their own phone, which
+                # would keep the owner out after the reset.
+                conn.execute(
+                    "UPDATE users SET email = ?, pending_email = NULL, password_hash = ?, "
+                    "totp_secret = NULL, totp_step = 0, session_version = session_version + 1 "
+                    "WHERE id = ? AND email = ?",
+                    (data["old"], locked_hash, row["id"], current["email"]))
+                # This change and every later one are undone: their undo links stop working,
+                # so whoever made them cannot move the account away from the owner again.
+                conn.execute("UPDATE email_changes SET undone_at = CURRENT_TIMESTAMP WHERE "
+                             "user_id = ? AND id >= ? AND undone_at IS NULL",
+                             (row["id"], data.get("n", 0)))
                 conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
-        except LinkUsed:  # the other press of the same link got there first
-            flash(f"The account already uses {data['old']} again. Use the link we emailed "
-                  "there to choose a new password.", "info")
+        except LinkUsed:  # another press, undo or change got there first
+            row = db.query("SELECT * FROM users WHERE id = ?", (row["id"],), one=True)
+            if undo_status(db.get_db(), data, row) == "back":
+                return undo_already_done(data, row)
+            flash("This link is no longer valid.", "error")
             return redirect(url_for("login"))
         except db.IntegrityError:
             flash(f"{data['old']} is used by another account now. Please contact the person who "
@@ -3631,7 +3680,7 @@ def register_routes(app):
         # link opened where someone else is signed in) stays signed in.
         if current_user.is_authenticated and current_user.id == row["id"]:
             sign_out()
-        audit("email_reverted", row["id"], data["old"], f"{data['new']} to {data['old']}")
+        audit("email_reverted", row["id"], data["old"], f"{current['email']} to {data['old']}")
         fresh = db.query("SELECT * FROM users WHERE id = ?", (row["id"],), one=True)
         if send_password_link(fresh, "reset", "Reset your Nomad Life password"):
             flash(f"The account uses {data['old']} again and every device was signed out. We "

@@ -616,3 +616,99 @@ class FourthReviewAdminTests(AppTestCase):
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM users WHERE id = ?",
                                           (uid,)).fetchone()[0], 0)
+
+
+class UndoChainTests(AppTestCase):
+    """Email changes are numbered, so the owner's undo link survives the intruder changing the
+    address again, and the intruder's own undo links cannot take the account back after it."""
+
+    def setUp(self):
+        super().setUp()
+        self.signup()
+        self.address = "a@example.com"
+        self.intruder = self.client  # signed in with the password the intruder learned
+
+    def change(self, new, password="password1"):
+        """Change the address from the intruder's browser; returns the undo link the address
+        it left received."""
+        self.age_emails()
+        self.intruder.post("/settings", data={"action": "email", "email": new,
+                                              "current_password": password})
+        self.intruder.post(self.last_link(new, kind="account/email"))
+        left, self.address = self.address, new
+        return self.last_link(left, kind="account/email/undo")
+
+    def email(self):
+        with self.db() as conn:
+            return conn.execute("SELECT email FROM users").fetchone()[0]
+
+    def test_the_owners_undo_works_after_the_address_changed_again(self):
+        owner_undo = self.change("b@evil.example")
+        intruder_undo = self.change("c@evil.example")  # this was enough to keep the owner out
+        html = self.app.test_client().post(owner_undo, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("The account uses a@example.com again", html)
+        self.assertEqual(self.email(), "a@example.com")
+        self.assertEqual(self.intruder.get("/settings").status_code, 302)  # signed out
+        # The undo of the later change is void: it cannot take the account from the owner.
+        html = self.app.test_client().post(intruder_undo, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("This link is no longer valid.", html)
+        self.assertEqual(self.email(), "a@example.com")
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT detail FROM audit_log WHERE event = "
+                                          "'email_reverted'").fetchall()[0][0],
+                             "c@evil.example to a@example.com")
+
+    def test_the_intruder_undoing_first_does_not_take_the_owners_way_back(self):
+        owner_undo = self.change("b@evil.example")
+        later_undo = self.change("c@evil.example")
+        self.app.test_client().post(later_undo)  # back to b@evil.example, password locked
+        self.assertEqual(self.email(), "b@evil.example")
+        self.address = "b@evil.example"
+        self.intruder.post(self.last_link("b@evil.example", kind="reset"),
+                           data={"password": "intruder1", "confirm": "intruder1"})
+        self.intruder.post("/login", data={"email": "b@evil.example", "password": "intruder1"})
+        third_undo = self.change("d@evil.example", password="intruder1")
+        self.assertEqual(self.email(), "d@evil.example")
+        self.app.test_client().post(owner_undo)
+        self.assertEqual(self.email(), "a@example.com")
+        html = self.app.test_client().post(third_undo, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("This link is no longer valid.", html)
+        self.assertEqual(self.email(), "a@example.com")
+        # Pressed again, the owner's link says it is done, and that the password link went out.
+        html = self.app.test_client().post(owner_undo, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("The account already uses a@example.com again. Use the link we emailed "
+                      "there to choose a new password.", html)
+
+    def test_the_undo_page_does_not_name_the_address_it_moved_on_to(self):
+        owner_undo = self.change("b@evil.example")
+        self.change("c@evil.example")
+        html = self.app.test_client().get(owner_undo).get_data(as_text=True)
+        self.assertIn("instead of the address it uses now (it was changed again since).", html)
+        self.assertNotIn("c@evil.example", html)
+        self.assertEqual(self.email(), "c@evil.example")  # a GET changes nothing
+        self.assertIn("also if the address is changed again meanwhile",
+                      [m for m in self.outbox if m["to"] == "a@example.com"][-1]["text"])
+
+    def test_undo_links_from_before_the_numbering(self):
+        self.change("b@example.com")
+        with self.app.test_request_context():
+            token = appmod.serializer("email-revert").dumps(
+                {"uid": 1, "old": "a@example.com", "new": "b@example.com"})
+        link = f"/account/email/undo/{token}"
+        self.assertIn(b"Undo the change", self.app.test_client().get(link).data)
+        self.change("c@example.com")  # as before: valid only while the account uses b@
+        html = self.app.test_client().post(link, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("This link is no longer valid.", html)
+        self.assertEqual(self.email(), "c@example.com")
+
+    def test_numbered_changes_are_pruned_once_their_links_expired(self):
+        self.change("b@example.com")
+        with self.db() as conn:
+            conn.execute("UPDATE email_changes SET created_at = datetime('now', '-9 days')")
+            conn.execute("INSERT INTO email_changes (user_id, old_email, new_email, created_at) "
+                         "VALUES (1, 'x@example.com', 'b@example.com', datetime('now', '-2 days'))")
+        with mock.patch.object(appmod, "PURGE_EVERY_SECONDS", 0):
+            self.app.test_client().get("/login")
+        with self.db() as conn:
+            self.assertEqual([r[0] for r in conn.execute("SELECT old_email FROM email_changes")],
+                             ["x@example.com"])

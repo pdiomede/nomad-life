@@ -74,7 +74,7 @@ Open **Settings** from the menu under your name or email at the top (or the foot
 - See your recent security activity (sign ins, password, email and two-factor changes) with the network address.
 - Delete your account with all years, movements and receipts. It asks for your password, asks twice and needs your email typed.
 
-Every change of password, email address or two-factor sign in sends a **security alert** to the account's address, with a link to reset the password if it was not you. For an email change the alert goes to the old address, with a link (valid 7 days) that **undoes the change**: it puts the old address back, signs out every device and sends a link to choose a new password.
+Every change of password, email address or two-factor sign in sends a **security alert** to the account's address, with a link to reset the password if it was not you. For an email change the alert goes to the old address, with a link (valid 7 days) that **undoes the change**: it puts the old address back, signs out every device and sends a link to choose a new password. It still works after further changes of the address, and undoes them too.
 
 New passwords (sign up, Settings page, reset) are refused when they appear in known data breaches, checked with [Have I Been Pwned](https://haveibeenpwned.com/Passwords): only the first 5 characters of the password's SHA-1 hash leave the server, and if the service cannot be reached the password is accepted. Turn it off with `PWNED_CHECK=0`.
 
