@@ -32,10 +32,14 @@
       <form method="post" action="{{ url_for('admin_plan_price', key=p.key) }}" class="admin-actions admin-price">
         {{ ui.csrf() }}
         {{ hidden(()) }}
-        <label for="month-{{ p.key }}" class="small">Monthly $</label>
-        <input id="month-{{ p.key }}" name="month" inputmode="decimal" value="{{ p.price if p.custom_price else '' }}" placeholder="{{ p.default_price }}">
-        <label for="year-{{ p.key }}" class="small">Yearly $</label>
-        <input id="year-{{ p.key }}" name="year" inputmode="decimal" value="{{ p.year if p.custom_price else '' }}" placeholder="{{ p.default_year }}">
+        <span class="price-field">
+          <label for="month-{{ p.key }}" class="small">Monthly $</label>
+          <input id="month-{{ p.key }}" name="month" inputmode="decimal" value="{{ p.price if p.custom_price else '' }}" placeholder="{{ p.default_price }}">
+        </span>
+        <span class="price-field">
+          <label for="year-{{ p.key }}" class="small">Yearly $</label>
+          <input id="year-{{ p.key }}" name="year" inputmode="decimal" value="{{ p.year if p.custom_price else '' }}" placeholder="{{ p.default_year }}">
+        </span>
         <button class="btn btn-ghost btn-sm" type="submit" aria-label="Save prices of {{ p.name }}">Save</button>
       </form>
     </li>

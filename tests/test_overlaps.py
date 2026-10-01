@@ -92,8 +92,9 @@ class OverlapDashboardTests(AppTestCase):
         self.add("Vienna", "Austria", "2027-01-01", "2027-01-10")
         self.add("<b>Sidney</b>", "Australia", "2027-01-08", "2027-01-10")
         html = self.client.get("/year/2027").get_data(as_text=True)
-        self.assertIn('class="overlap-alert" data-overlap-open aria-haspopup="dialog" '
-                      'aria-controls="overlap-dialog" data-tip="Overlapping movements" hidden', html)
+        self.assertRegex(html, r'class="overlap-alert" data-overlap-open data-overlap-key="2027:\w+" '
+                               r'aria-haspopup="dialog" aria-controls="overlap-dialog" '
+                               r'data-tip="Overlapping movements" hidden')
         self.assertIn('aria-label="Overlapping movements (1): show the report"', html)
         self.assertIn('<dialog class="overlap-dialog" id="overlap-dialog"', html)
         self.assertIn("<h2 id=\"overlap-title\">Overlapping movements in 2027</h2>", html)

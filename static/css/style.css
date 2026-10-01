@@ -666,6 +666,8 @@ main:focus { outline: none; }
 .admin-quota { display: flex; align-items: center; gap: 6px; }
 .admin-quota input { width: 110px; }
 .admin-price input { width: 90px; }
+/* Each label stays with its field when the form wraps on phones. */
+.admin-price .price-field { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .admin-plans { margin-bottom: 20px; }
 /* Accounts table: the account column keeps a readable width, the table scrolls on phones. */
 .admin-users-table td { vertical-align: top; }
@@ -972,12 +974,16 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 /* Overlapping movements: a slowly blinking red triangle next to the Movements title opens the
    report (theme.js). */
 .movements-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.overlap-alert { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--danger); cursor: pointer; animation: overlap-blink 1.6s ease-in-out infinite; }
-.overlap-alert:hover { background: var(--error-bg); animation-play-state: paused; }
-.overlap-alert:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; animation-play-state: paused; }
+.overlap-alert { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--danger); cursor: pointer; }
+/* Only the triangle blinks, never its tooltip (a child of the button would fade with it). */
+.overlap-alert svg { animation: overlap-blink 1.6s ease-in-out infinite; }
+.overlap-alert:hover { background: var(--error-bg); }
+.overlap-alert:hover svg, .overlap-alert:focus-visible svg { animation: none; }
+.overlap-alert:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 @keyframes overlap-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-@media (prefers-reduced-motion: reduce) { .overlap-alert { animation: none; } }
-@media (forced-colors: active) { .overlap-alert { color: CanvasText; animation: none; } }
+.overlap-alert.is-seen svg { animation: none; }  /* its report was opened: steady red from then on */
+@media (prefers-reduced-motion: reduce) { .overlap-alert svg { animation: none; } }
+@media (forced-colors: active) { .overlap-alert { color: CanvasText; } .overlap-alert svg { animation: none; } }
 .overlap-alert[data-tip]::after {
   content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 50%; z-index: 30;
   transform: translateX(-50%); padding: 5px 9px; border-radius: 6px; white-space: nowrap;

@@ -43,7 +43,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.5.3"
+APP_VERSION = "1.5.4"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -1951,16 +1951,20 @@ class QuotaExceeded(Exception):
 
 
 def delete_account(user_id):
-    """Delete an account with all its years, movements and documents, then its files."""
+    """Delete an account with all its years, movements and documents, then its files.
+    Returns False when there was no such account any more (deleted meanwhile)."""
     from flask import current_app
     with db.transaction() as conn:  # list and delete together, see the year delete
         docs = conn.execute("SELECT * FROM documents WHERE user_id = ?", (user_id,)).fetchall()
-        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        deleted = conn.execute("DELETE FROM users WHERE id = ?", (user_id,)).rowcount
+    if not deleted:
+        return False
     remove_files(docs)
     try:
         os.rmdir(os.path.join(current_app.config["UPLOAD_DIR"], str(user_id)))
     except OSError:
         pass  # missing, or holds files no row points to: leave them for the operator
+    return True
 
 
 def remove_files(rows):
@@ -2853,6 +2857,9 @@ def register_routes(app):
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
                                overlaps=overlaps, overlap_total=overlap_total,
                                overlap_text=overlap_text,
+                               # Changes with the overlaps: the triangle blinks again for new ones.
+                               overlap_key=f"{year}:" + hashlib.sha256(
+                                   overlap_text.encode()).hexdigest()[:16] if overlaps else "",
                                per_page_options=PER_PAGE_OPTIONS,
                                years=years, stats=stats,
                                base_docs=base_docs, map=map_pins(year_row, movements, stats),
@@ -2905,6 +2912,12 @@ def register_routes(app):
     @app.route("/year/<int:year>/movements/new", methods=["GET", "POST"])
     @login_required
     def movement_new(year):
+        if request.method == "POST" and not db.query(
+                "SELECT 1 FROM years WHERE user_id = ? AND year = ?", (current_user.id, year),
+                one=True):
+            # The year was deleted in another tab while this form was open.
+            flash(f"The year {year} no longer exists, so the movement was not saved.", "error")
+            return redirect(url_for("index"))
         year_row = get_year_or_404(year)
         form = request.form if request.method == "POST" else {}
         if request.method == "POST":
@@ -2956,6 +2969,18 @@ def register_routes(app):
     @app.route("/movements/<int:movement_id>", methods=["GET", "POST"])
     @login_required
     def movement_edit(movement_id):
+        if request.method == "POST" and not db.query(
+                "SELECT 1 FROM movements m JOIN years y ON y.id = m.year_id "
+                "WHERE m.id = ? AND y.user_id = ?", (movement_id, current_user.id), one=True):
+            # Deleted in another tab (or with its year) while this page was open: say what
+            # happened instead of a bare "Page not found". Another user's movement is still 404:
+            # this only tells "it is not there", which the 404 says too.
+            action = request.form.get("action")
+            flash({"delete": "This movement was already deleted.",
+                   "upload": UPLOAD_GONE}.get(action, "This movement no longer exists, so the "
+                                                        "changes were not saved."),
+                  "info" if action == "delete" else "error")
+            return redirect(url_for("index"))
         m = get_movement_or_404(movement_id)
         year_row = get_year_or_404(m["year"])
         if request.method == "POST":
@@ -3559,11 +3584,18 @@ def register_routes(app):
     @login_required
     def admin_user(user_id):
         require_admin()
+        state = admin_list_state(request.form)
         row = db.query("SELECT * FROM users WHERE id = ?", (user_id,), one=True)
         if row is None:
-            abort(404)
-        state = admin_list_state(request.form)
+            # Deleted meanwhile (another admin, the cleanup of unconfirmed accounts) while its
+            # page was open: say so and go back to the same list, not to a bare 404.
+            flash("This account no longer exists.", "error")
+            return redirect(admin_url(**state))
         back = admin_account_url(user_id, state)
+
+        def gone():
+            flash(f"The account {row['email']} no longer exists, so nothing was changed.", "error")
+            return redirect(admin_url(**state))
         action = request.form.get("action")
         email = row["email"]
         who = current_user.email
@@ -3576,7 +3608,9 @@ def register_routes(app):
         elif action == "quota":
             raw = request.form.get("quota_mb", "").strip()
             if not raw:
-                db.execute("UPDATE users SET quota_bytes = NULL WHERE id = ?", (user_id,))
+                if not db.execute_rowcount("UPDATE users SET quota_bytes = NULL WHERE id = ?",
+                                           (user_id,)):
+                    return gone()
                 audit("admin_quota", user_id, email, "plan default", who)
                 flash(f"{email} now uses the storage quota of the {plan_named(row['plan'])['name']} "
                       f"plan ({format_size(user_quota(user_id), 'down')}).", "success")
@@ -3591,7 +3625,9 @@ def register_routes(app):
                           "empty for the default.", "error")
                 else:
                     quota = math.ceil(mb * MB)
-                    db.execute("UPDATE users SET quota_bytes = ? WHERE id = ?", (quota, user_id))
+                    if not db.execute_rowcount("UPDATE users SET quota_bytes = ? WHERE id = ?",
+                                               (quota, user_id)):
+                        return gone()
                     audit("admin_quota", user_id, email, format_size(quota, "down"), who)
                     note = (" They already use more than that, so new uploads are blocked until "
                             "they delete receipts.") if storage_used(user_id) > quota else ""
@@ -3602,7 +3638,8 @@ def register_routes(app):
             if key not in PLANS:
                 flash("Choose one of the plans.", "error")
             else:
-                db.execute("UPDATE users SET plan = ? WHERE id = ?", (key, user_id))
+                if not db.execute_rowcount("UPDATE users SET plan = ? WHERE id = ?", (key, user_id)):
+                    return gone()
                 audit("admin_plan", user_id, email, PLANS[key]["name"], who)
                 plan = plan_named(key)
                 if row["quota_bytes"] is not None:
@@ -3619,13 +3656,16 @@ def register_routes(app):
             # Also end every session and remember cookie for good, so enabling the account
             # later does not bring a stolen one back.
             with db.transaction() as conn:  # both or neither: no sessions left on a disabled account
-                conn.execute("UPDATE users SET disabled = 1, session_version = session_version + 1 "
-                             "WHERE id = ?", (user_id,))
+                changed = conn.execute("UPDATE users SET disabled = 1, session_version = "
+                                       "session_version + 1 WHERE id = ?", (user_id,)).rowcount
                 conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
+            if not changed:
+                return gone()
             audit("admin_disable", user_id, email, "", who)
             flash(f"{email} is disabled and signed out everywhere.", "info")
         elif action == "enable":
-            db.execute("UPDATE users SET disabled = 0 WHERE id = ?", (user_id,))
+            if not db.execute_rowcount("UPDATE users SET disabled = 0 WHERE id = ?", (user_id,)):
+                return gone()
             audit("admin_enable", user_id, email, "", who)
             flash(f"{email} can sign in again.", "success")
         elif action == "delete":
@@ -3633,8 +3673,10 @@ def register_routes(app):
                 pass
             elif request.form.get("confirm_email", "").strip().lower() != email:
                 flash("Type the email address to confirm the deletion.", "error")
+            elif not delete_account(user_id):  # another admin was quicker: report it once
+                flash(f"The account {email} was already deleted.", "info")
+                back = admin_url(**state)
             else:
-                delete_account(user_id)
                 audit("admin_delete", user_id, email, "", who)
                 flash(f"The account {email} and all its data were deleted.", "info")
                 back = admin_url(**state)

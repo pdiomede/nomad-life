@@ -270,7 +270,13 @@ class PackagePlanTests(AppTestCase):
         self.assertIn(b"available from the Pro plan", resp.data)
         html = self.client.get("/year/2026").get_data(as_text=True)
         self.assertNotIn('action="/year/2026/package"', html)
-        self.assertIn('href="/plan">Upgrade to Pro</a>', html)
+        # An Upgrade button in the card head, like the Receipt storage card, and no Pro chip.
+        card = html[html.index('id="package-title"'):]
+        card = card[:card.index("</section>")]
+        self.assertIn('href="/plan" aria-label="Upgrade to Pro for the accountant package">Upgrade</a>',
+                      card)
+        self.assertIn("Available from the Pro plan.", card)
+        self.assertNotIn('<span class="tag">Pro</span>', card)
 
     def test_pro_and_nomad_plus_can(self):
         for key in ("pro", "plus"):

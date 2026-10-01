@@ -671,8 +671,15 @@
       try { done = document.execCommand("copy"); } catch (e) { done = false; }
       overlapSay(done ? "Copied" : "Select the text and copy it");
     }
+    // The triangle blinks until the report of these overlaps has been opened once in this
+    // browser (blinking must not go on for good); new or changed overlaps blink again.
+    var seenKey = overlapOpen.getAttribute("data-overlap-key");  // "2027:<hash of the report>"
+    var overlapKey = "nl_overlap_seen_" + seenKey.split(":")[0];  // one memory per year
+    try { if (localStorage.getItem(overlapKey) === seenKey) overlapOpen.classList.add("is-seen"); } catch (e) {}
     overlapOpen.hidden = false;
     overlapOpen.addEventListener("click", function () {
+      overlapOpen.classList.add("is-seen");
+      try { localStorage.setItem(overlapKey, seenKey); } catch (e) {}
       if (typeof overlapDialog.showModal === "function") {
         overlapStatus.textContent = "";
         overlapCopied.textContent = "";

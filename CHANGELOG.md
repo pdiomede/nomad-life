@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.4] - 2026-10-01
+
+### Fixed
+
+The four bugs left from the 1.5.3 review:
+
+- A page left open after its movement or year was deleted (in another tab) showed a bare "Page not found" on **Save changes**, **Upload**, **Delete** or **Add movement**. It now goes back to your dashboard and says what happened: the movement was already deleted, or no longer exists so nothing was saved. Opening such a page is still "not found", and another person's movement gets the very same answer as a missing one.
+- On the admin account page, saving the plan or quota, or disabling or enabling an account that another admin (or the cleanup of unconfirmed accounts) had just deleted, showed a bare "Page not found", or even reported success. It now says the account no longer exists and returns to the same list. Two admins deleting the same account at once no longer both read "deleted" (with the deletion recorded twice): the second one is told it was already deleted.
+- The red overlap triangle blinked for good, which is hard on people sensitive to motion. It blinks until you open its report, then stays red; overlaps that change make it blink again. This is remembered per year in your browser.
+- On phones the plan price form split "Yearly $" from its field. Each label now stays with its field.
+- The tooltip of the overlap triangle faded in and out with the blinking, so it could hardly be read. Only the icon blinks now.
+
+### Changed
+
+- The Accountant package card on the Free plan has an **Upgrade** button in its head, like the Receipt storage card, instead of the Pro chip and the wide "Upgrade to Pro" button.
+
 ## [1.5.3] - 2026-10-01
 
 ### Changed
