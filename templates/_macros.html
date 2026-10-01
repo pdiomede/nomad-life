@@ -15,7 +15,7 @@
 {% macro size_attrs() %}data-max-bytes="{{ max_receipt_bytes }}" data-max-label="{{ max_receipt_label }}" data-left-bytes="{{ storage.left }}" data-left-label="{{ storage.left | filesize('down') }}"{% endmacro %}
 
 {% macro upload_form(default_kind, uid) %}
-<form class="upload" method="post" enctype="multipart/form-data">
+<form class="upload" method="post" enctype="multipart/form-data" data-submit-once>
   {{ csrf() }}
   <input type="hidden" name="action" value="upload">
   <div class="field">

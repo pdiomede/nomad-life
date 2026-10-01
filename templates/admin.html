@@ -31,6 +31,7 @@
       </div>
       <form method="post" action="{{ url_for('admin_plan_price', key=p.key) }}" class="admin-actions admin-price">
         {{ ui.csrf() }}
+        {{ hidden(()) }}
         <label for="month-{{ p.key }}" class="small">Monthly $</label>
         <input id="month-{{ p.key }}" name="month" inputmode="decimal" value="{{ p.price if p.custom_price else '' }}" placeholder="{{ p.default_price }}">
         <label for="year-{{ p.key }}" class="small">Yearly $</label>
@@ -143,13 +144,13 @@
     <p class="muted small">Sign ins, account changes and admin actions, kept for {{ audit_days }} days.</p>
   </div>
   <form method="get" action="{{ url_for('admin') }}#activity" class="support-filters">
-    <div class="field grow">
-      <label for="activity-q">Account email</label>
-      <input id="activity-q" name="q" type="search" value="{{ state.q }}" placeholder="All accounts" maxlength="254" autocomplete="off">
+    <div class="field grow admin-search">
+      <label for="activity-q">Search activity</label>
+      <input id="activity-q" name="q" type="search" value="{{ state.q }}" placeholder="Email or IP" maxlength="254" autocomplete="off">
     </div>
     {{ hidden(('q', 'apage')) }}
     <div class="support-filter-actions">
-      <button class="btn btn-primary btn-sm" type="submit">Filter</button>
+      <button class="btn btn-primary btn-sm" type="submit">Search</button>
       {% if state.q %}<a class="btn btn-ghost btn-sm" href="{{ admin_url(**dict(state, q='', apage=1)) }}#activity">Clear</a>{% endif %}
     </div>
   </form>

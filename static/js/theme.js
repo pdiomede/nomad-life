@@ -38,6 +38,7 @@
   document.addEventListener("submit", function (event) {
     var form = event.target;
     if (!form.hasAttribute || !form.hasAttribute("data-submit-once")) return;
+    if (event.defaultPrevented) return;  // another check stopped this submit: allow the next
     if (form.getAttribute("data-sent")) {
       event.preventDefault();
       return;
@@ -293,13 +294,14 @@
       empty.textContent = items.length ? "" : noMatch;
       input.setAttribute("aria-expanded", items.length ? "true" : "false");
       active = -1;
-      if (items.length) setActive(Math.max(highlight, 0));
+      if (items.length && highlight >= 0) setActive(highlight);
     };
     var open = function (filter) {
       var current = exact[fold(input.value)];
       if (!filter || current) {
-        // Opening on a chosen country shows the whole list with that country highlighted.
-        render(entries, current ? entries.indexOf(current) : 0);
+        // Opening on a chosen country shows the whole list with that country highlighted;
+        // otherwise nothing is, so Enter still submits a free text place as typed.
+        render(entries, current ? entries.indexOf(current) : -1);
       } else {
         render(search(input.value), 0);
       }

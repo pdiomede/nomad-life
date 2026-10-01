@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.3] - 2026-10-01
+
+### Changed
+
+- The admin **Security activity** search works like the Users search: half as wide, a **Search** button and **Clear**, at the same place and height. It is a real search now: an account's email shows that account's history, anything else finds events by part of an email or an IP (`corp.com`, `72.145.`).
+
+### Fixed
+
+Admin page:
+
+- An account's history showed the events of another account that had used its address before (a sign up with an address freed by an email change): that account's sign ins and password changes appeared on the new owner's page and in its full history.
+- Clicking an IP on an account page also listed accounts from other IPs that merely contained it (10.0.0.1 found 10.0.0.15 and 110.0.0.1). A whole IP now finds only itself; part of one still finds the network.
+- Saving the plan prices dropped the search, sort, filter and page of both tables, and jumped to the Plans section, scrolling its own message ("Pro now costs ...", or the error) out of view.
+- Typing the default prices of a plan saved them as a custom price ("Custom price" next to identical defaults, and later changes of the defaults never reached the plan), and leaving both fields empty on a plan without a custom price still said it went back to its defaults and recorded it. Default prices typed in now remove the custom price, and an empty save that changes nothing says so.
+- The quota field showed a rounded number (1.25 MB as "1.2"), so saving the account's form again quietly lowered its quota. Quotas are kept and shown to two decimals.
+- In the dark theme the count on **Suspected fake** could not be read once that filter was selected.
+
+Movement pages:
+
+- A double click on **Add movement** saved the movement twice (a copy counting 0 days, which also set off the overlap alert), and **Upload** stored a receipt twice against the storage. The forms are sent once, and a movement with the same place and dates as one already in the year is not saved again: its page opens instead.
+- A city or country made only of invisible characters was accepted, leaving an empty link in the Movements table, and Persian or Sinhala place names lost their zero width joiners (misspelling them). Places are now cleaned like names.
+- Clicking into a country field holding free text (or nothing) opened the list with its first country highlighted, so Enter replaced the place with "Afghanistan" instead of saving it as typed. Nothing is highlighted until you type or use the arrow keys.
+- The overlap report said a stay "counts 4 of its 5 days" in a pair where it lost nothing: the day went to a third stay as a travel day. Only a stay that gives up some of the pair's shared days is named.
+
 ## [1.5.2] - 2026-10-01
 
 ### Added

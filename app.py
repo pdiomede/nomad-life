@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import io
+import ipaddress
 import json
 import math
 import mimetypes
@@ -42,7 +43,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.5.2"
+APP_VERSION = "1.5.3"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -223,10 +224,15 @@ def _abs(path):
 
 
 def clean_place(value):
-    """A city or country as typed, with spaces collapsed and control or invisible format
-    characters (such as U+202E, which reverses how text is shown) removed."""
-    value = "".join(ch for ch in value or "" if unicodedata.category(ch)[0] != "C" or ch.isspace())
-    return " ".join(value.split())
+    """A city or country as typed: composed (NFC), spaces collapsed, control and invisible
+    format characters (such as U+202E, which reverses how text is shown) and blank letters
+    removed, but the zero width joiners kept (Persian and Sinhala names need them). "" when
+    nothing visible is left, so a place made of invisible characters counts as missing."""
+    value = unicodedata.normalize("NFC", value or "")
+    value = "".join(ch for ch in value if ch not in BLANK_LETTERS
+                    and (unicodedata.category(ch)[0] != "C" or ch.isspace() or ch in JOINERS))
+    value = " ".join(value.split())
+    return value if visible(value) else ""
 
 
 # Characters that draw nothing although they count as letters, so a "name" made of them would
@@ -805,6 +811,14 @@ FAKE_USER_WHERE = (
     "AND NOT EXISTS (SELECT 1 FROM years y WHERE y.user_id = u.id) "
     "AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.user_id = u.id) "
     "AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.user_id = u.id)")
+
+
+def quota_mb_text(quota_bytes):
+    """A custom quota in MB for the admin form, to two decimals as it was typed (1.25, 1.04,
+    500): saving the form unchanged keeps the same quota."""
+    if quota_bytes is None:
+        return ""
+    return f"{quota_bytes / MB:.2f}".rstrip("0").rstrip(".")
 
 
 def fake_user_sql(admins, min_age_hours=FAKE_MIN_AGE_HOURS):
@@ -2137,7 +2151,9 @@ def overlap_report(year, pairs, movements, counted, total=None):
         else:
             goes = "They count for " + " and ".join(
                 f"{place(by_id[mid])} ({plural(days, 'day')})" for mid, days in owners)
-        losers = [m for m in (a, b) if counted.get(m["id"], 0) < stay_length(m)]
+        # Only a stay that gives up some of this pair's shared days lost them here (a travel day
+        # it hands to a third stay is not this pair's doing).
+        losers = [m for m in (a, b) if p["owners"].get(m["id"], 0) < p["days"]]
         if losers:
             goes += ", so " + " and ".join(
                 f"{place(m)} counts {counted.get(m['id'], 0)} of its {stay_length(m)} days"
@@ -2893,15 +2909,22 @@ def register_routes(app):
         form = request.form if request.method == "POST" else {}
         if request.method == "POST":
             data, err = validate_movement(request.form, year)
-            mid = None
+            mid = duplicate = None
             if not err:
                 try:
                     # Count and insert under one write lock, so parallel posts cannot pass the
-                    # limit together.
+                    # limit together, nor a form sent twice (a double click) save two copies.
                     with db.transaction() as conn:
+                        duplicate = conn.execute(
+                            "SELECT id FROM movements WHERE year_id = ? AND city = ? AND "
+                            "country = ? AND start_date = ? AND end_date = ? ORDER BY id LIMIT 1",
+                            (year_row["id"], data["city"], data["country"], data["start_date"],
+                             data["end_date"])).fetchone()
                         count = conn.execute("SELECT COUNT(*) FROM movements WHERE year_id = ?",
                                              (year_row["id"],)).fetchone()[0]
-                        if count >= MOVEMENTS_MAX:
+                        if duplicate:
+                            pass
+                        elif count >= MOVEMENTS_MAX:
                             err = f"A year can hold at most {MOVEMENTS_MAX} movements."
                         else:
                             mid = conn.execute(
@@ -2915,6 +2938,11 @@ def register_routes(app):
                     return redirect(url_for("index"))
             if err:
                 flash(err, "error")
+            elif duplicate:
+                # The same place and dates are already saved (the form sent twice, or typed
+                # again): a second copy would only count 0 days and trigger the overlap alert.
+                flash(f"This movement to {data['city']} is already saved.", "info")
+                return redirect(url_for("movement_edit", movement_id=duplicate["id"]))
             else:
                 err = save_upload(request.files.get("file"), request.form.get("kind"),
                                   year_row["id"], mid, required=False)
@@ -3358,18 +3386,28 @@ def register_routes(app):
                      plan_key=u["plan"] if u["plan"] in plans else "free",
                      quota=u["quota_bytes"] if u["quota_bytes"] is not None
                      else plans.get(u["plan"], plans["free"])["quota_bytes"],
-                     quota_mb=f"{u['quota_bytes'] / MB:.1f}".removesuffix(".0")
+                     quota_mb=quota_mb_text(u["quota_bytes"])
                      if u["quota_bytes"] is not None else "",
                      is_admin=u["email"] in app.config["ADMIN_EMAILS"], full_name=full_name(u),
                      fake_reason=fake_reason(u["created_at"], u["confirmed_at"])
                      if u["suspect"] else "")
                 for u in rows]
 
-    def activity_where(email):
-        """Events of an account (or all, for an empty email): its whole history, also from
-        before an email change, and what it did as an admin."""
-        return ("(? = '' OR a.email = ? OR a.actor = ? OR a.user_id = "
-                "(SELECT id FROM users WHERE email = ?))", (email,) * 4)
+    def activity_where(q):
+        """The Security activity filter. An account's email: that account's whole history
+        (by its id, so also from before an email change), events under that address that no
+        other live account owns, and what it did as an admin. Anything else: a search in the
+        event's email, actor and IP. Empty: every event."""
+        if not q:
+            return "1 = 1", ()
+        owner = db.query("SELECT id FROM users WHERE email = ?", (q,), one=True)
+        if owner:
+            return ("(a.user_id = ? OR a.actor = ? OR (a.email = ? AND NOT EXISTS ("
+                    "SELECT 1 FROM users o WHERE o.id = a.user_id AND o.id != ?)))",
+                    (owner["id"], q, q, owner["id"]))
+        like = db.search_like(q)
+        return ("(casefold(a.email) LIKE ? ESCAPE '\\' OR casefold(a.actor) LIKE ? ESCAPE '\\' "
+                "OR a.ip LIKE ? ESCAPE '\\')", (like, like, like))
 
     def account_activity(email, limit):
         where, params = activity_where(email)
@@ -3403,10 +3441,21 @@ def register_routes(app):
         if state["search"]:
             # casefold (registered in db.get_db) folds every script and composes accents.
             # Part of an IP finds every account that signed up or last signed in from it.
-            where = ("(casefold(u.email) LIKE ? ESCAPE '\\' OR casefold(u.first_name || ' ' "
-                     "|| u.last_name) LIKE ? ESCAPE '\\' OR u.signup_ip LIKE ? ESCAPE '\\' "
-                     "OR u.last_login_ip LIKE ? ESCAPE '\\')")
-            params = [db.search_like(state["search"])] * 4
+            like = db.search_like(state["search"])
+            try:  # a whole IP address (the account page links to it) matches only itself
+                ip = ipaddress.ip_address(state["search"])
+            except ValueError:
+                ip = None
+            if ip is not None:
+                where = ("(casefold(u.email) LIKE ? ESCAPE '\\' OR casefold(u.first_name || ' ' "
+                         "|| u.last_name) LIKE ? ESCAPE '\\' OR u.signup_ip IN (?, ?) "
+                         "OR u.last_login_ip IN (?, ?))")
+                params = [like, like] + [state["search"], str(ip)] * 2
+            else:
+                where = ("(casefold(u.email) LIKE ? ESCAPE '\\' OR casefold(u.first_name || ' ' "
+                         "|| u.last_name) LIKE ? ESCAPE '\\' OR u.signup_ip LIKE ? ESCAPE '\\' "
+                         "OR u.last_login_ip LIKE ? ESCAPE '\\')")
+                params = [like] * 4
         fake_sql, fake_params = fake_user_sql(app.config["ADMIN_EMAILS"])
         if state["fake"]:
             where = f"{where} AND {'NOT ' if state['fake'] == 'hide' else ''}{fake_sql}"
@@ -3473,16 +3522,23 @@ def register_routes(app):
         if key not in PLANS or key == "free":
             abort(404)
         name = PLANS[key]["name"]
-        back = url_for("admin") + "#plans"
+        p = PLANS[key]
+        # Back to the same view of both tables, without an anchor: the message at the top of
+        # the page stays in view.
+        back = admin_url(**admin_list_state(request.form))
         raw_month, raw_year = request.form.get("month", "").strip(), request.form.get("year", "").strip()
-        if not raw_month and not raw_year:
-            db.execute("DELETE FROM plan_prices WHERE plan = ?", (key,))
-            p = PLANS[key]
-            audit("admin_price", None, "", f"{name}: default prices", current_user.email)
-            flash(f"{name} is back to its default prices (${money(p['price_cents'])} / month, "
-                  f"${money(p['year_cents'])} / year).", "success")
-            return redirect(back)
         month, year = parse_price(raw_month), parse_price(raw_year)
+        # Both empty, or both equal to the defaults: no custom price is kept, so the plan
+        # follows the defaults in PLANS from now on.
+        if (not raw_month and not raw_year) or (month, year) == (p["price_cents"], p["year_cents"]):
+            if db.execute_rowcount("DELETE FROM plan_prices WHERE plan = ?", (key,)):
+                audit("admin_price", None, "", f"{name}: default prices", current_user.email)
+                flash(f"{name} is back to its default prices (${money(p['price_cents'])} / "
+                      f"month, ${money(p['year_cents'])} / year).", "success")
+            else:
+                flash(f"{name} already uses its default prices (${money(p['price_cents'])} / "
+                      f"month, ${money(p['year_cents'])} / year).", "info")
+            return redirect(back)
         if not month or not year or month > MAX_PRICE_CENTS or year > MAX_PRICE_CENTS:
             flash(f"Enter both prices for {name} as amounts in dollars, for example 4 or 4.50 "
                   "(up to 10000), or leave both empty for the default.", "error")
@@ -3529,6 +3585,7 @@ def register_routes(app):
                     mb = float(raw)
                 except ValueError:
                     mb = -1
+                mb = round(mb, 2)  # what the field shows again, so saving it again changes nothing
                 if not 1 <= mb <= MAX_QUOTA_MB:
                     flash(f"Enter a storage quota between 1 and {MAX_QUOTA_MB} MB, or leave it "
                           "empty for the default.", "error")

@@ -94,3 +94,16 @@ class SmallLayoutTests(AppTestCase):
         self.assertIn(".support-filters .admin-search { flex: 0 1 50%; }", css)
         self.assertIn(".support-filter-actions { display: flex; align-items: center; gap: 8px; "
                       "min-height: calc(1.5em + 20px); }", css)
+
+    def test_security_activity_filter_is_half_as_wide_too(self):
+        self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
+        self.app.config["ADMIN_REQUIRE_2FA"] = False
+        self.signup("admin@example.com")
+        html = self.client.get("/admin").get_data(as_text=True)
+        activity = html.split('id="activity"', 1)[1]
+        self.assertIn('<div class="field grow admin-search">\n      <label for="activity-q">Search activity</label>', activity)
+        # Like the accounts search: a Search button, and Clear once something is searched.
+        self.assertIn('type="submit">Search</button>', activity)
+        self.assertNotIn(">Clear</a>", activity)
+        activity = self.client.get("/admin?q=admin@example.com").get_data(as_text=True).split('id="activity"', 1)[1]
+        self.assertIn('href="/admin#activity">Clear</a>', activity)

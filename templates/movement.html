@@ -13,7 +13,7 @@
 
   <section class="card">
     <div class="card-head"><h2>Details</h2></div>
-    <form method="post" class="stack" enctype="multipart/form-data">
+    <form method="post" class="stack" enctype="multipart/form-data" data-submit-once>
       {{ ui.csrf() }}
       <input type="hidden" name="action" value="update">
       <div class="grid-2">

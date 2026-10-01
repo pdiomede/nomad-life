@@ -771,7 +771,7 @@ main:focus { outline: none; }
 .support-filters .field { min-width: 130px; }
 .support-filters .grow { flex: 1 1 200px; }
 .support-filter-actions { display: flex; align-items: center; gap: 8px; min-height: calc(1.5em + 20px); }  /* the height of a text field, so the buttons sit centered on it */
-.support-filters .admin-search { flex: 0 1 50%; }  /* the accounts search: half the card is plenty */
+.support-filters .admin-search { flex: 0 1 50%; }  /* admin searches: half the card is plenty */
 @media (max-width: 600px) { .support-filters .admin-search { flex: 1 1 200px; } }
 .support-table td { vertical-align: top; overflow-wrap: break-word; }
 /* Subject and user keep a readable width; on phones the table scrolls inside its card. */
@@ -958,6 +958,8 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .admin-filter a:hover { text-decoration: none; background: var(--surface-2); }
 .admin-filter a:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 .admin-filter a[aria-current] { background: var(--primary); color: var(--primary-text); }
+/* On the selected button (light in the dark theme) the translucent badge colors are unreadable. */
+.admin-filter a[aria-current] .admin-filter-count { background: var(--error-text); color: var(--primary-text); }
 @media (max-width: 600px) {
   /* Three equal buttons across the card; a long label wraps inside its own button. */
   .admin-filter { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
