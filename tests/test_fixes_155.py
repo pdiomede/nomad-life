@@ -184,7 +184,7 @@ class SignInFixTests(AppTestCase):
         self.age_emails()
         resp = self.client.post("/forgot", data={"email": "a@example.com"})
         self.assertEqual(resp.status_code, 302)
-        # Since 1.5.7 the email is made once the answer is sent, which the server marks by
+        # Since 1.5.8 the email is made once the answer is sent, which the server marks by
         # closing the response (the test client leaves that to the caller).
         self.assertFalse(started.wait(0.2))
         resp.close()

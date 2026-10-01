@@ -394,6 +394,8 @@ A server set up from an older copy of this guide lacks `--graceful-timeout 120` 
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
 
+- **1.5.8** adds the `email_changes` table on start (numbered email changes, so an **Undo this change** link keeps working when the address is changed again). Nothing to run. Undo links sent before the upgrade keep the old rule: they work only while the account still uses the new address.
+
 - **1.5.7** adds gzip for the styles, scripts and map to the nginx server block (section 7): add the `gzip` lines to an existing server, then `sudo nginx -t && sudo systemctl reload nginx`. Optional, but a first visit then downloads about 65 KB of them instead of 214 KB.
 
 - **1.5.6** switches the database to write-ahead logging on the first start (readers and writers stop waiting for each other); `nomad.db-wal` and `nomad.db-shm` appear next to `nomad.db`, private like it. Nothing to run: the nightly `scripts/backup.py` and the restic command stay as they are. Only restoring changes: delete those two files first (section 12). It also adds an index to the security history, built on start in well under a second.
