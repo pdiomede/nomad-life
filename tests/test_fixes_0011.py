@@ -27,7 +27,9 @@ class WordingTests(AppTestCase):
             "city": "Paris", "country": "France", "start_date": "2025-01-01",
             "end_date": "2025-01-05"}, follow_redirects=True)
         html = resp.data.decode()
-        self.assertIn("on the same start day, the shorter stay", html)
+        self.assertIn("This stay shares days with Madrid (5 days). Each shared day counts once, "
+                      "for the stay that started later (starting the same day: the shorter one; "
+                      "same dates: the newest).", html)
         dash = self.client.get("/year/2025").data.decode()
         self.assertIn('title="A day shared with another stay counts toward the stay that started '
                       'later (on the same start day, the shorter stay', dash)

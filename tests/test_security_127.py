@@ -57,7 +57,7 @@ class SignupTests(AppTestCase):
         self.assertNotIn("Another account", html)
         self.assertIn("We sent a confirmation link to b@example.com", html)
         link = self.last_link("b@example.com", kind="account/email")
-        html = self.client.get(link, follow_redirects=True).get_data(as_text=True)
+        html = self.client.post(link, follow_redirects=True).get_data(as_text=True)
         self.assertIn("Another account started using this email address", html)
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT email FROM users WHERE id = 2").fetchone()[0],

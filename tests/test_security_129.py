@@ -206,7 +206,7 @@ class AlertTests(AppTestCase):
     def test_email_change_alerts_the_old_address(self):
         self.client.post("/settings", data={"action": "email", "email": "new@example.com",
                                            "current_password": "password1"})
-        self.client.get(self.last_link("new@example.com", kind="account/email"))
+        self.client.post(self.last_link("new@example.com", kind="account/email"))
         alerts = self.alerts("a@example.com")
         self.assertEqual(len(alerts), 1)
         self.assertIn("changed from a@example.com to new@example.com", alerts[0]["text"])

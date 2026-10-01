@@ -111,7 +111,7 @@ class NameUsageTests(AppTestCase):
         self.assertEqual(mail["to"], "new@example.com")
         self.assertTrue(mail["text"].startswith("Hi,"))
         self.assertNotIn("Call support", mail["text"] + mail["html"])
-        self.client.get(self.last_link("new@example.com", kind="account/email"))
+        self.client.post(self.last_link("new@example.com", kind="account/email"))
         alert = self.outbox[-1]
         self.assertEqual(alert["to"], "a@example.com")
         self.assertIn("Security alert", alert["subject"])

@@ -172,8 +172,7 @@ class DayMathTests(AppTestCase):
         with mock.patch.object(appmod, "assign_days", wraps=appmod.assign_days) as spy:
             html = self.client.get("/year/2027").get_data(as_text=True)
         self.assertEqual(spy.call_count, 1)  # compute_stats; the overlap alert reuses it
-        self.assertIn("They count for Sidney, Australia, so Vienna, Austria counts 7 of its "
-                      "10 days.", html)
+        self.assertIn("Vienna, Austria counts 7 of its 10 days.", html)
 
     def test_day_owner_is_the_assignment(self):
         ms = [{"id": 1, "city": "A", "country": "Spain", "start_date": "2027-02-01",

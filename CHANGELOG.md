@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The overlap report on the dashboard is easier to read: each overlap on a few short lines (the two stays, the shared days and where they count, which stay loses days), then the counting rule in three short points, in the page's font instead of a typewriter font.
+- The message after saving an overlapping stay is shorter: "This stay shares days with Tirana (3 days) and Kabul (3 days). Each shared day counts once, for the stay that started later. If you were not in both places, check the dates." The rule for stays starting the same day is added only when it applies.
 - The day counts of a year are worked out 2 to 3 times faster: a year of 1,000 movements takes 9 ms instead of 25 ms, and the worst case (1,000 stays all overlapping) 200 ms instead of 311 ms. Each stored date is read once instead of at every use, and the dashboard works out who gets each day once, for the day counts and the overlap alert together.
 - `setup_vps.md` has a new section, **12. Restoring a backup**, step by step: stop the app, keep the current data aside, delete `nomad.db-wal` and `nomad.db-shm`, choose an archive (also from the off-site copy), unpack it, get the receipts back if needed, check the database with `PRAGMA integrity_check`, start and check the app. It also says who stays signed in, that `config.env` is not in the archive, and what happens to receipts uploaded or deleted after the backup. The sections after it moved down by one (Upgrading is now 14).
 
@@ -14,6 +16,27 @@ All notable changes to this project are documented in this file.
 Found in the review of this release:
 
 - Remembering dates would also have kept the text of any date field sent to the server, up to 4,096 of them: someone sending huge "dates" again and again could have filled the server's memory. Only text of a date's length is remembered.
+
+Security:
+
+- Undoing an email change from the old address left the password as it was, so whoever had made the change (they knew the password) could sign in again at once and change it. Undoing now also makes the old password useless: only the link it emails can set a new one.
+- Opening the email change link was enough to change the address, so a company mail scanner checking a mistyped mailbox could confirm it, and that mailbox could then take the account with Forgot password. The link now opens a page with a **Confirm my new email** button, as the sign up confirmation does since 1.4.0.
+- A password change in Settings that was still running when the owner reset the password by email overwrote the reset: the owner's new password stopped working. Turning on two-factor sign in at that moment likewise stored the other person's code. Both now save only if the password is still the one they checked.
+
+Things deleted or changed while a page was open, or during a request:
+
+- An admin answer on a support ticket whose account was deleted meanwhile showed a server error, or "Page not found" with the answer lost; closing or reopening it said it was already closed or open. It now says the ticket no longer exists and goes back to the list.
+- Signing in to an account deleted during the password check (the fake account cleanup removes exactly accounts that never signed in) showed a server error. Settings actions and support messages of an account deleted meanwhile did too. They now answer normally.
+- Confirming an account that was removed meanwhile (its 20 minutes ran out) said it was confirmed and recorded it.
+- Saving the base location of a year deleted meanwhile said "Base location updated." on a page that no longer existed.
+- Creating a year twice (a double click) said "You already have a workspace" although the first click created it. It opens the year instead, and the form is sent once.
+
+Other:
+
+- Opening a confirmation link again later said the account was removed and to sign up again, while the account existed and was confirmed. It now says it is already confirmed; an email change link opened again likewise.
+- A long email address made the confirmation pages and Settings wider than a phone screen.
+- Renaming a receipt to a name ending in a dot saved "Hotel..pdf".
+- In the dark theme, the "today" line of the diagram on the documentation page was too faint.
 
 ## [1.5.6] - 2026-10-01
 

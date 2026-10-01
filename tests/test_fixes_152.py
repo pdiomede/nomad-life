@@ -68,8 +68,8 @@ class SaveWarningTests(AppTestCase):
         for i in range(8):
             self.add(f"Stay{i}", "2027-06-01", "2027-06-10")
         html = self.add("Last", "2027-06-05", "2027-06-05", follow=True).get_data(as_text=True)
-        self.assertIn("This stay overlaps Stay0 (2027-06-01 to 2027-06-10, 1 shared day); ", html)
-        self.assertIn("; 3 more. A shared day counts", html)
+        self.assertIn("This stay shares days with Stay0 (1 day), Stay1 (1 day), ", html)
+        self.assertIn("Stay4 (1 day) and 3 more. Each shared day counts once", html)
         self.assertNotIn("Stay5 (", html)
         # The session cookie stays small, so nobody is signed out by a long message.
         self.assertIn("/year/2027", self.client.get("/app").headers["Location"])

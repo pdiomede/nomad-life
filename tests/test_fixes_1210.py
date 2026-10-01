@@ -150,7 +150,7 @@ class AlertFixTests(AppTestCase):
         self.age_emails()
         self.client.post("/settings", data={"action": "email", "email": "thief@example.com",
                                            "current_password": "password1"})
-        self.client.get(self.last_link("thief@example.com", kind="account/email"))
+        self.client.post(self.last_link("thief@example.com", kind="account/email"))
         alert = self.outbox[-1]
         self.assertEqual(alert["to"], "a@example.com")
         self.assertIn("Account: thief@example.com", alert["text"])
@@ -219,7 +219,7 @@ class ReviewTwoTests(AppTestCase):
         self.age_emails()
         self.client.post("/settings", data={"action": "email", "email": "new@example.com",
                                            "current_password": "password1"})
-        self.client.get(self.last_link("new@example.com", kind="account/email"))
+        self.client.post(self.last_link("new@example.com", kind="account/email"))
         admin = self.signup("admin@example.com", client=self.app.test_client())
         html = admin.get("/admin?q=new@example.com").get_data(as_text=True)
         listed = html.split('id="activity"', 1)[1]

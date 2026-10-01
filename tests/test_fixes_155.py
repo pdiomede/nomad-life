@@ -148,7 +148,7 @@ class PendingEmailTests(AppTestCase):
         # The link carries the old password, so it cannot work: Settings no longer waits for it.
         self.assertNotIn("Waiting for confirmation",
                          self.client.get("/settings").get_data(as_text=True))
-        html = self.client.get(link, follow_redirects=True).get_data(as_text=True)
+        html = self.client.post(link, follow_redirects=True).get_data(as_text=True)
         self.assertIn("This link is no longer valid", html)
 
 
@@ -216,7 +216,7 @@ class EmailChangeFixTests(AppTestCase):
         with self.db() as conn:  # blocked by an admin before it was confirmed
             conn.execute("INSERT INTO users (email, password_hash, disabled) "
                          "VALUES ('bad@example.com', 'x', 1)")
-        html = self.client.get(self.change_email("bad@example.com"),
+        html = self.client.post(self.change_email("bad@example.com"),
                                follow_redirects=True).get_data(as_text=True)
         self.assertIn("Another account started using this email address", html)
         with self.db() as conn:
@@ -226,7 +226,7 @@ class EmailChangeFixTests(AppTestCase):
 
     def test_undo_link_leaves_another_signed_in_account_alone(self):
         self.signup()
-        self.client.get(self.change_email("thief@example.com"))
+        self.client.post(self.change_email("thief@example.com"))
         undo = self.last_link("a@example.com", kind="account/email/undo")
         other = self.signup("b@example.com", client=self.app.test_client())
         html = other.post(undo, follow_redirects=True).get_data(as_text=True)
@@ -235,7 +235,7 @@ class EmailChangeFixTests(AppTestCase):
 
     def test_undo_says_when_the_password_link_could_not_be_sent(self):
         self.signup()
-        self.client.get(self.change_email("thief@example.com"))
+        self.client.post(self.change_email("thief@example.com"))
         undo = self.last_link("a@example.com", kind="account/email/undo")
         self.send_email.side_effect = lambda *a, **k: False
         html = self.app.test_client().post(undo, follow_redirects=True).get_data(as_text=True)

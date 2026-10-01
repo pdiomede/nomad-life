@@ -203,7 +203,7 @@ p { margin: 0; }
 }
 .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
-.page-head .muted { margin-top: 6px; max-width: 560px; }
+.page-head .muted { margin-top: 6px; max-width: 560px; overflow-wrap: anywhere; }  /* long email addresses */
 .page-head .muted.wide { max-width: none; }  /* one line on wider screens */
 
 /* Buttons */
@@ -272,7 +272,7 @@ main:focus { outline: none; }
 .auth-card { width: 100%; max-width: 420px; padding: 28px; }
 .auth-head { text-align: center; margin-bottom: 22px; }
 .auth-head h1 { font-size: 24px; margin-top: 14px; }
-.auth-head p { margin-top: 6px; }
+.auth-head p { margin-top: 6px; overflow-wrap: anywhere; }  /* long email addresses */
 
 /* Year tabs */
 .year-tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px; flex-wrap: wrap; }
@@ -916,9 +916,9 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .tl-stay { fill: var(--info-bg); stroke: var(--map-pin); stroke-width: 1.5; }
 .tl-bar-label { font-size: 12px; font-weight: 600; fill: var(--text); }
 .tl-mark { stroke: var(--text); stroke-width: 2; }
-.tl-today { stroke: var(--danger); stroke-width: 2; stroke-dasharray: 3 3; }
+.tl-today { stroke: var(--error-text); stroke-width: 2; stroke-dasharray: 3 3; }
 .tl-note { font-size: 12px; fill: var(--muted); }
-.tl-today-label { fill: var(--danger); font-weight: 600; }
+.tl-today-label { fill: var(--error-text); font-weight: 600; }
 .tl-legend text { font-size: 12px; fill: var(--text); }
 .doc-tree { margin: 0; padding: 14px 16px; overflow-x: auto; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); }
 .doc-tree-dir { color: var(--link); font-weight: 600; }
@@ -1000,7 +1000,7 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .overlap-dialog[open] { display: flex; flex-direction: column; }
 .overlap-dialog::backdrop { background: rgba(15, 18, 30, 0.55); }
 .overlap-dialog h2 { font-size: 20px; margin: 0 0 12px; overflow-wrap: anywhere; }
-.overlap-report { flex: 1 1 auto; min-height: 0; margin: 0; padding: 12px 14px; overflow: auto; max-height: 55vh; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); }
+.overlap-report { flex: 1 1 auto; min-height: 0; margin: 0; padding: 12px 14px; overflow: auto; max-height: 55vh; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; line-height: 1.6; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); }
 .overlap-report:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .overlap-copied { margin-right: auto; align-self: center; color: var(--success-text); font-weight: 600; }
 @media (max-width: 600px) { .overlap-dialog { padding: 18px; } }

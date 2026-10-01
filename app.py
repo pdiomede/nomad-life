@@ -1127,10 +1127,22 @@ def end_other_sessions(user_id, keep_sid):
 
 def stay_signed_in_here(user_id):
     """After a change that ends the other sessions (new password, new session version): keep
-    this browser signed in, with the same session row, and forget every other one."""
+    this browser signed in, with the same session row, and forget every other one. False (and
+    signed out) when the account was deleted meanwhile."""
     remember = session.get("nl_remember", False)
     row = db.query("SELECT * FROM users WHERE id = ?", (user_id,), one=True)
+    if row is None:
+        sign_out()
+        return False
     end_other_sessions(user_id, sign_in_user(row, remember, keep_current=True))
+    return True
+
+
+def account_gone():
+    """The signed in account was deleted while this request ran: sign in again (it fails)."""
+    sign_out()
+    flash("This account no longer exists.", "error")
+    return redirect(url_for("login"))
 
 
 def sign_out():
@@ -1463,6 +1475,16 @@ def minutes_left(row):
 def email_link(endpoint, **values):
     from flask import current_app
     return current_app.config["APP_BASE_URL"].rstrip("/") + url_for(endpoint, **values)
+
+
+def expired_payload(ser, exc):
+    """What an expired (but genuine) link carried, as a dict ({} when unreadable): to tell a link
+    that already did its job from one that came too late."""
+    try:
+        data = ser.load_payload(exc.payload)
+    except Exception:  # noqa: BLE001 - any unreadable payload is simply unknown
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def send_template_email(to, subject, name, *, background=False, on_failure=None, **context):
@@ -2207,32 +2229,30 @@ def overlap_report(year, pairs, movements, counted, total=None):
     def span(m):
         return f"{m['start_date']} to {m['end_date']}"
 
-    lines = [f"Overlapping movements in {year} ({total})", ""]
+    lines = [f"Overlapping movements in {year} ({total})"]
     for n, p in enumerate(pairs, 1):
         a, b = p["a"], p["b"]
         shared = (p["first"].isoformat() if p["days"] == 1
                   else f"{p['first'].isoformat()} to {p['last'].isoformat()}")
         owners = sorted(p["owners"].items(), key=lambda kv: (-kv[1], kv[0]))
         if len(owners) == 1:
-            goes = f"They count for {place(by_id[owners[0][0]])}"
+            goes = place(by_id[owners[0][0]])
         else:
-            goes = "They count for " + " and ".join(
-                f"{place(by_id[mid])} ({plural(days, 'day')})" for mid, days in owners)
+            goes = " and ".join(f"{place(by_id[mid])} ({plural(days, 'day')})"
+                                for mid, days in owners)
+        lines += ["", f"{n}. {place(a)}, {span(a)}", f"   and {place(b)}, {span(b)}",
+                  f"   Shared: {plural(p['days'], 'day')} ({shared}), counted for {goes}."]
         # Only a stay that gives up some of this pair's shared days lost them here (a travel day
         # it hands to a third stay is not this pair's doing).
-        losers = [m for m in (a, b) if p["owners"].get(m["id"], 0) < p["days"]]
-        if losers:
-            goes += ", so " + " and ".join(
-                f"{place(m)} counts {counted.get(m['id'], 0)} of its {stay_length(m)} days"
-                for m in losers)
-        lines.append(f"{n}. {place(a)} ({span(a)}) and {place(b)} ({span(b)}) share "
-                     f"{plural(p['days'], 'day')}, {shared}. {goes}.")
+        lines += [f"   {place(m)} counts {counted.get(m['id'], 0)} of its {stay_length(m)} days."
+                  for m in (a, b) if p["owners"].get(m["id"], 0) < p["days"]]
     if total > len(pairs):
-        lines.append(f"... and {total - len(pairs)} more.")
-    lines += ["", "A day in two movements counts once: for the movement that started later (on "
-                  "the same start day, the shorter one; with identical dates, the newest). A "
-                  "travel day, when one movement ends the day the next begins, is normal and not "
-                  "listed here. If you were not in both places, fix the dates."]
+        lines += ["", f"... and {total - len(pairs)} more."]
+    lines += ["", "How shared days count:",
+              "- Each day counts once, for the stay that started later.",
+              "- Same start day: the shorter stay. Same dates: the newest.",
+              "- A travel day (one stay ends, the next begins) is normal and not listed.",
+              "If you were not in both places, fix the dates."]
     return "\n".join(lines)
 
 
@@ -2242,29 +2262,33 @@ OVERLAP_NOTES_MAX = 5
 
 
 def overlap_notes(year_id, data, exclude_id=None):
-    """Describe the stays that overlap the given one (shares_days: a travel day is not one),
-    in date order, at most OVERLAP_NOTES_MAX, then how many more."""
+    """(notes, same start): the stays that overlap the given one (shares_days: a travel day is
+    not one), in date order, at most OVERLAP_NOTES_MAX, then how many more; and whether one of
+    them starts the same day (then "started later" decides nothing, so the message says more)."""
     rows = db.query("SELECT * FROM movements WHERE year_id = ? AND id IS NOT ? "
                     "AND start_date <= ? AND end_date >= ? ORDER BY start_date, end_date, id",
                     (year_id, exclude_id, data["end_date"], data["start_date"]))
-    notes = []
+    notes, same_start = [], False
     for r in rows:
         shared = shares_days(parse_date(r["start_date"]), parse_date(r["end_date"]),
                              parse_date(data["start_date"]), parse_date(data["end_date"]))
         if shared:
-            notes.append(f"{r['city']} ({r['start_date']} to {r['end_date']}, "
-                         f"{plural(shared, 'shared day')})")
+            notes.append(f"{r['city']} ({plural(shared, 'day')})")
+            same_start = same_start or r["start_date"] == data["start_date"]
     if len(notes) > OVERLAP_NOTES_MAX:
         notes = notes[:OVERLAP_NOTES_MAX] + [f"{len(notes) - OVERLAP_NOTES_MAX} more"]
-    return notes
+    return notes, same_start
 
 
 def flash_overlaps(year_id, data, movement_id):
-    notes = overlap_notes(year_id, data, movement_id)
+    notes, same_start = overlap_notes(year_id, data, movement_id)
     if notes:
-        flash("This stay overlaps " + "; ".join(notes) + ". A shared day counts toward the stay "
-              "that started later (on the same start day, the shorter stay; with identical dates, "
-              "the newest), so check the dates if that is not intended.", "info")
+        listed = notes[0] if len(notes) == 1 else ", ".join(notes[:-1]) + " and " + notes[-1]
+        tie = (" (starting the same day: the shorter one; same dates: the newest)"
+               if same_start else "")
+        flash(f"This stay shares days with {listed}. Each shared day counts once, for the stay "
+              f"that started later{tie}. If you were not in both places, check the dates.",
+              "info")
 
 
 def to_int(value, default):
@@ -2572,7 +2596,13 @@ def register_routes(app):
         purge_unverified()
         try:
             data = serializer("email-verify").loads(token, max_age=VERIFY_MINUTES * 60)
-        except SignatureExpired:
+        except SignatureExpired as exc:
+            uid = expired_payload(serializer("email-verify"), exc).get("uid")
+            done = db.query("SELECT email FROM users WHERE id = ? AND verified_at IS NOT NULL",
+                            (uid,), one=True) if uid else None
+            if done:  # the link worked earlier and was opened again
+                flash(f"{done['email']} is already confirmed. Please sign in.", "info")
+                return redirect(url_for("index" if current_user.is_authenticated else "login"))
             flash("This confirmation link has expired, so the account was removed. Please sign "
                   "up again.", "error")
             return redirect(url_for("signup"))
@@ -2614,8 +2644,19 @@ def register_routes(app):
             # only the button does, and unconfirmed accounts are removed after VERIFY_MINUTES.
             return render_template("auth/verify.html", email=row["email"],
                                    minutes=minutes_left(row))
-        db.execute("UPDATE users SET verified_at = CURRENT_TIMESTAMP WHERE id = ? AND "
-                   "verified_at IS NULL", (row["id"],))
+        # The checks above again in the write: the account may have been removed (20 minutes
+        # passed) or signed up again meanwhile, and the same link pressed twice confirms once.
+        if not db.execute_rowcount(
+                "UPDATE users SET verified_at = CURRENT_TIMESTAMP WHERE id = ? AND verified_at IS "
+                "NULL AND session_version = ? AND password_hash = ?",
+                (row["id"], row["session_version"], row["password_hash"])):
+            again = db.query("SELECT verified_at FROM users WHERE id = ?", (row["id"],), one=True)
+            if again and again["verified_at"]:
+                flash(f"{row['email']} is already confirmed. Please sign in.", "info")
+                return redirect(url_for("index" if signed_in else "login"))
+            flash("This confirmation link is no longer valid. If you signed up more than once, "
+                  "use the link in the newest email; otherwise, sign up again.", "error")
+            return redirect(url_for("signup"))
         audit("account_confirmed", row["id"], row["email"])
         if signed_in:  # confirmed from a browser signed in to another account
             flash(f"{row['email']} is confirmed. To use that account, sign out and sign in "
@@ -2678,9 +2719,20 @@ def register_routes(app):
         return render_template("auth/login.html")
 
     def finish_sign_in(row, remember, next_url, detail=""):
-        db.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP, last_login_ip = ? "
-                   "WHERE id = ?", (client_ip(), row["id"]))
-        sign_in_user(row, remember)
+        # The row was read before the password check (slow): the account may have been deleted
+        # (the fake account cleanup takes exactly the never signed in ones) or disabled since.
+        gone = not db.execute_rowcount(
+            "UPDATE users SET last_login_at = CURRENT_TIMESTAMP, last_login_ip = ? "
+            "WHERE id = ? AND disabled = 0", (client_ip(), row["id"]))
+        if not gone:
+            try:
+                sign_in_user(row, remember)
+            except db.IntegrityError:  # deleted between the two writes
+                gone = True
+        if gone:
+            session.pop("tfa", None)
+            flash("Invalid email or password.", "error")
+            return redirect(url_for("login"))
         audit("sign_in", row["id"], row["email"], detail)
         return remember_device(redirect(next_url), row["email"])
 
@@ -2901,6 +2953,12 @@ def register_routes(app):
                     db.execute("INSERT INTO years (user_id, year, base_city, base_country) "
                                "VALUES (?, ?, ?, ?)", (current_user.id, year, city, country))
                 except db.IntegrityError:  # UNIQUE (user_id, year)
+                    same = db.query("SELECT 1 FROM years WHERE user_id = ? AND year = ? AND "
+                                    "base_city = ? AND base_country = ?",
+                                    (current_user.id, year, city, country), one=True)
+                    if same:  # the form sent twice: the first one created it
+                        flash(f"Year {year} is already created.", "info")
+                        return redirect(url_for("dashboard", year=year))
                     flash(f"You already have a workspace for {year}.", "error")
                 else:
                     flash(f"Year {year} created with base in {city}, {country}.", "success")
@@ -2963,9 +3021,12 @@ def register_routes(app):
                     flash(err, "error")
                     return render_template("base_location.html", y=year_row, form=request.form,
                                            docs=documents_for(year_row["id"]))
+                elif not db.execute_rowcount("UPDATE years SET base_city = ?, base_country = ? "
+                                             "WHERE id = ?", (city, country, year_row["id"])):
+                    flash(f"The year {year} no longer exists, so the changes were not saved.",
+                          "error")
+                    return redirect(url_for("index"))
                 else:
-                    db.execute("UPDATE years SET base_city = ?, base_country = ? WHERE id = ?",
-                               (city, country, year_row["id"]))
                     flash("Base location updated.", "success")
             elif action == "upload":
                 err = save_upload(request.files.get("file"), request.form.get("kind"),
@@ -3177,9 +3238,10 @@ def register_routes(app):
                           "no longer works.", "success")
                 return redirect(url_for("settings"))
             if action == "sessions":  # ending other sessions only takes access away
-                db.execute("UPDATE users SET session_version = session_version + 1 WHERE id = ?",
-                           (row["id"],))
-                stay_signed_in_here(row["id"])
+                if not db.execute_rowcount("UPDATE users SET session_version = session_version "
+                                           "+ 1 WHERE id = ?", (row["id"],)) \
+                        or not stay_signed_in_here(row["id"]):
+                    return account_gone()
                 audit("sessions_revoked", row["id"], row["email"])
                 flash("Every other browser and device has been signed out.", "success")
                 return redirect(url_for("settings"))
@@ -3198,11 +3260,19 @@ def register_routes(app):
                 else:
                     # A pending email change ends too: its link carries the old password, so
                     # Settings would wait for a confirmation that can no longer come.
-                    db.execute("UPDATE users SET password_hash = ?, pending_email = NULL "
-                               "WHERE id = ?", (hash_password(password), row["id"]))
+                    # Only over the password checked above: a reset by email that finished
+                    # meanwhile (the owner taking the account back) must not be overwritten.
+                    if not db.execute_rowcount(
+                            "UPDATE users SET password_hash = ?, pending_email = NULL "
+                            "WHERE id = ? AND password_hash = ?",
+                            (hash_password(password), row["id"], row["password_hash"])):
+                        flash("The password of this account was changed elsewhere in the "
+                              "meantime, so yours was not saved.", "error")
+                        return redirect(url_for("settings"))
                     # The new password changes the session fingerprint: stay signed in here,
                     # every other browser and remember cookie is signed out.
-                    stay_signed_in_here(row["id"])
+                    if not stay_signed_in_here(row["id"]):
+                        return account_gone()
                     audit("password_changed", row["id"], row["email"])
                     security_alert(row["email"], "The password of your Nomad Life account was "
                                    "changed.")
@@ -3261,12 +3331,22 @@ def register_routes(app):
                     flash("That code is not correct. Scan the QR code again, or check that the "
                           "time on your phone is right, and type the current code.", "error")
                 else:
-                    # Sessions from before were signed in without a code: end them.
-                    db.execute("UPDATE users SET totp_secret = ?, totp_step = ?, "
-                               "session_version = session_version + 1 WHERE id = ?",
-                               (secret, step, row["id"]))
+                    # Sessions from before were signed in without a code: end them. Only if
+                    # the password, sessions and two-factor are as checked above: a reset by
+                    # email or another browser turning it on meanwhile wins.
+                    if not db.execute_rowcount(
+                            "UPDATE users SET totp_secret = ?, totp_step = ?, session_version = "
+                            "session_version + 1 WHERE id = ? AND password_hash = ? AND "
+                            "totp_secret IS NULL AND session_version = ?",
+                            (secret, step, row["id"], row["password_hash"],
+                             row["session_version"])):
+                        session.pop("totp_setup", None)
+                        flash("This account was changed elsewhere in the meantime, so two-factor "
+                              "sign in was not turned on. Please try again.", "error")
+                        return redirect(url_for("settings"))
                     session.pop("totp_setup", None)
-                    stay_signed_in_here(row["id"])
+                    if not stay_signed_in_here(row["id"]):
+                        return account_gone()
                     audit("2fa_enabled", row["id"], row["email"])
                     security_alert(row["email"], "Two-factor sign in was turned on for your "
                                    "Nomad Life account.")
@@ -3336,12 +3416,18 @@ def register_routes(app):
                                totp=totp, activity=activity, devices=max(devices, 1),
                                idle_days=SESSION_IDLE_DAYS, name_max=NAME_MAX)
 
-    @app.route("/account/email/<token>")
+    @app.route("/account/email/<token>", methods=["GET", "POST"])
     def confirm_email(token):
         try:
             data = serializer("email-change").loads(token, max_age=EMAIL_CHANGE_MAX_AGE)
-        except SignatureExpired:
-            flash("This link has expired. Please ask for the email change again.", "error")
+        except SignatureExpired as exc:
+            old = expired_payload(serializer("email-change"), exc)
+            done = db.query("SELECT 1 FROM users WHERE id = ? AND email = ?",
+                            (old.get("uid"), old.get("email")), one=True)
+            if done:  # opened again later, after it worked
+                flash("This email address is already confirmed.", "info")
+            else:
+                flash("This link has expired. Please ask for the email change again.", "error")
             return redirect(url_for("settings"))
         except BadSignature:
             flash("This link is not valid.", "error")
@@ -3359,9 +3445,13 @@ def register_routes(app):
                 or row["email"] != data.get("old") or row["pending_email"] != new):
             flash("This link is no longer valid. Please ask for the email change again.", "error")
             return redirect(url_for("settings") if current_user.is_authenticated else url_for("login"))
+        if request.method == "GET":
+            # Company mail scanners open every link in incoming mail: only the button confirms,
+            # or a mistyped address whose mailbox is scanned would take the account.
+            return render_template("auth/confirm_email.html", old=row["email"], new=new)
         try:
             with db.transaction() as conn:
-                # Opening the link proves this mailbox is theirs: an unconfirmed sign up with
+                # Pressing the button proves this mailbox is theirs: an unconfirmed sign up with
                 # the same address (anyone can start one) gives way, as it does on sign up.
                 conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL AND "
                              "disabled = 0 AND NOT EXISTS (SELECT 1 FROM years WHERE "
@@ -3419,14 +3509,18 @@ def register_routes(app):
             return redirect(url_for("login"))
         if request.method == "GET":  # a mail scanner opening the link must not act on it
             return render_template("auth/revert_email.html", old=data["old"], new=data["new"])
+        # Whoever changed the address knew the password: it stops working, and only the link
+        # emailed below can set a new one (hashed before the write lock: it is slow).
+        locked_hash = hash_password(secrets.token_hex(32))
         try:
             with db.transaction() as conn:
                 conn.execute("DELETE FROM users WHERE email = ? AND verified_at IS NULL AND "
                              "disabled = 0 AND NOT EXISTS (SELECT 1 FROM years WHERE "
                              "years.user_id = users.id)",
                              (data["old"],))
-                conn.execute("UPDATE users SET email = ?, pending_email = NULL, session_version "
-                             "= session_version + 1 WHERE id = ?", (data["old"], row["id"]))
+                conn.execute("UPDATE users SET email = ?, pending_email = NULL, password_hash = ?, "
+                             "session_version = session_version + 1 WHERE id = ?",
+                             (data["old"], locked_hash, row["id"]))
                 conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
         except db.IntegrityError:
             flash(f"{data['old']} is used by another account now. Please contact the person who "
@@ -3941,36 +4035,39 @@ def register_routes(app):
                 err = too_many_message(wait, scope, "new tickets") if wait else None
             ticket_id = None
             if not err:
-                with db.transaction() as conn:
-                    # The same ticket sent twice (a double click): the second one finds the
-                    # first under the write lock and opens it instead of making another.
-                    ticket = conn.execute(
-                        "SELECT t.* FROM tickets t JOIN ticket_messages m ON m.ticket_id = t.id "
-                        "WHERE t.user_id = ? AND t.kind = ? AND t.subject = ? AND m.body = ? "
-                        "AND t.created_at >= datetime('now', ?) ORDER BY t.id DESC LIMIT 1",
-                        (current_user.id, kind, subject, body,
-                         f"-{DUPLICATE_SECONDS} seconds")).fetchone()
-                    duplicate = ticket is not None
-                    # Counted again under the write lock: parallel posts cannot pass the cap.
-                    if duplicate:
-                        pass
-                    elif conn.execute("SELECT COUNT(*) FROM tickets WHERE user_id = ? AND "
-                                      "status = 'open'", (current_user.id,)).fetchone()[0] \
-                            >= OPEN_TICKETS_MAX:
-                        err = (f"You already have {OPEN_TICKETS_MAX} open tickets. Please close "
-                               "the ones that are solved first.")
-                    else:
-                        ticket_id = conn.execute("INSERT INTO tickets (user_id, kind, subject) "
-                                                 "VALUES (?, ?, ?)",
-                                                 (current_user.id, kind, subject)).lastrowid
-                        message_id = conn.execute("INSERT INTO ticket_messages (ticket_id, "
-                                                  "author_id, body) VALUES (?, ?, ?)",
-                                                  (ticket_id, current_user.id, body)).lastrowid
-                        conn.execute("UPDATE tickets SET user_seen_id = ? WHERE id = ?",
-                                     (message_id, ticket_id))
-                        # Numbered by the tickets_ref trigger during the insert.
-                        ticket = conn.execute("SELECT * FROM tickets WHERE id = ?",
-                                              (ticket_id,)).fetchone()
+                try:
+                    with db.transaction() as conn:
+                        # The same ticket sent twice (a double click): the second one finds the
+                        # first under the write lock and opens it instead of making another.
+                        ticket = conn.execute(
+                            "SELECT t.* FROM tickets t JOIN ticket_messages m ON m.ticket_id = t.id "
+                            "WHERE t.user_id = ? AND t.kind = ? AND t.subject = ? AND m.body = ? "
+                            "AND t.created_at >= datetime('now', ?) ORDER BY t.id DESC LIMIT 1",
+                            (current_user.id, kind, subject, body,
+                             f"-{DUPLICATE_SECONDS} seconds")).fetchone()
+                        duplicate = ticket is not None
+                        # Counted again under the write lock: parallel posts cannot pass the cap.
+                        if duplicate:
+                            pass
+                        elif conn.execute("SELECT COUNT(*) FROM tickets WHERE user_id = ? AND "
+                                          "status = 'open'", (current_user.id,)).fetchone()[0] \
+                                >= OPEN_TICKETS_MAX:
+                            err = (f"You already have {OPEN_TICKETS_MAX} open tickets. Please close "
+                                   "the ones that are solved first.")
+                        else:
+                            ticket_id = conn.execute("INSERT INTO tickets (user_id, kind, subject) "
+                                                     "VALUES (?, ?, ?)",
+                                                     (current_user.id, kind, subject)).lastrowid
+                            message_id = conn.execute("INSERT INTO ticket_messages (ticket_id, "
+                                                      "author_id, body) VALUES (?, ?, ?)",
+                                                      (ticket_id, current_user.id, body)).lastrowid
+                            conn.execute("UPDATE tickets SET user_seen_id = ? WHERE id = ?",
+                                         (message_id, ticket_id))
+                            # Numbered by the tickets_ref trigger during the insert.
+                            ticket = conn.execute("SELECT * FROM tickets WHERE id = ?",
+                                                  (ticket_id,)).fetchone()
+                except db.IntegrityError:  # the account was deleted while this was sent
+                    return account_gone()
             if err:
                 flash(err, "error")
                 return render_template("support_new.html", form=form, kinds=TICKET_KINDS,
@@ -4015,27 +4112,30 @@ def register_routes(app):
                 elif (wait := take_attempt("ticket_msg", ticket_limit_key()))[0]:
                     flash(too_many_message(wait[0], wait[1], "messages"), "error")
                 else:
-                    with db.transaction() as conn:
-                        duplicate = duplicate_message(conn, ticket_id, current_user.id, False, body)
-                        if not duplicate:
-                            message_id = conn.execute(
-                                "INSERT INTO ticket_messages (ticket_id, author_id, body) "
-                                "VALUES (?, ?, ?)", (ticket_id, current_user.id, body)).lastrowid
-                            # Writing on a closed ticket opens it again, unless the account is
-                            # already at its limit of open tickets (the message is kept).
-                            open_now = conn.execute("SELECT COUNT(*) FROM tickets WHERE "
-                                                    "user_id = ? AND status = 'open'",
-                                                    (current_user.id,)).fetchone()[0]
-                            reopened = conn.execute(
-                                "UPDATE tickets SET status = 'open', closed_at = NULL, "
-                                "closed_by = '' WHERE id = ? AND status = 'closed' AND ? < ?",
-                                (ticket_id, open_now, OPEN_TICKETS_MAX)).rowcount
-                            still_closed = conn.execute(
-                                "SELECT status FROM tickets WHERE id = ?",
-                                (ticket_id,)).fetchone()[0] == "closed"
-                            conn.execute("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP, "
-                                         "user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
-                                         (message_id, ticket_id))
+                    try:
+                        with db.transaction() as conn:
+                            duplicate = duplicate_message(conn, ticket_id, current_user.id, False, body)
+                            if not duplicate:
+                                message_id = conn.execute(
+                                    "INSERT INTO ticket_messages (ticket_id, author_id, body) "
+                                    "VALUES (?, ?, ?)", (ticket_id, current_user.id, body)).lastrowid
+                                # Writing on a closed ticket opens it again, unless the account is
+                                # already at its limit of open tickets (the message is kept).
+                                open_now = conn.execute("SELECT COUNT(*) FROM tickets WHERE "
+                                                        "user_id = ? AND status = 'open'",
+                                                        (current_user.id,)).fetchone()[0]
+                                reopened = conn.execute(
+                                    "UPDATE tickets SET status = 'open', closed_at = NULL, "
+                                    "closed_by = '' WHERE id = ? AND status = 'closed' AND ? < ?",
+                                    (ticket_id, open_now, OPEN_TICKETS_MAX)).rowcount
+                                still_closed = conn.execute(
+                                    "SELECT status FROM tickets WHERE id = ?",
+                                    (ticket_id,)).fetchone()[0] == "closed"
+                                conn.execute("UPDATE tickets SET updated_at = CURRENT_TIMESTAMP, "
+                                             "user_seen_id = MAX(user_seen_id, ?) WHERE id = ?",
+                                             (message_id, ticket_id))
+                    except db.IntegrityError:  # the account was deleted while this was sent
+                        return account_gone()
                     if duplicate:  # sent twice: the first one already did everything
                         flash("Your message was sent.", "success")
                         return redirect(ticket_url("support_ticket", ticket, **list_args))
@@ -4162,13 +4262,22 @@ def register_routes(app):
         ticket = db.query("SELECT t.*, u.email, u.first_name, u.last_name FROM tickets t "
                           "JOIN users u ON u.id = t.user_id WHERE t.ref_year = ? AND t.ref_seq = ?",
                           (year, seq), one=True)
-        if ticket is None:
-            abort(404)
-        ticket_id, ref = ticket["id"], ticket_ref(ticket)
         # The list's filters, search, sort and page, for Back and after each action. Only
         # carried in links: /admin/support checks them again.
         list_args = admin_support_args(**{k: request.args.get(k, "")[:254] for k in
                                           ("status", "kind", "q", "sort", "dir", "page")})
+
+        def ticket_gone():
+            # Deleted with its account (by the user, an admin or the fake account cleanup)
+            # while this page was open: say so instead of a bare "Page not found" or an error.
+            flash(f"Ticket #{year}-{seq} no longer exists (its account was deleted), so nothing "
+                  "was sent or changed.", "error")
+            return redirect(admin_support_url(**list_args))
+        if ticket is None:
+            if request.method == "POST":
+                return ticket_gone()
+            abort(404)
+        ticket_id, ref = ticket["id"], ticket_ref(ticket)
         back = ticket_url("admin_ticket", ticket, **list_args)
         back_url = admin_support_url(**list_args)
         if request.method == "POST":
@@ -4192,8 +4301,11 @@ def register_routes(app):
                                 (ticket_id,)).rowcount
                         # Checked again under the write lock: another admin (or the user)
                         # may have closed the ticket since the page was read.
-                        still_open = conn.execute("SELECT status FROM tickets WHERE id = ?",
-                                                  (ticket_id,)).fetchone()[0] == "open"
+                        current = conn.execute("SELECT status FROM tickets WHERE id = ?",
+                                               (ticket_id,)).fetchone()
+                        if current is None:
+                            return ticket_gone()
+                        still_open = current[0] == "open"
                         duplicate = still_open and duplicate_message(
                             conn, ticket_id, current_user.id, True, body)
                         if still_open and not duplicate:
@@ -4235,6 +4347,8 @@ def register_routes(app):
                           current_user.email)
                     notify_user(ticket, "closed")
                     flash("The ticket is closed. The user gets an email.", "success")
+                elif not db.query("SELECT 1 FROM tickets WHERE id = ?", (ticket_id,), one=True):
+                    return ticket_gone()
                 else:
                     flash("This ticket was already closed.", "info")
             elif action == "reopen":
@@ -4245,6 +4359,8 @@ def register_routes(app):
                     audit("ticket_reopened", ticket["user_id"], ticket["email"],
                           f"#{ref}", current_user.email)
                     flash("The ticket is open again.", "success")
+                elif not db.query("SELECT 1 FROM tickets WHERE id = ?", (ticket_id,), one=True):
+                    return ticket_gone()
                 else:
                     flash("This ticket is already open.", "info")
             return redirect(back)
@@ -4347,7 +4463,9 @@ def register_routes(app):
             return document_gone("This document no longer exists, so the changes were not "
                                  "saved.")
         # A typed name is not a path: keep "Rent 03/2026" instead of dropping "Rent 03/".
-        typed = request.form.get("name", "").replace("/", "-").replace("\\", "-").strip()
+        # Trailing dots and spaces would leave "Hotel..pdf" (Windows drops them anyway).
+        typed = request.form.get("name", "").replace("/", "-").replace("\\", "-")
+        typed = typed.strip().rstrip(". ")
         name = display_name(typed) if typed else ""
         kind = request.form.get("kind", "")
         ext = doc_format(doc)

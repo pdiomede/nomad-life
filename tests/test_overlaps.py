@@ -61,12 +61,14 @@ class OverlapMathTests(unittest.TestCase):
               mv(2, "Sidney", "Australia", "2027-01-08", "2027-01-10")]
         stats = appmod.compute_stats({"year": 2027, "base_country": "Portugal"}, ms)
         text = appmod.overlap_report(2027, appmod.movement_overlaps(ms)[0], ms, stats["counted"])
-        self.assertEqual(text.splitlines()[:3], [
+        self.assertEqual(text.splitlines()[:6], [
             "Overlapping movements in 2027 (1)", "",
-            "1. Vienna, Austria (2027-01-01 to 2027-01-10) and Sidney, Australia (2027-01-08 to "
-            "2027-01-10) share 3 days, 2027-01-08 to 2027-01-10. They count for Sidney, "
-            "Australia, so Vienna, Austria counts 7 of its 10 days."])
-        self.assertIn("A travel day, when one movement ends the day the next begins, is normal", text)
+            "1. Vienna, Austria, 2027-01-01 to 2027-01-10",
+            "   and Sidney, Australia, 2027-01-08 to 2027-01-10",
+            "   Shared: 3 days (2027-01-08 to 2027-01-10), counted for Sidney, Australia.",
+            "   Vienna, Austria counts 7 of its 10 days."])
+        self.assertIn("- A travel day (one stay ends, the next begins) is normal and not listed.",
+                      text)
         self.assertNotIn("\u2014", text)
 
 
@@ -98,7 +100,7 @@ class OverlapDashboardTests(AppTestCase):
         self.assertIn('aria-label="Overlapping movements (1): show the report"', html)
         self.assertIn('<dialog class="overlap-dialog" id="overlap-dialog"', html)
         self.assertIn("<h2 id=\"overlap-title\">Overlapping movements in 2027</h2>", html)
-        self.assertIn("&lt;b&gt;Sidney&lt;/b&gt;, Australia (2027-01-08 to 2027-01-10)", html)
+        self.assertIn("&lt;b&gt;Sidney&lt;/b&gt;, Australia, 2027-01-08 to 2027-01-10", html)
         self.assertIn("data-overlap-copy>Copy</button>", html)
         self.assertIn("data-overlap-close>Close</button>", html)
         self.assertIsNone(re.search(r"<script(?![^>]*\bsrc=)", html))
@@ -110,7 +112,7 @@ class OverlapDashboardTests(AppTestCase):
         self.add("Later", "France", "2027-12-05", "2027-12-10")
         html = self.client.get("/year/2027").get_data(as_text=True)  # page 1: February only
         self.assertIn("data-overlap-open", html)
-        self.assertIn("Late, Italy (2027-12-01 to 2027-12-10)", html)
+        self.assertIn("Late, Italy, 2027-12-01 to 2027-12-10", html)
 
 
 class HeaderOrderTests(AppTestCase):

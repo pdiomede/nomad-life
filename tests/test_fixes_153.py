@@ -180,9 +180,8 @@ class MovementFixTests(AppTestCase):
         stats = appmod.compute_stats({"year": 2027, "base_country": "Portugal"}, ms)
         pairs, total = appmod.movement_overlaps(ms)
         text = appmod.overlap_report(2027, pairs, ms, stats["counted"], total)
-        line = next(x for x in text.splitlines() if x.startswith("1. "))
-        self.assertTrue(line.endswith("They count for Sidney, Australia, so Vienna, Austria "
-                                      "counts 7 of its 10 days."), line)
+        self.assertIn("counted for Sidney, Australia.\n   Vienna, Austria counts 7 of its 10 "
+                      "days.", text)
         self.assertNotIn("Sidney, Australia counts", text)
 
 

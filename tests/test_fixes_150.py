@@ -43,7 +43,7 @@ class ActivityFixTests(AppTestCase):
         self.age_emails()
         user.post("/settings", data={"action": "email", "email": "new@example.com",
                                      "current_password": "password1"})
-        user.get(self.last_link("new@example.com", kind="account/email"))
+        user.post(self.last_link("new@example.com", kind="account/email"))
         html = self.client.get("/admin").get_data(as_text=True)
         section = html.split('id="activity"', 1)[1]
         # "Account confirmed" was recorded under old@, and its link filters by the account now.
@@ -73,7 +73,7 @@ class DocsFixTests(AppTestCase):
         self.assertIn("add your notes to <code>timeline.csv</code>", html)
         self.assertIn("every other file with its SHA-256 checksum", html)
         self.assertIn("Signing in with your email and password sends a new link", html)
-        # Words people search for are on the page ("This stay overlaps" in the app).
+        # Words people search for are on the page (the overlap alert in the app).
         self.assertIn("(an overlap)", html)
 
     def test_step_text_is_one_inline_block(self):

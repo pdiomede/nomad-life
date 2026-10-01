@@ -54,7 +54,7 @@ class AccountTests(AppTestCase):
         with self.db() as conn:  # nothing changes until the link is opened
             self.assertEqual(conn.execute("SELECT email FROM users").fetchone()[0], "a@example.com")
         link = self.last_link("new@example.com", kind="account/email")
-        html = self.client.get(link, follow_redirects=True).data.decode()
+        html = self.client.post(link, follow_redirects=True).data.decode()
         self.assertIn("Your email address is now new@example.com.", html)
         fresh = self.app.test_client()
         self.assertEqual(fresh.post("/login", data={"email": "new@example.com",
@@ -73,7 +73,7 @@ class AccountTests(AppTestCase):
         link = self.last_link("new@example.com", kind="account/email")
         self.post(action="password", current_password="password1", password="newpass123",
                   confirm="newpass123")
-        html = self.client.get(link, follow_redirects=True).data.decode()
+        html = self.client.post(link, follow_redirects=True).data.decode()
         self.assertIn("This link is no longer valid.", html)
 
     def test_delete_account(self):

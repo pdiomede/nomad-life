@@ -189,13 +189,13 @@ class RaceFixTests(AppTestCase):
             def open_first():
                 if not opened:  # a mail scanner opens the same link at the same moment
                     opened.append(None)
-                    opened[0] = scanner.get(link)
+                    opened[0] = scanner.post(link)
                 return real()
             return open_first
 
         self.patch(appmod.db, "transaction", make)
         self.outbox.clear()
-        self.client.get(link)
+        self.client.post(link)
         self.assertEqual(len([m for m in self.outbox if m["to"] == "a@example.com"]), 1)
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM audit_log WHERE event = "

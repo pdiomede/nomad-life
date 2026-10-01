@@ -1,0 +1,11 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Confirm your new email | Nomad Life{% endblock %}
+{% block heading %}Confirm your new email{% endblock %}
+{% block sub %}Use {{ new }} for this Nomad Life account instead of {{ old }}.{% endblock %}
+{% block form %}
+<form method="post" class="stack" data-submit-once>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <p class="muted small">From then on you sign in with {{ new }}. We tell {{ old }} about the change, with a link to undo it.</p>
+  <button class="btn btn-primary btn-block" type="submit">Confirm my new email</button>
+</form>
+{% endblock %}

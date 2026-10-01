@@ -10,7 +10,7 @@
     </div>
   </div>
   <div class="card">
-    <form method="post" class="stack">
+    <form method="post" class="stack" data-submit-once>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="year">Year</label>
