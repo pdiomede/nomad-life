@@ -76,11 +76,21 @@ class CheckFakeUsersTests(AppTestCase):
         self.assertEqual(self.emails(), {"real@example.com", "new@example.com", "boss@example.com",
                                          "year@example.com", "ticket@example.com"})
         with self.db() as conn:
-            rows = conn.execute("SELECT email, actor, detail FROM audit_log WHERE event = "
-                                "'admin_delete' ORDER BY id").fetchall()
+            rows = conn.execute("SELECT email, actor FROM audit_log WHERE event = "
+                                "'admin_delete_fake' ORDER BY id").fetchall()
+            summary = conn.execute("SELECT actor, detail FROM audit_log WHERE event = "
+                                   "'admin_fake_cleanup'").fetchall()
         self.assertEqual([tuple(r) for r in rows],
-                         [(f"fake{i}@corp.example", "check-fake-users", "fake account")
-                          for i in (1, 2, 3)])
+                         [(f"fake{i}@corp.example", "check-fake-users") for i in (1, 2, 3)])
+        self.assertEqual([tuple(r) for r in summary], [("check-fake-users", "3 accounts")])
+
+    def test_the_recorded_reason_names_the_age_used(self):
+        # It always said "no data after 24 hours", also with --min-age-hours 1.
+        self.run_tool("--min-age-hours", "1", answers="a\nDELETE\n")
+        with self.db() as conn:
+            detail = conn.execute("SELECT detail FROM audit_log WHERE event = "
+                                  "'admin_delete_fake' AND email = 'new@example.com'").fetchone()[0]
+        self.assertTrue(detail.endswith("never signed in, no data after 1 hour."), detail)
 
     def test_delete_some_by_number_and_range(self):
         result = self.run_tool(answers="x\n9\n1,3\nDELETE\n")

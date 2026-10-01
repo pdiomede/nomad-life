@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.6] - 2026-10-01
+
+### Added
+
+- On the admin page, with the **Suspected fake** filter on, **Delete these N accounts** deletes every account the list shows (all its pages, and only those matching the search, so `corp.example` deletes only those). `./checkFakeUsers.sh` stays. It asks twice and needs the number of accounts typed. If the list changed since the page was loaded (an account signed in, another passed the 24 hour line), nothing is deleted and the new number is shown. The rule is checked again in the deletion itself, so admins and accounts with data are never touched.
+- Every deletion is in the **Security activity**: one "Suspected fake account deleted" row per account (with the reason, the admin who did it and their IP) and one "Suspected fake accounts deleted (bulk)" row with the number. They are saved together with the deletion. `./checkFakeUsers.sh` now writes the same two kinds of rows, "by check-fake-users".
+- The Security activity search also finds events by their name and details: `fake`, `bulk`, `deleted`, `password changed`, a plan name. Its placeholder reads "Email, IP or event".
+
+### Changed
+
+Faster, measured on a copy with 2,000 accounts, 61,000 receipts and 400,000 security events:
+
+- The database runs in write-ahead log mode. Pages no longer wait for a write in progress, and writes no longer wait for slow pages: in a test with long reads and constant writes, the slowest page read went from 560 ms to under 1 ms, and writes from 371 ms (95th percentile) to 0.4 ms. It is switched on by itself at the first start, and `nomad.db-wal` and `nomad.db-shm` appear next to the database, private like it. **Backups:** nothing changes for `scripts/backup.py` and the off-site copy. To restore, delete `nomad.db-wal` and `nomad.db-shm` first (setup_vps.md, section 11), and never copy `nomad.db` by hand while the app runs.
+- The admin page opens in 28 ms instead of 387 ms: an index finds when each account was confirmed, instead of reading every event of every account.
+- The Security activity table sorts in 53 to 66 ms instead of 347 to 713 ms by event or account, and the IP sort takes half the time. It looks up the accounts of the 20 events shown, not of every event of the year, and remembers the sort keys.
+- The accountant package no longer compresses photos again: it saved 0.4% of a JPEG at a high CPU cost. A year with 100 receipts streams in 0.4 s instead of 1 s.
+
+### Fixed
+
+Found in the review of this release:
+
+- `scripts/backup.py` failed with "unable to open database file" when the app was stopped, since a database in the new mode then has no `nomad.db-shm`, which a read only connection cannot create. It now reads it either way. The copy in the archive is a single self-contained file.
+- The documented restore would have left the old database's `nomad.db-wal` next to the restored one, which SQLite could apply to it. The steps now delete it first.
+- An account passing the 24 hour line between the page and the deletion could be deleted without a Security activity row (when it passed between the count and the deletion), or instead of an account that signed in meanwhile (when the number still matched). The deletion now works on the list as it was when the page was made.
+- Deleting many accounts held the database for seconds when support tickets had many messages (each deleted account scanned every message to clear its author). An index makes it instant, for single deletions too.
+- The recorded reason said "no data after 24 hours" also when `./checkFakeUsers.sh --min-age-hours 1` was used.
+- A crafted number of thousands of digits made the deletion fail with a server error.
+- Searching the Security activity for "_" listed every event, because the search matched parts of the events' internal names.
+
 ## [1.5.5] - 2026-10-01
 
 ### Security

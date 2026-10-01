@@ -346,6 +346,9 @@ main:focus { outline: none; }
 .map-tip-country { font-weight: 700; overflow-wrap: anywhere; }
 .map-tip-cities { color: var(--muted); overflow-wrap: anywhere; }
 .map-off { overflow-wrap: anywhere; }  /* a long free text country must not widen the page */
+/* Admin: "Delete these N accounts" above the list of suspected fake accounts. */
+.admin-bulk { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--error-text); border-radius: 6px; background: var(--error-bg); }
+.admin-bulk p { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .map-tip-days { font-weight: 600; }
 .tip-right .map-tip { left: -8px; transform: none; }
 .tip-right .map-tip::after { left: 14px; }

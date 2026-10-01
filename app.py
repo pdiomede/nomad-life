@@ -42,7 +42,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.5.5"
+APP_VERSION = "1.5.6"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -788,11 +788,16 @@ def create_app(overrides=None):
                 kept.append(r["email"])
                 continue
             deleted.append(r["email"])
-            audit("admin_delete", r["id"], r["email"], "fake account", "check-fake-users")
+            audit("admin_delete_fake", r["id"], r["email"],
+                  fake_reason(r["created_at"], r["confirmed_at"], min_age_hours),
+                  "check-fake-users")
             try:  # an account without receipts has at most an empty folder
                 os.rmdir(os.path.join(app.config["UPLOAD_DIR"], str(r["id"])))
             except OSError:
                 pass
+        if deleted:  # one row for the whole run too, as for "Delete these N accounts"
+            audit("admin_fake_cleanup", None, "", plural(len(deleted), "account"),
+                  "check-fake-users")
         click.echo(f"Deleted {len(deleted)} account{'' if len(deleted) == 1 else 's'}"
                    + (": " + ", ".join(deleted) if deleted else "") + ".")
         if kept:
@@ -829,19 +834,20 @@ def quota_mb_text(quota_bytes):
     return f"{quota_bytes / MB:.2f}".rstrip("0").rstrip(".")
 
 
-def fake_user_sql(admins, min_age_hours=FAKE_MIN_AGE_HOURS):
+def fake_user_sql(admins, min_age_hours=FAKE_MIN_AGE_HOURS, asof=None):
     """(sql, params): the condition on `users u` for an account that looks fake. The one rule
     behind check-fake-users, its DELETE, and the "Likely fake" chip and filter of the admin
-    table: FAKE_USER_WHERE, joined at least min_age_hours ago, and not an admin."""
-    sql = f"({FAKE_USER_WHERE} AND u.created_at <= datetime('now', ?)"
-    params = [f"-{int(min_age_hours)} hours"]
+    table: FAKE_USER_WHERE, joined at least min_age_hours ago, and not an admin. asof (UTC,
+    "YYYY-MM-DD HH:MM:SS") fixes "ago" to a moment, so a list and its deletion agree."""
+    sql = f"({FAKE_USER_WHERE} AND u.created_at <= datetime(?, ?)"
+    params = [asof or "now", f"-{int(min_age_hours)} hours"]
     if admins:
         sql += f" AND u.email NOT IN ({', '.join('?' * len(admins))})"
         params += sorted(admins)
     return sql + ")", params
 
 
-def fake_reason(created_at, confirmed_at):
+def fake_reason(created_at, confirmed_at, min_age_hours=FAKE_MIN_AGE_HOURS):
     """Why an account looks fake, for the chip: how soon after sign up it was confirmed (a
     mail scanner when under SCANNER_SECONDS), then the common part."""
     seconds = confirm_delay(created_at, confirmed_at)
@@ -851,7 +857,7 @@ def fake_reason(created_at, confirmed_at):
         first = f"Confirmed {short_duration(seconds)} after sign up"
     else:
         first = "Confirmed"
-    return f"{first}; never signed in, no data after {FAKE_MIN_AGE_HOURS} hours."
+    return f"{first}; never signed in, no data after {plural(int(min_age_hours), 'hour')}."
 
 
 def confirm_delay(created_at, confirmed_at):
@@ -1362,6 +1368,8 @@ AUDIT_LABELS = {
     "admin_disable": "Account disabled by an admin",
     "admin_enable": "Account enabled by an admin",
     "admin_delete": "Account deleted by an admin",
+    "admin_delete_fake": "Suspected fake account deleted",
+    "admin_fake_cleanup": "Suspected fake accounts deleted (bulk)",
     "admin_price": "Plan prices changed",
 }
 
@@ -1383,13 +1391,19 @@ AUDIT_SORTS = {
 }
 
 
-def audit(event, user_id=None, email="", detail="", actor=""):
-    """Record a security event. Never fails the request it belongs to."""
+def audit(event, user_id=None, email="", detail="", actor="", conn=None):
+    """Record a security event. Never fails the request it belongs to. With conn (inside
+    db.transaction()) the row is part of that transaction: it is saved with the change it
+    records, or not at all, and an error is the caller's."""
     ip = client_ip() if has_request_context() else ""  # none on the command line
+    sql = ("INSERT INTO audit_log (user_id, email, actor, event, detail, ip) "
+           "VALUES (?, ?, ?, ?, ?, ?)")
+    args = (user_id, email or "", actor or "", event, detail or "", ip)
+    if conn is not None:
+        conn.execute(sql, args)
+        return
     try:
-        db.execute("INSERT INTO audit_log (user_id, email, actor, event, detail, ip) "
-                   "VALUES (?, ?, ?, ?, ?, ?)", (user_id, email or "", actor or "", event,
-                                                 detail or "", ip))
+        db.execute(sql, args)
     except Exception as exc:  # noqa: BLE001 - the history must never break sign in
         current_app.logger.error("Could not record %s for %s: %s", event, email, exc)
 
@@ -1423,6 +1437,11 @@ def security_alert(email, what, account=None, link=None, advice=None, button=Non
 def too_many_message(wait, scope, what):
     who = {"ip": "from this network", "device": "on this device"}.get(scope, "for this account")
     return f"Too many {what} {who}. Please wait {plural(wait, 'minute')} and try again."
+
+
+def utc_now_text():
+    """Now in UTC, written like SQLite's CURRENT_TIMESTAMP ("2026-10-01 12:00:00")."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def plural(n, word):
@@ -3461,10 +3480,10 @@ def register_routes(app):
                 "adir": "asc" if source.get("adir") == "asc" else "desc",
                 "apage": max(to_int(source.get("apage"), 1), 1)}
 
-    def admin_accounts(where="1 = 1", params=(), order="u.created_at DESC"):
+    def admin_accounts(where="1 = 1", params=(), order="u.created_at DESC", asof=None):
         """Accounts with their plan, quota, storage and years, ready for the admin pages, and
         whether they look fake (suspect, with the reason for the chip)."""
-        fake_sql, fake_params = fake_user_sql(app.config["ADMIN_EMAILS"])
+        fake_sql, fake_params = fake_user_sql(app.config["ADMIN_EMAILS"], asof=asof)
         rows = db.query(
             "SELECT u.id, u.email, u.created_at, u.last_login_at, u.disabled, u.quota_bytes, "
             "u.verified_at, u.plan, u.totp_secret IS NOT NULL AS has_2fa, u.first_name, u.last_name, "
@@ -3492,7 +3511,8 @@ def register_routes(app):
         """The Security activity filter. An account's email: that account's whole history
         (by its id, so also from before an email change), events under that address that no
         other live account owns, and what it did as an admin. Anything else: a search in the
-        event's email, actor and IP. Empty: every event."""
+        event's email, actor, IP and detail, and in the event names ("fake", "password
+        changed"). Empty: every event."""
         if not q:
             return "1 = 1", ()
         owner = db.query("SELECT id FROM users WHERE email = ?", (q,), one=True)
@@ -3501,8 +3521,15 @@ def register_routes(app):
                     "SELECT 1 FROM users o WHERE o.id = a.user_id AND o.id != ?)))",
                     (owner["id"], q, q, owner["id"]))
         like = db.search_like(q)
+        # The event as shown ("Password changed", "fake") or its key, and its detail ("Pro",
+        # "#2026-3", "7 accounts"), besides the email, actor and IP.
+        folded = db.search_fold(q)
+        events = [k for k, label in AUDIT_LABELS.items()
+                  if folded in db.search_fold(label) or folded == k]
+        event_sql = f" OR a.event IN ({', '.join('?' * len(events))})" if events else ""
         return ("(casefold(a.email) LIKE ? ESCAPE '\\' OR casefold(a.actor) LIKE ? ESCAPE '\\' "
-                "OR a.ip LIKE ? ESCAPE '\\')", (like, like, like))
+                "OR a.ip LIKE ? ESCAPE '\\' OR casefold(a.detail) LIKE ? ESCAPE '\\'"
+                f"{event_sql})", (like, like, like, like, *events))
 
     def account_activity(email, limit):
         where, params = activity_where(email)
@@ -3519,19 +3546,21 @@ def register_routes(app):
                       lambda n, _size: admin_url(**dict(state, apage=n)) + "#activity")
         fixed, key = AUDIT_SORTS[state["asort"]]
         order = ", ".join(filter(None, [fixed, f"{key} {state['adir'].upper()}", "a.id DESC"]))
-        # current_email: the account's address now, so its link shows the whole history also
-        # for an event recorded before an email change.
+        # The page is picked first and only its 20 rows are joined to users: joining before the
+        # sort looked up an account for every event of the year. current_email: the account's
+        # address now, so its link shows the whole history also for an event recorded before an
+        # email change. a.id ends the order, so the outer sort keeps the page's order exactly.
         pager["rows"] = audit_rows(db.query(
-            "SELECT a.*, u.email AS current_email FROM audit_log a "
-            f"LEFT JOIN users u ON u.id = a.user_id WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+            "SELECT a.*, u.email AS current_email FROM (SELECT a.* FROM audit_log a "
+            f"WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?) a "
+            f"LEFT JOIN users u ON u.id = a.user_id ORDER BY {order}",
             (*params, ADMIN_AUDIT_PER_PAGE, (pager["page"] - 1) * ADMIN_AUDIT_PER_PAGE)))
         return pager
 
-    @app.route("/admin")
-    @login_required
-    def admin():
-        require_admin()
-        state = admin_list_state(request.args)
+    def admin_where(state, asof=None):
+        """(where, params) on `users u` for the accounts table's search and fake filter: the
+        rows the table lists, on every page, and the ones "Delete these N accounts" removes.
+        asof: the moment the list was made (see fake_user_sql)."""
         where, params = "1 = 1", []
         if state["search"]:
             # casefold (registered in db.get_db) folds every script and composes accents.
@@ -3551,14 +3580,26 @@ def register_routes(app):
                          "|| u.last_name) LIKE ? ESCAPE '\\' OR u.signup_ip LIKE ? ESCAPE '\\' "
                          "OR u.last_login_ip LIKE ? ESCAPE '\\')")
                 params = [like] * 4
-        fake_sql, fake_params = fake_user_sql(app.config["ADMIN_EMAILS"])
         if state["fake"]:
+            fake_sql, fake_params = fake_user_sql(app.config["ADMIN_EMAILS"], asof=asof)
             where = f"{where} AND {'NOT ' if state['fake'] == 'hide' else ''}{fake_sql}"
             params = [*params, *fake_params]
+        return where, params
+
+    @app.route("/admin")
+    @login_required
+    def admin():
+        require_admin()
+        state = admin_list_state(request.args)
+        # One moment for the whole page: "Delete these N accounts" sends it back, so accounts
+        # that pass the 24 hour line meanwhile are neither listed nor deleted.
+        asof = utc_now_text()
+        where, params = admin_where(state, asof)
+        fake_sql, fake_params = fake_user_sql(app.config["ADMIN_EMAILS"], asof=asof)
         direction = state["dir"].upper()
         order = ", ".join(f"{part} {direction}" if not part.endswith("IS NULL") else part
                           for part in ADMIN_USER_SORTS[state["sort"]].split(", "))
-        users = admin_accounts(where, params, f"{order}, u.id {direction}")
+        users = admin_accounts(where, params, f"{order}, u.id {direction}", asof)
         # Totals always count every account, also while the table shows a search.
         counts = db.query(
             "SELECT COUNT(*) AS users, COALESCE(SUM(disabled), 0) AS disabled, "
@@ -3578,7 +3619,7 @@ def register_routes(app):
         state["page"] = pager["page"]
         activity = activity_page(state)
         state["apage"] = activity["page"]
-        return render_template("admin.html", pager=pager, totals=totals, state=state,
+        return render_template("admin.html", pager=pager, totals=totals, state=state, asof=asof,
                                admin_url=admin_url, admin_hidden=admin_hidden,
                                account_url=admin_account_url,
                                default_quota=app.config["USER_QUOTA_BYTES"],
@@ -3648,6 +3689,74 @@ def register_routes(app):
               current_user.email)
         flash(f"{name} now costs ${money(month)} / month and ${money(year)} / year.{note}",
               "success")
+        return redirect(back)
+
+    @app.route("/admin/suspects/delete", methods=["POST"])
+    @login_required
+    def admin_delete_suspects():
+        """Delete the suspected fake accounts the "Suspected fake" view lists (every page,
+        within its search), after the two step dialog and the number of accounts typed. The
+        list is read again, counted and deleted under one write lock, with a Security activity
+        row for each account and one for the whole deletion, so what goes is what was
+        confirmed, and nothing goes unrecorded."""
+        require_admin()
+        state = admin_list_state(request.form)
+        back = admin_url(**dict(state, page=1))  # no anchor: the message at the top stays in view
+        if state["fake"] != "only":
+            flash("Show the suspected fake accounts first, then delete them from that list.",
+                  "error")
+            return redirect(back)
+        if not delete_confirmed():
+            return redirect(back)
+        typed = request.form.get("confirm_count", "").strip()
+        if not (typed.isascii() and typed.isdigit() and len(typed) <= 9):
+            flash("Type the number of accounts to confirm the deletion.", "error")
+            return redirect(back)
+        # The list as it was when the page was made: an account passing the 24 hour line since
+        # was not shown, so it is not deleted (never later than now).
+        asof = request.form.get("asof", "")
+        try:
+            datetime.strptime(asof, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            flash("This list is out of date. Reload the page and delete again.", "error")
+            return redirect(back)
+        asof = min(asof, utc_now_text())
+        where, params = admin_where(state, asof)
+        matching = f' matching "{state["search"]}"' if state["search"] else ""
+        who = current_user.email
+        with db.transaction() as conn:
+            rows = conn.execute(
+                "SELECT u.id, u.email, u.created_at, (SELECT a.created_at FROM audit_log a "
+                "WHERE a.user_id = u.id AND a.event = 'account_confirmed' ORDER BY a.id "
+                f"LIMIT 1) AS confirmed_at FROM users u WHERE {where} ORDER BY u.id",
+                params).fetchall()
+            if rows and len(rows) == int(typed):
+                # The same rule at the same moment again in the DELETE, under the same lock:
+                # nothing can sign in or add data between the count and the deletion, so it
+                # removes exactly the rows counted and recorded below.
+                if conn.execute(f"DELETE FROM users WHERE id IN (SELECT u.id FROM users u "
+                                f"WHERE {where})", params).rowcount != len(rows):
+                    raise RuntimeError("bulk delete removed other rows than it counted")
+                for r in rows:
+                    audit("admin_delete_fake", r["id"], r["email"],
+                          fake_reason(r["created_at"], r["confirmed_at"]), who, conn=conn)
+                audit("admin_fake_cleanup", None, "", plural(len(rows), "account") + matching,
+                      who, conn=conn)
+        if not rows:
+            flash(f"No suspected fake accounts{matching} to delete.", "info")
+            return redirect(back)
+        if len(rows) != int(typed):
+            flash(f"The list changed: {plural(len(rows), 'account')} "
+                  f"{'is' if len(rows) == 1 else 'are'} suspected now{matching}. Nothing was "
+                  "deleted: check them and delete again.", "error")
+            return redirect(back)
+        for r in rows:  # an account without receipts has at most an empty folder
+            try:
+                os.rmdir(os.path.join(app.config["UPLOAD_DIR"], str(r["id"])))
+            except OSError:
+                pass
+        flash(f"{plural(len(rows), 'suspected fake account')}{matching} "
+              f"{'was' if len(rows) == 1 else 'were'} deleted.", "info")
         return redirect(back)
 
     @app.route("/admin/users/<int:user_id>", methods=["POST"])

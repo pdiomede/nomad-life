@@ -41,8 +41,16 @@ RECEIPT_ERRORS = (OSError, zipfile.BadZipFile, zlib.error, IndexError, EOFError,
                   NotImplementedError, ValueError)
 # Every entry is deflated: while streaming, zipfile writes sizes after the data (a data
 # descriptor), and strict streaming readers (for example Java's ZipInputStream) only accept
-# that for deflated entries. Formats that are already compressed use the fastest level.
-FAST_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "heic", "webp"}
+# that for deflated entries. Photos are compressed already (deflating them again saved 0.4% of a
+# JPEG at 12 to 15 ms per MB), so they get level 0: still a deflated entry, written at copying
+# speed. PDFs often shrink a little and get the fastest real level; generated text files 6.
+PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "heic", "webp"}
+LEVEL_PHOTO, LEVEL_PDF, LEVEL_TEXT = 0, 1, 6
+
+
+def compress_level(ext):
+    """Deflate level of a receipt inside the package, from its real extension."""
+    return LEVEL_PHOTO if ext.lower() in PHOTO_EXTENSIONS else LEVEL_PDF
 # Budgets keep the longest path well under the 260 character Windows limit, even after
 # "Extract All" into a Downloads folder.
 MAX_CITY, MAX_COUNTRY, MAX_STEM, MAX_KIND = 24, 24, 40, 20
@@ -625,10 +633,10 @@ def _zip_time(dt):
     return max(dt, datetime(1980, 1, 1)).timetuple()[:6]
 
 
-def _info(arcname, when, size, fast):
+def _info(arcname, when, size, level):
     info = zipfile.ZipInfo(arcname, date_time=_zip_time(when))
     info.compress_type = zipfile.ZIP_DEFLATED
-    info._compresslevel = 1 if fast else 6
+    info._compresslevel = level  # 0 is a level too: zipfile only skips None
     info.external_attr = 0o644 << 16
     info.file_size = size
     return info
@@ -636,20 +644,20 @@ def _info(arcname, when, size, fast):
 
 def prepare(data):
     """Build every generated file up front (errors surface before any byte is sent) and
-    return the list of ZIP entries: (arcname, bytes or Receipt, fast compression)."""
+    return the list of ZIP entries: (arcname, bytes or Receipt, deflate level)."""
     # Group receipts by stay (base first), then by upload date, for the index and manifest.
     data.receipts.sort(key=lambda r: (r.stay_number, r.uploaded, r.name.casefold()))
     assign_arcnames(data)
     root = data.root
     entries = [
-        (f"{root}/README.txt", readme_text(data), False),
-        (f"{root}/summary.pdf", render_pdf(data), False),
-        (f"{root}/timeline.csv", timeline_csv(data), False),
-        (f"{root}/country-totals.csv", country_totals_csv(data), False),
+        (f"{root}/README.txt", readme_text(data), LEVEL_TEXT),
+        (f"{root}/summary.pdf", render_pdf(data), LEVEL_TEXT),
+        (f"{root}/timeline.csv", timeline_csv(data), LEVEL_TEXT),
+        (f"{root}/country-totals.csv", country_totals_csv(data), LEVEL_TEXT),
     ]
     for r in data.receipts:
         if r.exists:
-            entries.append((r.arcname, r, r.ext in FAST_EXTENSIONS))
+            entries.append((r.arcname, r, compress_level(r.ext)))
     for arcname, _, _ in entries:
         _check_arcname(root, arcname)
     return entries
@@ -664,9 +672,9 @@ def stream(data, entries):
     when = data.generated_at
     zf = zipfile.ZipFile(sink, "w")
     try:
-        for arcname, source, fast in entries:
+        for arcname, source, level in entries:
             if isinstance(source, bytes):
-                with zf.open(_info(arcname, when, len(source), fast), "w") as dest:
+                with zf.open(_info(arcname, when, len(source), level), "w") as dest:
                     dest.write(source)
                 manifest.append([arcname, "", "generated", when.date().isoformat(), len(source),
                                  hashlib.sha256(source).hexdigest(), "ok"])
@@ -680,7 +688,7 @@ def stream(data, entries):
             except RECEIPT_ERRORS:
                 source.exists = False
                 continue
-            with fh, zf.open(_info(arcname, when, size, fast), "w") as dest:
+            with fh, zf.open(_info(arcname, when, size, level), "w") as dest:
                 while True:
                     chunk = fh.read(CHUNK)
                     if not chunk:
@@ -699,7 +707,7 @@ def stream(data, entries):
                 manifest.append([r.arcname, stay_label(data, r.stay_number), r.kind, r.uploaded,
                                  r.size, "", "missing"])
         body = _csv(["path", "stay", "type", "uploaded", "size_bytes", "sha256", "status"], manifest)
-        with zf.open(_info(f"{data.root}/manifest.csv", when, len(body), False), "w") as dest:
+        with zf.open(_info(f"{data.root}/manifest.csv", when, len(body), LEVEL_TEXT), "w") as dest:
             dest.write(body)
     finally:
         zf.close()

@@ -21,8 +21,10 @@ temporary name and renamed when complete, so a failed run never leaves a partial
 temporary file left by a run that was killed (no finally block runs then) is removed by a later
 run once it is hours old.
 
-To restore: stop the app, put nomad.db and .secret_key back in the database folder and the
-receipts in UPLOAD_DIR (owned by the app's user, mode 700), start the app.
+To restore: stop the app, delete nomad.db-wal and nomad.db-shm if they are there (they belong
+to the database being replaced), put nomad.db and .secret_key back in the database folder and
+the receipts in UPLOAD_DIR (owned by the app's user, mode 700), start the app. Never copy
+nomad.db by hand while the app runs: recent changes may still be in nomad.db-wal.
 """
 import argparse
 import os
@@ -59,13 +61,26 @@ def resolve(path):
 
 
 def copy_database(src, dst):
-    """A consistent copy of a database that may be in use, without ever creating or
-    changing the original (read only)."""
-    source = sqlite3.connect(pathlib.Path(src).as_uri() + "?mode=ro", uri=True)
+    """A consistent copy of a database that may be in use, including what is still in its
+    write-ahead log (nomad.db-wal), without ever changing the original. The copy is one
+    self-contained file (rollback journal); the app turns WAL on again when it starts on it."""
+    source = None
+    try:
+        source = sqlite3.connect(pathlib.Path(src).as_uri() + "?mode=ro", uri=True)
+        source.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+    except sqlite3.OperationalError:
+        if source is not None:
+            source.close()
+        if not os.path.isfile(src):  # never create an empty database in its place
+            raise
+        # A WAL database while the app is stopped has no nomad.db-shm, which a read only
+        # connection cannot create. A normal one can (and removes it again); it only reads.
+        source = sqlite3.connect(src)
     try:
         target = sqlite3.connect(dst)
         try:
             source.backup(target)
+            target.execute("PRAGMA journal_mode = DELETE")
         finally:
             target.close()
     finally:

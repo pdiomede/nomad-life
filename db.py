@@ -1,5 +1,7 @@
 """SQLite storage for Nomad Life."""
+import functools
 import ipaddress
+import logging
 import os
 import sqlite3
 import unicodedata
@@ -99,6 +101,11 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(created_at);
+-- When each account was confirmed (the admin accounts table, its Likely fake chip and
+-- check-fake-users): one entry per account, instead of reading every event of each account.
+-- Queries must name the event as this literal for SQLite to use it.
+CREATE INDEX IF NOT EXISTS idx_audit_confirmed ON audit_log(user_id, id)
+    WHERE event = 'account_confirmed';
 
 -- One row per signed in browser. Sign out deletes its row, so a copied session or remember
 -- cookie stops working at once. Rows unused for a while are pruned.
@@ -147,6 +154,9 @@ CREATE TABLE IF NOT EXISTS ticket_messages (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_ticket_messages ON ticket_messages(ticket_id, id);
+-- Deleting an account sets author_id to NULL in its messages (ON DELETE SET NULL): without it
+-- every deleted account read every message, holding the write lock (seconds for a bulk delete).
+CREATE INDEX IF NOT EXISTS idx_ticket_messages_author ON ticket_messages(author_id);
 
 CREATE INDEX IF NOT EXISTS idx_movements_year ON movements(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_year ON documents(year_id);
@@ -157,6 +167,13 @@ CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id);
 """
 
 
+# The SQL functions below run once per row of a sort or search (every event of a year in the
+# Security activity table), and their values repeat a lot (a few thousand emails and IPs), so
+# their results are cached per process. They are pure: same text in, same key out.
+KEY_CACHE = 16384
+
+
+@functools.lru_cache(maxsize=KEY_CACHE)
 def search_fold(text):
     """Lower case in every script, composed (NFC) before and after, so "Élodie" typed as one
     character or as E plus an accent (common when pasted from a Mac) finds the other."""
@@ -170,6 +187,7 @@ def search_like(text):
             .replace("_", "\\_") + "%")
 
 
+@functools.lru_cache(maxsize=KEY_CACHE)
 def sort_fold(value):
     """A text key for alphabetical order: case and accents ignored, so "élodie@" sorts with the
     e's instead of after z (COLLATE NOCASE only folds A to Z)."""
@@ -179,6 +197,7 @@ def sort_fold(value):
     return "".join(ch for ch in text if not unicodedata.combining(ch))
 
 
+@functools.lru_cache(maxsize=KEY_CACHE)
 def ip_sort_key(value):
     """A text key that sorts IP addresses by number (9.1.1.1 before 10.0.0.1), IPv4 before
     IPv6 (an IPv4 address written as ::ffff:1.2.3.4 counts as IPv4), anything else after
@@ -199,6 +218,9 @@ def get_db():
         g.db = sqlite3.connect(current_app.config["DATABASE_PATH"])
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
+        # In WAL mode (set by init_db) a commit is safe after an app crash with NORMAL, and
+        # skips the fsync of every commit; a power cut can lose the last commits, never the file.
+        g.db.execute("PRAGMA synchronous = NORMAL")
         # Unicode aware lower case for searches (SQLite's lower() only knows A to Z).
         g.db.create_function("casefold", 1,
                              lambda v: search_fold(v) if isinstance(v, str) else v,
@@ -219,16 +241,30 @@ def init_db(path):
     conn = sqlite3.connect(path)
     try:
         # Password hashes and emails: readable by the account running the app only. SQLite
-        # gives its journal files the same permissions.
+        # gives its journal files (nomad.db-wal and -shm) the same permissions.
         try:
             os.chmod(path, 0o600)
         except OSError:
             pass
+        use_wal(conn)
         conn.executescript(SCHEMA)
         conn.commit()
         migrate(conn)
     finally:
         conn.close()
+
+
+def use_wal(conn):
+    """Write-ahead logging: readers and the writer no longer wait for each other (in the
+    default rollback journal a write waits for every read, and new reads wait for it). The
+    mode is stored in the database file, so this only changes it once. Copy the database only
+    with scripts/backup.py: nomad.db alone misses what is still in nomad.db-wal."""
+    try:
+        mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+    except sqlite3.OperationalError as exc:  # busy (a backup reading it): next start
+        logging.getLogger(__name__).warning("Database kept in its journal mode: %s", exc)
+        return None
+    return mode
 
 
 def _has_column(conn, table, column):

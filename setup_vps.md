@@ -243,7 +243,16 @@ restic backup --exclude '*.tmp' /var/backups/nomad-life /var/www/nomad-life/uplo
 
 Receipts are deliberately not in the nightly archive: there they were stored `--keep` times over on the server's own disk, which fills up as receipts grow. For a one-off complete archive (before moving to a new server, or before `zip-receipts`), add `--with-receipts`.
 
-To restore: stop the service, unpack an archive (`tar -xzf nomadlife-....tar.gz`), put `nomad.db` and `.secret_key` back in `/var/www/nomad-life/data` and the receipts from the off-site copy in `/var/www/nomad-life/uploads` (owned by `paolo`, mode 700), start the service.
+To restore: stop the service, delete `nomad.db-wal` and `nomad.db-shm` in `/var/www/nomad-life/data` if they are there (they belong to the database being replaced: left next to the restored one, SQLite would apply them to it), unpack an archive (`tar -xzf nomadlife-....tar.gz`), put `nomad.db` and `.secret_key` back in `/var/www/nomad-life/data` and the receipts from the off-site copy in `/var/www/nomad-life/uploads` (owned by `paolo`, mode 700), start the service:
+
+```bash
+sudo systemctl stop nomad-life
+cd /var/www/nomad-life/data && rm -f nomad.db-wal nomad.db-shm
+tar -xzf /var/backups/nomad-life/nomadlife-YYYY-MM-DD_HHMMSS.tar.gz   # nomad.db and .secret_key
+sudo systemctl start nomad-life
+```
+
+The database runs in write-ahead log mode (since 1.5.6): recent changes may sit in `nomad.db-wal` until SQLite folds them into `nomad.db`. Copy it only with `scripts/backup.py`, never `nomad.db` alone with `cp`, `rsync` or a backup tool reading `data/` while the app runs.
 
 ## 12. The first admin
 
@@ -310,13 +319,15 @@ Upgrade step by step, as `paolo`:
 
 8. Open https://nomad.example.com, sign in and look at the pages the release changed (its `CHANGELOG.md` entry). Browsers load the new styles by themselves after the restart.
 
-If something is wrong, go back to the previous version: find it with `git log --oneline -3`, then `git checkout <previous id> && sudo systemctl restart nomad-life`. Database upgrades only add tables, columns and indexes, so the previous version keeps working with the upgraded database. If the database itself is damaged, stop the service, unpack the archive from step 3 into `data/` (section 11) and start it again.
+If something is wrong, go back to the previous version: find it with `git log --oneline -3`, then `git checkout <previous id> && sudo systemctl restart nomad-life`. Database upgrades only add tables, columns and indexes, so the previous version keeps working with the upgraded database. If the database itself is damaged, stop the service, delete `data/nomad.db-wal` and `data/nomad.db-shm`, unpack the archive from step 3 into `data/` (section 11) and start it again.
 
 Always restart, never reload with `kill -HUP`: because of `--preload` the gunicorn master keeps the old code, so a reload would start the new workers on the old version.
 
 A server set up from an older copy of this guide lacks `--graceful-timeout 120` and `TimeoutStopSec=150` in `/etc/systemd/system/nomad-life.service`. Add them as in section 6, then run `sudo systemctl daemon-reload` once.
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
+
+- **1.5.6** switches the database to write-ahead logging on the first start (readers and writers stop waiting for each other); `nomad.db-wal` and `nomad.db-shm` appear next to `nomad.db`, private like it. Nothing to run: the nightly `scripts/backup.py` and the restic command stay as they are. Only restoring changes: delete those two files first (section 11). It also adds an index to the security history, built on start in well under a second.
 
 - **1.4.0** records the IP address of each sign up and sign in (two columns added on start; the last sign in IP of existing accounts is taken from the security history), and the email confirmation link now opens a page with a button. Accounts that company mail scanners confirmed before, by opening the link (confirmed seconds after signing up, never signed in), stay until you delete them from their admin page.
 

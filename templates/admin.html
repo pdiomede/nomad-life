@@ -89,6 +89,17 @@
     </div>
   </form>
 
+  {% if state.fake == 'only' and pager.rows %}
+  {# Deletes every account this view lists (all its pages, within the search): the number
+     typed in the dialog must still be the number of accounts the server finds. #}
+  {% set n = pager.total %}
+  {% set matching = (' matching "' ~ state.search ~ '"') if state.search else '' %}
+  <div class="admin-bulk">
+    <p class="small">{{ n }} account{{ '' if n == 1 else 's' }} look{{ 's' if n == 1 }} fake{% if state.search %} matching &ldquo;{{ state.search }}&rdquo;{% endif %}{% if pager.pages > 1 %}, on {{ pager.pages }} pages{% endif %}.</p>
+    {{ ui.delete_form(url_for('admin_delete_suspects'), ('the suspected fake account' if n == 1 else 'the ' ~ n ~ ' suspected fake accounts') ~ ' listed' ~ matching, label=('Delete this account' if n == 1 else 'Delete these ' ~ n ~ ' accounts'), extra=dict(admin_hidden(state, 'page'), asof=asof, confirm_count=''), type_to_confirm=n|string, type_field='confirm_count', button_class='btn btn-danger btn-sm') }}
+  </div>
+  {% endif %}
+
   {% if pager.rows %}
   <div class="table-wrap">
     <table class="table admin-users-table">
@@ -150,7 +161,7 @@
   <form method="get" action="{{ url_for('admin') }}#activity" class="support-filters">
     <div class="field grow admin-search">
       <label for="activity-q">Search activity</label>
-      <input id="activity-q" name="q" type="search" value="{{ state.q }}" placeholder="Email or IP" maxlength="254" autocomplete="off">
+      <input id="activity-q" name="q" type="search" value="{{ state.q }}" placeholder="Email, IP or event" maxlength="254" autocomplete="off">
     </div>
     {{ hidden(('q', 'apage')) }}
     <div class="support-filter-actions">
