@@ -25,6 +25,10 @@ class SecurityTests(AppTestCase):
         fields = dict(line.split(": ", 1) for line in resp.get_data(as_text=True).splitlines())
         self.assertEqual(fields["Contact"], f"mailto:{appmod.SUPPORT_EMAIL}")
         self.assertEqual(fields["Canonical"], "https://nomadlife.pro/.well-known/security.txt")
+        self.assertEqual(fields["Policy"], "https://nomadlife.pro/security")
+        policy = self.client.get("/security").get_data(as_text=True)
+        self.assertIn("<h1>Security Policy</h1>", policy)
+        self.assertIn(f'href="mailto:{appmod.SUPPORT_EMAIL}"', policy)
         expires = datetime.strptime(fields["Expires"], "%Y-%m-%dT%H:%M:%SZ").replace(
             tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)

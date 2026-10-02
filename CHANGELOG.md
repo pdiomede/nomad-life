@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.8] - 2026-10-02
+
+### Added
+
+- **Security Policy** at `/security`: how to report a vulnerability (to the support address, with what to include), the rules while looking (own accounts only, no denial of service, no social engineering, time to fix before publishing), the promise not to take legal action against good faith research, and the scope. It is one of the legal pages (indexable, in the sitemap, linked from the other legal pages), and `/.well-known/security.txt` now names it as its `Policy`.
+
 ## [1.12.7] - 2026-10-02
 
 ### Fixed

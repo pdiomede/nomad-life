@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.7"
+APP_VERSION = "1.12.8"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -175,6 +175,10 @@ LEGAL_PAGES = {
                                "rights."},
     "refunds": {"title": "Refund Policy", "updated": "2026-10-02",
                 "description": "How cancelling and refunds work for Nomad Life's yearly plans."},
+    # The Policy of /.well-known/security.txt: how to report a vulnerability.
+    "security": {"title": "Security Policy", "updated": "2026-10-02",
+                 "description": "How to report a security problem in Nomad Life, and what we "
+                                "do with your report."},
 }
 # Days after a payment (the first one or a renewal) in which it is refunded in full on request.
 REFUND_DAYS = 14
@@ -3865,6 +3869,10 @@ def register_routes(app):
     def refunds():
         return legal_page("refunds")
 
+    @app.route("/security")
+    def security():
+        return legal_page("security")
+
     @app.route("/guides")
     def guides():
         """Public guides on day counting and tax residency, indexable like /docs."""
@@ -3926,7 +3934,8 @@ def register_routes(app):
             "%Y-%m-%dT00:00:00Z")
         lines = [f"Contact: mailto:{SUPPORT_EMAIL}", f"Expires: {expires}",
                  "Preferred-Languages: en",
-                 f"Canonical: {base}{url_for('security_txt')}", ""]
+                 f"Canonical: {base}{url_for('security_txt')}",
+                 f"Policy: {base}{url_for('security')}", ""]
         return Response("\n".join(lines), mimetype="text/plain")
 
     @app.route("/sitemap.xml")

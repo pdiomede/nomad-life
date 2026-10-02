@@ -1,0 +1,30 @@
+{% extends "legal/_layout.html" %}
+{% block legal %}
+<p>We take the security of Nomad Life and of your data seriously. If you found a weakness, please tell us privately first, so we can fix it before anyone misuses it.</p>
+
+<h2 id="report">How to report</h2>
+<p>Write to <a href="mailto:{{ support_email }}">{{ support_email }}</a> with "Security" in the subject. Please include:</p>
+<ul>
+  <li>what the problem is and where (the page or address),</li>
+  <li>the steps to reproduce it,</li>
+  <li>what someone could do with it,</li>
+  <li>how we can reach you, if not by the address you write from.</li>
+</ul>
+<p>We confirm that we received your report within a few working days, keep you informed while we fix it, and tell you when it is fixed.</p>
+
+<h2 id="rules">While you look</h2>
+<ul>
+  <li>Use only your own accounts. Never open, change or delete other people's data; if you reach some by accident, stop, do not keep it, and tell us.</li>
+  <li>No denial of service, load testing, spam or automated scanning that slows the service down for others.</li>
+  <li>No social engineering of our team or users, and no attempts on our providers (Hetzner, Cloudflare, Stripe, Google, Hostinger).</li>
+  <li>Give us a reasonable time to fix the problem before you publish anything about it.</li>
+</ul>
+
+<h2 id="safe-harbor">Our promise</h2>
+<p>If you follow these rules and act in good faith, we will not take legal action against you for your research, and we will not report you to the authorities. If you like, we thank you by name once the problem is fixed.</p>
+
+<h2 id="scope">Scope</h2>
+<p>This covers nomadlife.pro and the Nomad Life app. Payments are handled by Stripe: report problems with Stripe's own pages to Stripe. We do not run a paid bug bounty.</p>
+
+<p>Machine readable contact details are at <a href="{{ url_for('security_txt') }}">/.well-known/security.txt</a>.</p>
+{% endblock %}

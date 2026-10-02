@@ -28,7 +28,7 @@
   </div>
   <nav class="guide-more" aria-label="Other legal pages">
     <ul>
-      {% for endpoint, title in (('terms', 'Terms of Service'), ('privacy', 'Privacy Policy'), ('refunds', 'Refund Policy')) if endpoint != request.endpoint %}
+      {% for endpoint, title in (('terms', 'Terms of Service'), ('privacy', 'Privacy Policy'), ('refunds', 'Refund Policy'), ('security', 'Security Policy')) if endpoint != request.endpoint %}
       <li><a href="{{ url_for(endpoint) }}">{{ title }}</a></li>
       {% endfor %}
     </ul>
