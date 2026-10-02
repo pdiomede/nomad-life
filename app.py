@@ -45,7 +45,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.10.1"
+APP_VERSION = "1.11.0"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -112,6 +112,10 @@ SITE_DESCRIPTION = ("Track the days you spend in each country and keep your trav
                     "all in one place. Made for digital nomads.")
 SHARE_TEXT = "Track the days you spend in each country and keep your travel receipts safe."
 # Search result snippet for the landing page (title under 60 and description under 160 characters).
+DOCS_TITLE = "Documentation | Nomad Life"
+DOCS_DESCRIPTION = ("How to use Nomad Life: set up a year and your base, log your stays, see how "
+                    "days are counted toward the 183 day line, keep receipts and download the "
+                    "accountant package.")
 SEO_TITLE = "Digital nomad day tracker and receipt vault | Nomad Life"
 SEO_DESCRIPTION = ("Count your days in each country, watch the 183 day line and keep rental contracts, "
                    "hotel bills and flight tickets in one place. Free for digital nomads.")
@@ -241,6 +245,12 @@ CAPTCHA_CSP = (CSP.replace("script-src 'self'", f"script-src 'self' {HCAPTCHA_HO
                .replace("style-src 'self'", f"style-src 'self' {HCAPTCHA_HOSTS}")
                .replace("connect-src 'self'", f"connect-src 'self' {HCAPTCHA_HOSTS}")
                .replace("object-src", f"frame-src {HCAPTCHA_HOSTS}; object-src"))
+# Browser features no page uses: refused for the page and anything it embeds (hCaptcha too).
+PERMISSIONS_POLICY = ("accelerometer=(), browsing-topics=(), camera=(), display-capture=(), "
+                      "geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), "
+                      "payment=(), usb=()")
+# /.well-known/security.txt (RFC 9116): its Expires is always this far ahead.
+SECURITY_TXT_DAYS = 180
 EMAIL_CHANGE_MAX_AGE = 3600
 # How long the "undo this change" link sent to the old address works.
 EMAIL_REVERT_MAX_AGE = 7 * 24 * 3600
@@ -625,6 +635,9 @@ def create_app(overrides=None):
         resp.headers.setdefault("Content-Security-Policy", policy)
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
+        resp.headers.setdefault("Permissions-Policy", PERMISSIONS_POLICY)
+        if resp.status_code == 429 and g.get("retry_after"):
+            resp.headers.setdefault("Retry-After", str(g.retry_after))
         if request.endpoint != "static" and current_user.is_authenticated:
             resp.headers["Cache-Control"] = "private, no-store"
         return resp
@@ -1583,6 +1596,9 @@ def security_alert(email, what, account=None, link=None, advice=None, button=Non
 
 
 def too_many_message(wait, scope, what):
+    # The 429 answer also says when to try again, in a Retry-After header (security_headers).
+    if has_request_context():
+        g.retry_after = max(1, int(wait)) * 60
     who = {"ip": "from this network", "device": "on this device"}.get(scope, "for this account")
     return f"Too many {what} {who}. Please wait {plural(wait, 'minute')} and try again."
 
@@ -1870,11 +1886,18 @@ def site_meta():
         ("Reddit", "https://www.reddit.com/submit?" + urlencode({"url": url, "title": SITE_TITLE})),
     ]
     image = base + url_for("static", filename="img/og-image.jpg")
+    organization = {"@type": "Organization", "@id": url + "#organization", "name": "Nomad Life",
+                    "url": url, "email": CONTACT_EMAIL,
+                    "logo": {"@type": "ImageObject",
+                             "url": base + url_for("static", filename="img/icon-512.png"),
+                             "width": 512, "height": 512}}
     structured_data = {
         "@context": "https://schema.org",
         "@graph": [
+            organization,
             {"@type": "WebSite", "@id": url + "#website", "url": url, "name": "Nomad Life",
-             "description": SITE_DESCRIPTION, "inLanguage": "en"},
+             "description": SITE_DESCRIPTION, "inLanguage": "en",
+             "publisher": {"@id": url + "#organization"}},
             {"@type": "WebApplication", "@id": url + "#app", "name": "Nomad Life", "url": url,
              "description": SITE_DESCRIPTION, "image": image,
              "applicationCategory": "TravelApplication", "operatingSystem": "Any",
@@ -1891,7 +1914,22 @@ def site_meta():
              "isPartOf": {"@id": url + "#website"}},
         ],
     }
+    docs_url = base + url_for("docs")
+    docs_data = {
+        "@context": "https://schema.org",
+        "@graph": [
+            organization,
+            {"@type": "WebPage", "@id": docs_url + "#page", "url": docs_url,
+             "name": DOCS_TITLE, "description": DOCS_DESCRIPTION, "inLanguage": "en",
+             "isPartOf": {"@id": url + "#website"}, "publisher": {"@id": url + "#organization"},
+             "breadcrumb": {"@id": docs_url + "#breadcrumb"}},
+            {"@type": "BreadcrumbList", "@id": docs_url + "#breadcrumb", "itemListElement": [
+                {"@type": "ListItem", "position": 1, "name": "Nomad Life", "item": url},
+                {"@type": "ListItem", "position": 2, "name": "Documentation", "item": docs_url}]},
+        ],
+    }
     return {"title": SITE_TITLE, "description": SITE_DESCRIPTION, "share_text": SHARE_TEXT,
+            "docs_title": DOCS_TITLE, "docs_description": DOCS_DESCRIPTION, "docs_data": docs_data,
             "seo_title": SEO_TITLE, "seo_description": SEO_DESCRIPTION, "base": base,
             "url": url, "image": image, "share_links": links, "structured_data": structured_data}
 
@@ -3148,6 +3186,17 @@ def register_routes(app):
         base = app.config["APP_BASE_URL"].rstrip("/")
         lines = ["User-agent: *", "Allow: /"] + [f"Disallow: {p}" for p in PRIVATE_PATHS]
         lines += ["", f"Sitemap: {base}{url_for('sitemap_xml')}", ""]
+        return Response("\n".join(lines), mimetype="text/plain")
+
+    @app.route("/.well-known/security.txt")
+    def security_txt():
+        """How to report a vulnerability (RFC 9116); Expires always lies ahead."""
+        base = app.config["APP_BASE_URL"].rstrip("/")
+        expires = (datetime.now(timezone.utc) + timedelta(days=SECURITY_TXT_DAYS)).strftime(
+            "%Y-%m-%dT00:00:00Z")
+        lines = [f"Contact: mailto:{SUPPORT_EMAIL}", f"Expires: {expires}",
+                 "Preferred-Languages: en",
+                 f"Canonical: {base}{url_for('security_txt')}", ""]
         return Response("\n".join(lines), mimetype="text/plain")
 
     @app.route("/sitemap.xml")

@@ -2,7 +2,7 @@
 {% import "_macros.html" as ui with context %}
 {% block title %}{{ site.seo_title }}{% endblock %}
 {% block description %}{{ site.seo_description }}{% endblock %}
-{% block robots %}index, follow, max-image-preview:large{% endblock %}
+{% block robots %}index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1{% endblock %}
 {% block head_extra %}
   <link rel="canonical" href="{{ site.url }}">
   <script type="application/ld+json">{{ site.structured_data | tojson }}</script>

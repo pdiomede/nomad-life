@@ -1,10 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Documentation | Nomad Life{% endblock %}
-{% block description %}How to use Nomad Life: set up a year and your base, log your stays, see how days are counted toward the 183 day line, keep receipts and download the accountant package.{% endblock %}
-{% block robots %}index, follow, max-image-preview:large{% endblock %}
+{% block title %}{{ site.docs_title }}{% endblock %}
+{% block description %}{{ site.docs_description }}{% endblock %}
+{% block og_title %}{{ site.docs_title }}{% endblock %}
+{% block og_description %}{{ site.docs_description }}{% endblock %}
+{% block robots %}index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1{% endblock %}
 {% block og_url %}{{ docs_url }}{% endblock %}
 {% block head_extra %}
   <link rel="canonical" href="{{ docs_url }}">
+  <script type="application/ld+json">{{ site.docs_data | tojson }}</script>
 {% endblock %}
 
 {# A screenshot in the light and the dark theme; the page shows the one of the current theme.

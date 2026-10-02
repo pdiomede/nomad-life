@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.11.0] - 2026-10-02
+
+### Added
+
+From a security scan of nomadlife.pro (grade B, 72/100) and a search engine review:
+
+- **Permissions-Policy header** on every response: the camera, microphone, location, payment, USB and other browser features no page uses are refused, for the page and anything it embeds.
+- **`/.well-known/security.txt`** (RFC 9116): where to report a vulnerability (the support address), with an expiry date that always lies 180 days ahead.
+- **`Retry-After` header** on every "Too many attempts" answer (HTTP 429), with the seconds to wait.
+- **Documentation link previews.** Shared links to `/docs` showed the landing page's title and text; they now show "Documentation | Nomad Life" and the page's own description.
+- **Structured data for search engines:** an Organization with the Nomad Life logo (publisher of the site), and on `/docs` a web page with a "Nomad Life > Documentation" breadcrumb, which Google can show in its results instead of the bare address.
+- The landing page and `/docs` allow search engines full length snippets (`max-snippet:-1`).
+
 ## [1.10.1] - 2026-10-02
 
 ### Fixed

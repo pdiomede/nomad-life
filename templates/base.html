@@ -13,8 +13,8 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Nomad Life">
   <meta property="og:locale" content="en_US">
-  <meta property="og:title" content="{{ site.title }}">
-  <meta property="og:description" content="{{ site.description }}">
+  <meta property="og:title" content="{% block og_title %}{{ site.title }}{% endblock %}">
+  <meta property="og:description" content="{% block og_description %}{{ site.description }}{% endblock %}">
   <meta property="og:url" content="{% block og_url %}{{ site.url }}{% endblock %}">
   <meta property="og:image" content="{{ site.image }}">
   <meta property="og:image:type" content="image/jpeg">
@@ -22,8 +22,8 @@
   <meta property="og:image:height" content="628">
   <meta property="og:image:alt" content="Nomad Life logo over a world map. Every day. Every place. Track your stays. Keep your receipts.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="{{ site.title }}">
-  <meta name="twitter:description" content="{{ site.description }}">
+  <meta name="twitter:title" content="{{ self.og_title() }}">
+  <meta name="twitter:description" content="{{ self.og_description() }}">
   <meta name="twitter:image" content="{{ site.image }}">
   <meta name="twitter:image:alt" content="Nomad Life logo over a world map. Every day. Every place.">
   <script src="{{ url_for('static', filename='js/theme-init.js', v=asset_version) }}"></script>
