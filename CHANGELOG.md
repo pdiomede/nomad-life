@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.7.0] - 2026-10-02
+
+### Added
+
+- **Gmail dot rule on Sign up.** Gmail ignores dots, so bots sign up as `t.o.n.yluu.5.5.95@gmail.com` to make one mailbox look like endless new addresses. A sign up for a gmail.com or googlemail.com address with more than 2 dots before the `@` (a `+tag` does not count) gets the usual "We sent an email" answer, but no account is made and no email is sent. Addresses such as `first.middle.last@gmail.com` still work.
+
 ## [1.6.0] - 2026-10-02
 
 ### Added

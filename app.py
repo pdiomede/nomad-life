@@ -44,7 +44,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -202,6 +202,10 @@ HCAPTCHA_VERIFY_URL = "https://api.hcaptcha.com/siteverify"
 HCAPTCHA_TIMEOUT_SECONDS = 5
 # The visible "Website" field no person sees (off screen): only bots fill it in.
 HONEYPOT_FIELD = "website"
+# Gmail ignores dots, so bots sign up as t.o.n.yluu.5.5.95@gmail.com: one mailbox, endless
+# "new" addresses. People rarely use more than two (first.middle.last).
+GMAIL_DOMAINS = ("gmail.com", "googlemail.com")
+GMAIL_MAX_DOTS = 2
 # First bytes of each allowed receipt type, so a renamed file (an HTML page saved as .pdf,
 # say) is refused. PDFs may start with a little junk before %PDF (allowed by the format).
 FILE_SIGNATURES = {
@@ -1247,6 +1251,12 @@ def captcha_passed():
     if not token or len(token) > 8192:
         return False
     return hcaptcha_verify(token) is not False
+
+
+def dotted_gmail(email):
+    """A Gmail address with more dots than people use (the part after a + does not count)."""
+    local, _, domain = email.rpartition("@")
+    return domain in GMAIL_DOMAINS and local.split("+", 1)[0].count(".") > GMAIL_MAX_DOTS
 
 
 def honeypot_filled():
@@ -2691,6 +2701,12 @@ def register_routes(app):
                 # Before the limit, so a person who missed the box does not use up attempts.
                 flash(CAPTCHA_MESSAGE, "error")
                 return captcha_page("auth/signup.html", 400)
+            elif dotted_gmail(email):
+                # A bot's dot trick address: the usual answer, but no account and no email.
+                current_app.logger.info("Sign up refused for a dotted Gmail address from %s",
+                                        client_ip())
+                flash(sent, "info")
+                return redirect(url_for("login"))
             else:
                 wait, scope, _attempt = take_attempt("signup")
                 if wait:
