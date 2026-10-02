@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.1] - 2026-10-02
+
+### Added
+
+- **Export and purge the Security Activity.** A gear next to the Security Activity title on the admin page opens a menu with four actions, each with its icon:
+  - **Export last 30 days** and **Export all** download the events as a CSV file (UTF-8 for Excel, formulas neutralized).
+  - **Purge last 30 days** and **Purge all** delete the events after the two step dialog, with PURGE typed. They then download a CSV of exactly what was deleted. The page reloads at the top with the number of events purged.
+  - An event written while a purge runs (a sign in) is neither deleted nor in its file.
+  - Purging also removes the "Account confirmed" events that the Likely fake chip reads its confirmation delay from.
+- **Admin titles:** **Plans & Prices** (was Plans and prices), **Registered Users** (was Users) and **Security Activity**, in a larger font.
+
+### Fixed
+
+Found in a review of the new menu, before release:
+
+- **Medium.** The CSV of a purge was built from the rows read before deleting, so it could list events that were not deleted:
+  - an event right at the 30 day line ("now" moved on between reading and deleting);
+  - events another admin purged at the same moment, whose second purge also said "Purged 0 events".
+  
+  The cutoff is now a fixed time, the deleted rows are read under the same write lock as the delete, and the file holds exactly those. A purge that finds everything already gone says so and downloads nothing.
+- **Low.** After a purge, the page reloaded at the Security Activity table, far below the message saying how many events were purged and where the CSV went. It now opens at the top.
+- **Low.** On phones, the menu opened past the right edge of the screen and made the whole page scroll sideways. It now opens toward the card and fits.
+- **Low.** The export links carried a download attribute, so when the session had ended the browser saved the sign in page as the CSV file instead of showing it. They are plain links now; the server already sends the file as a download.
+
 ## [1.12.0] - 2026-10-02
 
 ### Added

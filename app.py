@@ -1,5 +1,6 @@
 """Nomad Life: track your yearly movements and keep your receipts in one place."""
 import base64
+import csv
 import functools
 import hashlib
 import hmac
@@ -35,7 +36,7 @@ from webauthn.helpers.structs import (AuthenticatorSelectionCriteria, Authentica
 from dotenv import load_dotenv
 from flask import (Flask, Response, abort, after_this_request, current_app, flash, g,
                    has_request_context, redirect, render_template, request, send_file,
-                   send_from_directory, session, url_for)
+                   send_from_directory, session, stream_with_context, url_for)
 from markupsafe import escape
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_url, login_user, logout_user, user_loaded_from_cookie)
@@ -51,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.0"
+APP_VERSION = "1.12.1"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -229,6 +230,11 @@ MOVEMENTS_MAX = 1000
 # Security history kept on the admin and Settings pages.
 AUDIT_DAYS = 365
 ADMIN_AUDIT_PER_PAGE = 20
+# Security Activity menu: "last 30 days" exports and purges cover this many days; exports
+# read the log this many rows at a time, so a year of events is never held in memory.
+AUDIT_EXPORT_DAYS = 30
+AUDIT_EXPORT_CHUNK = 1000
+AUDIT_RANGES = {"30": f"last-{AUDIT_EXPORT_DAYS}-days", "all": "all"}
 # Two-factor sign in (TOTP, RFC 6238): 6 digits every 30 seconds, one step of clock drift
 # either way, and this long to type the code after the password.
 # Passkeys: at most this many per account; names as long as a first name; a ceremony (the
@@ -1722,6 +1728,38 @@ def audit(event, user_id=None, email="", detail="", actor="", conn=None):
         db.execute(sql, args)
     except Exception as exc:  # noqa: BLE001 - the history must never break sign in
         current_app.logger.error("Could not record %s for %s: %s", event, email, exc)
+
+
+AUDIT_CSV_HEADER = ["Time (UTC)", "Event", "Event key", "Email", "Actor", "Detail", "IP",
+                    "Account id"]
+
+
+def audit_range_sql(range_key):
+    """(where, params) of the events an export or purge of this range covers. The cutoff is
+    a fixed time, worked out once: a purge reads its rows and deletes them a moment later,
+    and both must mean the same rows."""
+    if range_key == "30":
+        cutoff = datetime.now(timezone.utc) - timedelta(days=AUDIT_EXPORT_DAYS)
+        return "created_at >= ?", [cutoff.strftime("%Y-%m-%d %H:%M:%S")]
+    return "1 = 1", []
+
+
+def audit_csv_lines(rows, header=False):
+    """CSV text for audit rows (cells through csv_safe: a spreadsheet must not run them)."""
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\r\n")
+    if header:
+        writer.writerow(AUDIT_CSV_HEADER)
+    for r in rows:
+        writer.writerow([package.csv_safe(v) for v in (
+            r["created_at"], AUDIT_LABELS.get(r["event"], r["event"]), r["event"], r["email"],
+            r["actor"], r["detail"], r["ip"], "" if r["user_id"] is None else r["user_id"])])
+    return buf.getvalue()
+
+
+def audit_csv_name(range_key):
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return f"nomadlife-security-activity-{AUDIT_RANGES[range_key]}-{day}.csv"
 
 
 def audit_rows(rows):
@@ -4562,7 +4600,8 @@ def register_routes(app):
                                admin_url=admin_url, admin_hidden=admin_hidden,
                                account_url=admin_account_url,
                                default_quota=app.config["USER_QUOTA_BYTES"],
-                               plans=plan_catalog(), activity=activity, audit_days=AUDIT_DAYS)
+                               plans=plan_catalog(), activity=activity, audit_days=AUDIT_DAYS,
+                               audit_export_days=AUDIT_EXPORT_DAYS)
 
     @app.route("/admin/users/<int:user_id>")
     @login_required
@@ -4629,6 +4668,84 @@ def register_routes(app):
         flash(f"{name} now costs ${money(month)} / month and ${money(year)} / year.{note}",
               "success")
         return redirect(back)
+
+    def csv_download(body, filename):
+        """A CSV attachment (BOM, so Excel reads accents), never cached; sets the nl_download
+        cookie when the page sent a dl token, so it knows the download started."""
+        resp = Response(body, mimetype="text/csv")
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        resp.headers["Cache-Control"] = "private, no-store"
+        token = request.values.get("dl", "")
+        if re.fullmatch(r"[A-Za-z0-9]{8,40}", token):
+            resp.set_cookie("nl_download", token, max_age=120, samesite="Lax", path="/")
+        return resp
+
+    @app.route("/admin/activity/export")
+    @login_required
+    def admin_activity_export():
+        """The Security Activity of the last AUDIT_EXPORT_DAYS days, or all of it, as CSV,
+        oldest first, read in chunks of AUDIT_EXPORT_CHUNK rows while it streams."""
+        require_admin()
+        range_key = request.args.get("range", "")
+        if range_key not in AUDIT_RANGES:
+            abort(404)
+        where, params = audit_range_sql(range_key)
+        last = db.query("SELECT COALESCE(MAX(id), 0) AS n FROM audit_log", one=True)["n"]
+
+        def chunks():
+            yield "\ufeff" + audit_csv_lines([], header=True)
+            after = 0
+            while True:
+                rows = db.query(f"SELECT * FROM audit_log WHERE id > ? AND id <= ? AND {where} "
+                                "ORDER BY id LIMIT ?", (after, last, *params, AUDIT_EXPORT_CHUNK))
+                if not rows:
+                    return
+                yield audit_csv_lines(rows)
+                after = rows[-1]["id"]
+
+        return csv_download(stream_with_context(chunks()), audit_csv_name(range_key))
+
+    @app.route("/admin/activity/purge", methods=["POST"])
+    @login_required
+    def admin_activity_purge():
+        """Delete the Security Activity of the last AUDIT_EXPORT_DAYS days, or all of it, after
+        the two step dialog and PURGE typed, and answer with the CSV of what was deleted. The
+        rows are read before the write lock (no slow work while holding it) up to the newest
+        id at that moment; the delete takes only those, so an event written meanwhile (a sign
+        in) stays and is not in the file."""
+        require_admin()
+        state = admin_list_state(request.form)
+        back = admin_url(**dict(state, apage=1))  # no anchor: the message stays in view
+        range_key = request.form.get("range", "")
+        if range_key not in AUDIT_RANGES:
+            abort(404)
+        if not delete_confirmed():
+            return redirect(back)
+        if "".join(request.form.get("confirm_word", "").split()).upper() != "PURGE":
+            flash("Type PURGE to confirm.", "error")
+            return redirect(back)
+        where, params = audit_range_sql(range_key)
+        last = db.query("SELECT COALESCE(MAX(id), 0) AS n FROM audit_log", one=True)["n"]
+        rows = db.query(f"SELECT * FROM audit_log WHERE id <= ? AND {where} ORDER BY id",
+                        (last, *params))
+        if not rows:
+            flash("There was no security activity to purge.", "info")
+            return redirect(back)
+        with db.transaction() as conn:
+            # The ids read under the same write lock as the delete are exactly what goes, so
+            # the file lists only those (another admin may have purged some meanwhile).
+            gone = {r[0] for r in conn.execute(
+                f"SELECT id FROM audit_log WHERE id <= ? AND {where}", (last, *params))}
+            conn.execute(f"DELETE FROM audit_log WHERE id <= ? AND {where}", (last, *params))
+        rows = [r for r in rows if r["id"] in gone]
+        if not rows:
+            flash("This security activity was already purged meanwhile.", "info")
+            return redirect(back)
+        body = "\ufeff" + audit_csv_lines(rows, header=True)
+        what = (f"of the last {AUDIT_EXPORT_DAYS} days" if range_key == "30" else "")
+        flash(f"Purged {plural(len(rows), 'event')} of security activity {what}".rstrip()
+              + ". The CSV of what was deleted is in your downloads.", "success")
+        return csv_download(body, audit_csv_name(range_key))
 
     @app.route("/admin/suspects/delete", methods=["POST"])
     @login_required

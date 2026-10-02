@@ -67,6 +67,28 @@
     // The typed value goes to confirm_year (years) or the field the form names (accounts).
     if (form.getAttribute("data-confirm-type")) setHidden(form.getAttribute("data-confirm-field") || "confirm_year", typed);
     form.querySelectorAll("[type=submit]").forEach(function (b) { b.disabled = true; });
+    if (form.hasAttribute("data-download-reload")) {
+      // The answer is a file (the purged Security Activity as CSV), so the page stays: once
+      // the server's cookie says the download started, reload to show the result.
+      var token = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+      setHidden("dl", token);
+      var started = Date.now();
+      var timer = setInterval(function () {
+        var m = document.cookie.match(/(?:^|; )nl_download=([^;]*)/);
+        if ((m && m[1] === token) || Date.now() - started > 60000) {
+          clearInterval(timer);
+          document.cookie = "nl_download=; Max-Age=0; path=/; SameSite=Lax";
+          // At the top, where the message is: neither the old scroll position nor the
+          // #activity anchor may hide it.
+          if (window.history && history.replaceState) {
+            history.replaceState(null, "", location.pathname + location.search);
+            if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+          }
+          window.scrollTo(0, 0);
+          window.location.reload();
+        }
+      }, 400);
+    }
     form.submit();
   };
   if (dialog && typeof dialog.showModal !== "function") {
@@ -633,9 +655,10 @@
     });
   });
 
-  // User menu in the header (a <details>, so it also works without JavaScript): close it on a
-  // click outside, on Escape (back to the email) and when focus moves out of it.
-  document.querySelectorAll("[data-user-menu]").forEach(function (menu) {
+  // Menus made of a <details> (the user menu in the header, the Security Activity gear), so
+  // they also work without JavaScript: close on a click outside, on Escape (back to the
+  // trigger), when focus moves out, and after choosing a download in it.
+  document.querySelectorAll("[data-user-menu], [data-menu]").forEach(function (menu) {
     var trigger = menu.querySelector("summary");
     document.addEventListener("click", function (e) {
       if (menu.open && !menu.contains(e.target)) menu.open = false;
@@ -648,6 +671,9 @@
     });
     menu.addEventListener("focusout", function (e) {
       if (menu.open && e.relatedTarget && !menu.contains(e.relatedTarget)) menu.open = false;
+    });
+    menu.querySelectorAll("[data-menu-close]").forEach(function (link) {
+      link.addEventListener("click", function () { menu.open = false; });
     });
   });
 
