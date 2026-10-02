@@ -39,6 +39,30 @@ def pdf(title):
     return io.BytesIO(bytes(doc.output()))
 
 
+def add_demo_passkeys(db_path, stop):
+    """Two sample passkeys for the Two-factor card, added once the browser has signed in: an
+    account with a passkey asks for it after the password, which headless Chrome cannot give.
+    Display only (the keys are not real); they never sign anything."""
+    conn = sqlite3.connect(db_path)
+    try:
+        seeded = conn.execute("SELECT COUNT(*) FROM user_sessions s JOIN users u ON u.id = "
+                              "s.user_id WHERE u.email = ?", (USER,)).fetchone()[0]
+        while not stop.wait(0.2):
+            now = conn.execute("SELECT COUNT(*) FROM user_sessions s JOIN users u ON u.id = "
+                               "s.user_id WHERE u.email = ?", (USER,)).fetchone()[0]
+            if now > seeded:  # the browser's own session
+                conn.executemany(
+                    "INSERT INTO passkeys (user_id, credential_id, public_key, name, created_at, "
+                    "last_used_at) SELECT id, ?, x'00', ?, datetime('now', ?), ? FROM users "
+                    "WHERE email = ?",
+                    [("demo-mac", "MacBook Pro (Safari)", "-12 days", "2026-10-01 09:00:00", USER),
+                     ("demo-phone", "iPhone (Safari)", "-3 days", None, USER)])
+                conn.commit()
+                return
+    finally:
+        conn.close()
+
+
 def seed(app, tmp, password):
     import app as appmod
     with app.app_context():
@@ -114,6 +138,9 @@ def main(only):
         sample = seed(app, tmp, password)
         server = make_server("127.0.0.1", port, app, threaded=True)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        stop = threading.Event()
+        threading.Thread(target=add_demo_passkeys, args=(app.config["DATABASE_PATH"], stop),
+                         daemon=True).start()
         os.makedirs(OUT, exist_ok=True)
         try:
             subprocess.run(["node", os.path.join(ROOT, "scripts", "docs_screenshots.mjs"),
@@ -121,6 +148,7 @@ def main(only):
                                         "password": password, "out": OUT, "sample": sample,
                                         "only": only})], check=True)
         finally:
+            stop.set()
             server.shutdown()
 
     # Sizes in CSS pixels (the shots are taken at twice the resolution) for width and height.
