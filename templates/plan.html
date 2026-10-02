@@ -10,14 +10,40 @@
   </div>
 </div>
 
+{% if paid %}
+{# After Stripe's checkout: the plan changes when Stripe's webhook arrives; billing.js waits for it. #}
+<p class="card billing-wait" role="status" data-billing-wait data-status-url="{{ url_for('billing_status') }}" data-plan="{{ plan.key }}">Payment received. Your plan updates in a few seconds.</p>
+{% endif %}
+
 <div class="plans plans-2">
   {% call ui.plan_card(plan, current=True, heading="h2") %}
     <p class="muted small">{{ storage.used | filesize('down') }} used of {{ storage.quota | filesize('down') }}.</p>
+    {% if paying %}
+      <p class="muted small">{% if paying.cancel_at_period_end %}Cancelled: ends on {{ paying.current_period_end | localdate }}.{% elif paying.status == 'past_due' %}<strong>The last payment did not go through.</strong> Update your card with Manage billing.{% elif paying.current_period_end %}Renews on {{ paying.current_period_end | localdate }}.{% endif %}</p>
+    {% endif %}
+    {% if has_customer and billing_on %}
+      <form method="post" action="{{ url_for('billing_portal') }}">
+        {{ ui.csrf() }}
+        <button class="btn btn-ghost btn-block" type="submit">Manage billing</button>
+      </form>
+      <p class="muted small">Cancel, switch plan, update your card or get invoices on Stripe.</p>
+    {% endif %}
   {% endcall %}
   {% if upgrade %}
     {% call ui.plan_card(upgrade, highlight=True, heading="h2") %}
-      <button class="btn btn-primary btn-block" type="button" disabled aria-describedby="payment-note">Upgrade to {{ upgrade.name }}, ${{ upgrade.price }} / month (${{ upgrade.year }} / year)</button>
-      <p class="muted small" id="payment-note">Online payment is coming soon.</p>
+      {% if billing_on and not paying %}
+        <form method="post" action="{{ url_for('billing_checkout') }}" data-submit-once>
+          {{ ui.csrf() }}
+          <input type="hidden" name="plan" value="{{ upgrade.key }}">
+          <button class="btn btn-primary btn-block" type="submit">Upgrade to {{ upgrade.name }}, ${{ upgrade.year }} / year</button>
+        </form>
+        <p class="muted small">Secure payment on Stripe. VAT or sales tax is added where it applies. Renews yearly; cancel any time. <a href="{{ url_for('refunds') }}">Refund policy</a>.</p>
+      {% elif billing_on and paying %}
+        <p class="muted small">Switch to {{ upgrade.name }} with Manage billing: you only pay the difference for the rest of your year.</p>
+      {% else %}
+        <button class="btn btn-primary btn-block" type="button" disabled aria-describedby="payment-note">Upgrade to {{ upgrade.name }}, ${{ upgrade.year }} / year</button>
+        <p class="muted small" id="payment-note">Online payment is coming soon.</p>
+      {% endif %}
     {% endcall %}
   {% else %}
     <div class="card plan-card plan-top">
@@ -26,4 +52,6 @@
     </div>
   {% endif %}
 </div>
+<p class="muted small">Prices in US dollars, paid yearly, before VAT or sales tax. Plans are sold by {{ company.name }}, {{ company.city }}, {{ company.country }} (VAT {{ company.vat }}). <a href="{{ url_for('terms') }}">Terms</a> &middot; <a href="{{ url_for('privacy') }}">Privacy</a> &middot; <a href="{{ url_for('refunds') }}">Refunds</a></p>
+{% if paid %}<script src="{{ url_for('static', filename='js/billing.js', v=asset_version) }}" defer></script>{% endif %}
 {% endblock %}

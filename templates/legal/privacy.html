@@ -1,0 +1,44 @@
+{% extends "legal/_layout.html" %}
+{% block legal %}
+<p>This policy explains what Nomad Life stores about you, why, for how long, who helps us run the service, and the rights you have. {{ company.name }} is the data controller.</p>
+
+<h2 id="what">What we store, and why</h2>
+<ul>
+  <li><strong>Your account:</strong> email address, a protected (hashed) password, your first and last name if you give them, your plan, and your two-factor methods (an authenticator key, the public part of your passkeys). We need these to give you an account and keep it safe.</li>
+  <li><strong>What you enter:</strong> years, your base, stays with dates, places and notes, and the receipts you upload. This is the service itself; we use it only to show it to you and build the files you ask for.</li>
+  <li><strong>Security records:</strong> sign ins, failed attempts and account changes, with their time and network (IP) address, plus the IP you signed up from and last signed in from. We keep these to protect your account and the service, which is our legitimate interest. They are deleted after {{ audit_days }} days.</li>
+  <li><strong>Support:</strong> the messages you send through Support.</li>
+  <li><strong>Payments:</strong> for a paid plan, Stripe handles your card and billing address. We store only a Stripe customer and subscription reference, your plan and its renewal date. Invoices are kept as long as accounting law requires.</li>
+</ul>
+<p>We do not sell your data, show ads, or use analytics or tracking cookies.</p>
+
+<h2 id="cookies">Cookies</h2>
+<p>Nomad Life sets only cookies it needs to work: one that keeps you signed in, one for "Remember me" if you choose it, one that recognizes a device you signed in from (so failed attempts by others do not lock you out), and a short one while a download starts. Your light or dark theme is remembered in your browser only.</p>
+
+<h2 id="processors">Who helps us run the service</h2>
+<ul>
+  <li><strong>Hetzner</strong> (Germany and Finland): the server and its backups.</li>
+  <li><strong>Cloudflare</strong>: delivers the site and protects it from attacks.</li>
+  <li><strong>Google (Gmail)</strong>: sends our emails, such as confirmations and security alerts.</li>
+  <li><strong>hCaptcha</strong>: checks that sign ups and password resets come from people.</li>
+  <li><strong>Stripe</strong>: processes payments for paid plans.</li>
+  <li><strong>Have I Been Pwned</strong>: when you choose a password, we check whether it appears in known data breaches by sending only the first characters of its hash, never the password.</li>
+</ul>
+<p>Some of them may process data outside the European Economic Area; they do so under the safeguards the GDPR requires, such as the European Commission's standard contractual clauses.</p>
+
+<h2 id="how-long">How long we keep it</h2>
+<ul>
+  <li>Your account and everything in it: until you delete the account. Deleting removes your stays and receipts at once.</li>
+  <li>Unconfirmed sign ups: deleted after {{ verify_minutes }} minutes.</li>
+  <li>Security records: {{ audit_days }} days. A browser unused for {{ idle_days }} days is signed out.</li>
+  <li>Backups roll over within a few weeks, so deleted data leaves them too.</li>
+  <li>Billing records: as long as accounting and tax law requires.</li>
+</ul>
+
+<h2 id="rights">Your rights</h2>
+<p>You can see and change your data in the app, download your receipts, and delete your account on the Settings page. You also have the right to access, correct, delete or move your data, to restrict or object to how we use it, and to withdraw consent you gave. Write to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a> from your account's email address and we answer within one month.</p>
+<p>You may also complain to a data protection authority: in Bulgaria the Commission for Personal Data Protection, or the authority of the country where you live.</p>
+
+<h2 id="security">Security</h2>
+<p>Connections are encrypted, passwords are stored only as strong hashes, the server and backups are access controlled, and you can protect your account with two-factor sign in. We tell you without delay if a breach puts your data at risk.</p>
+{% endblock %}

@@ -43,13 +43,13 @@ class PlanTests(AppTestCase):
     def test_plan_page_shows_current_and_next_tier(self):
         html = self.page("/plan")
         self.assertIn("Your plan", html)
-        self.assertIn("Upgrade to Pro, $0.99 / month ($9.99 / year)", html)
+        self.assertIn("Upgrade to Pro, $9.99 / year", html)
         self.assertIn("Online payment is coming soon.", html)
         self.assertIn("5 GB of receipt storage", html)
 
     def test_pro_sees_nomad_plus(self):
         self.set_plan("pro")
-        self.assertIn("Upgrade to Nomad+, $1.99 / month ($19.99 / year)", self.page("/plan"))
+        self.assertIn("Upgrade to Nomad+, $19.99 / year", self.page("/plan"))
 
     def test_top_plan(self):
         self.set_plan("plus")
@@ -70,7 +70,7 @@ class PlanTests(AppTestCase):
     def test_landing_lists_every_tier(self):
         self.client.post("/logout")
         html = self.page("/")
-        for text in ('id="pricing"', ">Free<", ">Pro<", ">Nomad+<", "$0.99", "$1.99",
+        for text in ('id="pricing"', ">Free<", ">Pro<", ">Nomad+<", "$9.99", "$19.99",
                      "25 GB of receipt storage", "Priority support"):
             self.assertIn(text, html)
 
@@ -154,8 +154,10 @@ class PlanBugTests(AppTestCase):
                                     html, re.S).group(1))
         app_node = next(n for n in data["@graph"] if n["@type"] == "WebApplication")
         offers = {o["name"]: (o["price"], o["priceCurrency"]) for o in app_node["offers"]}
-        self.assertEqual(offers, {"Free": ("0", "USD"), "Pro": ("0.99", "USD"),
-                                  "Nomad+": ("1.99", "USD")})
+        self.assertEqual(offers, {"Free": ("0", "USD"), "Pro": ("9.99", "USD"),
+                                  "Nomad+": ("19.99", "USD")})
+        pro = next(o for o in app_node["offers"] if o["name"] == "Pro")
+        self.assertEqual(pro["priceSpecification"]["unitText"], "YEAR")
 
 
 class AdminPlanTests(AppTestCase):
@@ -195,8 +197,8 @@ class AdminPlanSelectorTests(AppTestCase):
         html = self.client.get(f"/admin/users/{self.uid}").get_data(as_text=True)
         self.assertIn(f'id="plan-{self.uid}"', html)
         self.assertIn('<option value="free" selected>Free (free)</option>', html)
-        self.assertIn('<option value="pro">Pro ($0.99 / month, $9.99 / year)</option>', html)
-        self.assertIn('<option value="plus">Nomad+ ($1.99 / month, $19.99 / year)</option>', html)
+        self.assertIn('<option value="pro">Pro ($9.99 / year)</option>', html)
+        self.assertIn('<option value="plus">Nomad+ ($19.99 / year)</option>', html)
 
     def test_admin_changes_the_plan(self):
         html = self.set_plan("pro")
@@ -250,10 +252,12 @@ class PlanFeatureTests(unittest.TestCase):
         self.assertNotIn("Accountant package", cards["Nomad+"])
         self.assertIn("Accountant package", cards["Pro"])
         self.assertNotIn("Accountant package", cards["Free"])
-        self.assertIn("<strong>$9.99 / year</strong>", cards["Pro"])
-        self.assertIn("<strong>$19.99 / year</strong>", cards["Nomad+"])
-        self.assertIn("Save $1.89 a year", cards["Pro"])
-        self.assertIn("Save $3.89 a year", cards["Nomad+"])
+        # Yearly only (1.12.3): the price of a year, and about a twelfth of it a month.
+        self.assertIn("$9.99 <span class=\"muted\">/ year</span>", cards["Pro"])
+        self.assertIn("$19.99 <span class=\"muted\">/ year</span>", cards["Nomad+"])
+        self.assertIn("About $0.83 a month, paid yearly", cards["Pro"])
+        self.assertNotIn("/ month", cards["Pro"])
+        self.assertIn("About $1.66 a month, paid yearly", cards["Nomad+"])
         self.assertNotIn("Save $", cards["Free"])
         self.assertNotIn("/ year", cards["Free"])
 
@@ -299,43 +303,43 @@ class AdminPriceTests(AppTestCase):
     def test_admin_page_lists_paid_plans_with_prices(self):
         html = self.client.get("/admin").get_data(as_text=True)
         self.assertIn('id="plans"', html)
-        self.assertIn('id="month-pro"', html)
+        self.assertIn('id="year-pro"', html)
         self.assertIn('id="year-plus"', html)
-        self.assertNotIn('id="month-free"', html)
+        self.assertNotIn('id="month-pro"', html)  # yearly only
+        self.assertNotIn('id="year-free"', html)
+        self.assertIn("Keep each the same as its Stripe price", html)
 
     def test_new_prices_show_everywhere(self):
-        html = self.price("pro", "5", "49.99").get_data(as_text=True)
-        self.assertIn("Pro now costs $5 / month and $49.99 / year.", html)
+        html = self.price("pro", "", "49.99").get_data(as_text=True)
+        self.assertIn("Pro now shows $49.99 / year. Set the same price on its Stripe product",
+                      html)
         landing = self.app.test_client().get("/").get_data(as_text=True)
-        self.assertIn("$5 <span", landing)
-        self.assertIn("<strong>$49.99 / year</strong>", landing)
-        self.assertIn("Save $10.01 a year", landing)
-        self.assertIn('"price": "5"', landing)
-        self.assertIn("Upgrade to Pro, $5 / month ($49.99 / year)",
+        self.assertIn("$49.99 <span", landing)
+        self.assertIn("About $4.16 a month, paid yearly", landing)
+        self.assertIn('"price": "49.99"', landing)
+        self.assertIn("Upgrade to Pro, $49.99 / year",
                       self.client.get("/plan").get_data(as_text=True))
-        self.assertIn("Pro ($5 / month, $49.99 / year)",
+        self.assertIn("Pro ($49.99 / year)",
                       self.client.get("/admin/users/1").get_data(as_text=True))
 
     def test_empty_fields_restore_the_default(self):
-        self.price("plus", "12", "100")
+        self.price("plus", "", "100")
         html = self.price("plus", "", "").get_data(as_text=True)
-        self.assertIn("Nomad+ is back to its default prices ($1.99 / month, $19.99 / year).", html)
-        self.assertIn("$1.99 <span", self.app.test_client().get("/").get_data(as_text=True))
+        self.assertIn("Nomad+ is back to its default price ($19.99 / year).", html)
+        self.assertIn("$19.99 <span", self.app.test_client().get("/").get_data(as_text=True))
 
     def test_bad_prices_are_refused(self):
-        for month, year in (("abc", "40"), ("4", ""), ("0", "40"), ("-4", "40"), ("4.555", "40"),
-                            ("20000", "40")):
-            html = self.price("pro", month, year).get_data(as_text=True)
-            self.assertIn("Enter both prices for Pro", html, (month, year))
+        for year in ("abc", "0", "-40", "4.555", "20000"):
+            html = self.price("pro", "", year).get_data(as_text=True)
+            self.assertIn("Enter the yearly price of Pro", html, year)
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT count(*) FROM plan_prices").fetchone()[0], 0)
 
-    def test_no_saving_badge_when_yearly_is_not_cheaper(self):
-        html = self.price("pro", "4", "48").get_data(as_text=True)
-        self.assertIn("no saving is shown", html)
-        cards = self.app.test_client().get("/").get_data(as_text=True)
-        pro = cards[cards.index(">Pro<"):cards.index(">Nomad+<")]
-        self.assertNotIn("Save $", pro)
+    def test_a_monthly_price_is_ignored(self):
+        # Pages from before yearly only plans still send "month": it changes nothing.
+        self.price("pro", "4", "")
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM plan_prices").fetchone()[0], 0)
 
     def test_free_and_unknown_plans_cannot_be_priced(self):
         self.assertEqual(self.client.post("/admin/plans/free", data={"month": "1", "year": "10"}).status_code, 404)

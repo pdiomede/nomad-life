@@ -102,7 +102,7 @@
       {% endcall %}
     {% endfor %}
   </div>
-  <p class="muted small center">Prices in US dollars. Online payment is coming soon.</p>
+  <p class="muted small center">Prices in US dollars, paid yearly, before VAT or sales tax (added at checkout where it applies).{% if not billing_on %} Online payment is coming soon.{% endif %}</p>
 </section>
 
 <section class="guides-teaser" aria-labelledby="guides-title">

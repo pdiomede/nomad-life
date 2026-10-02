@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.3] - 2026-10-02
+
+### Added
+
+- **Online payment with Stripe.** On the plan page, **Upgrade** opens Stripe's secure checkout:
+  - cards, Apple Pay and Google Pay;
+  - VAT or sales tax worked out by Stripe Tax;
+  - businesses can enter their VAT number.
+  
+  Stripe's signed webhook then sets the plan within seconds; the plan page waits for it. **Manage billing** opens Stripe's customer portal: cancel, switch between Pro and Nomad+, update the card, download invoices.
+- **Automatic plan changes:** renewals, failed payments and cancellations move the plan automatically, with an email to the account and a row in Security Activity. An account that still pays cannot be deleted until its plan is cancelled.
+- **Off until configured:** without the four `STRIPE_*` settings, nothing changes ("Online payment is coming soon"). [stripe.md](stripe.md) explains the Stripe setup.
+- **Terms of Service, Privacy Policy and Refund Policy** pages (`/terms`, `/privacy`, `/refunds`), in the sitemap and linked from every footer and the sign up page. Plans are sold by Nemax Tech LLC, Sofia, Bulgaria (VAT BG207405380), which the pages, the plan page and the structured data name.
+
+### Changed
+
+- **Yearly plans only:**
+  - Pro is $9.99 a year and Nomad+ $19.99 a year, shown with "about $0.83 a month". Monthly prices are gone: a payment of $0.99 would mostly go to card fees.
+  - The admin page edits one yearly price per plan, to keep equal to its Stripe price.
+- **The footer** credits Nemax Tech (linking to nemax.tech) instead of Paolo Diomede, and links Terms, Privacy and Refunds; so does the "Page not found" page.
+
 ## [1.12.2] - 2026-10-02
 
 ### Changed

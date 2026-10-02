@@ -96,6 +96,6 @@ class GuideTests(AppTestCase):
             with open(os.path.join(GUIDE_DIR, name), encoding="utf-8") as fh:
                 text = fh.read()
             self.assertNotIn(str(appmod.RESIDENCE_THRESHOLD), text, name)
-            self.assertNotRegex(text, "[–—]", name)  # no en or em dashes
+            self.assertNotRegex(text, "[\u2013\u2014]", name)  # no en or em dashes
         html = self.page("/guides/183-day-rule")
         self.assertIn(f"{appmod.RESIDENCE_THRESHOLD} days or more", html)

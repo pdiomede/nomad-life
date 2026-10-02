@@ -1,0 +1,9 @@
+{% extends "email/_layout.html" %}
+{% set p = "margin:0 0 14px; font-size:15px; line-height:1.6; color:#303549;" %}
+{% block preheader %}{{ what }}{% endblock %}
+{% block heading %}{{ subject }}{% endblock %}
+{% block body %}
+<p class="nl-text" style="{{ p }}">{{ what }}</p>
+{% endblock %}
+{% block button %}Open your plan{% endblock %}
+{% block note %}Payments are handled by Stripe for {{ company.name if company else "Nemax Tech LLC" }}. Invoices and receipts come from Stripe by email.{% endblock %}

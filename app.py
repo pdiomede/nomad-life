@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.2"
+APP_VERSION = "1.12.3"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -96,18 +96,33 @@ DOCUMENT_KINDS = OrderedDict([
 ])
 RESIDENCE_THRESHOLD = 183
 # Plans, cheapest first. Free takes its limits from config.env (USER_QUOTA_MB, MAX_RECEIPT_MB);
-# a paid plan is never below Free. There is no payment yet: a plan changes in the database.
+# a paid plan is never below Free. Paid plans are yearly only (Stripe, see "billing"): a
+# monthly payment of a few cents would mostly go to card fees. users.plan follows Stripe's
+# webhook, or an admin's choice for a gift.
 PLANS = OrderedDict([
-    # Prices in US cents: "price_cents" a month, "year_cents" for a year paid at once (about
-    # two months free); "package" is the accountant package, from Pro on.
-    ("free", {"name": "Free", "price_cents": 0, "year_cents": 0, "quota_mb": None, "receipt_mb": None,
+    # "year_cents": the price of a year, in US cents, before VAT or sales tax (Stripe adds it
+    # at checkout where it applies). It must match the plan's Stripe price. "package" is the
+    # accountant package, from Pro on.
+    ("free", {"name": "Free", "year_cents": 0, "quota_mb": None, "receipt_mb": None,
               "package": False, "extras": []}),
-    ("pro", {"name": "Pro", "price_cents": 99, "year_cents": 999, "quota_mb": 5 * 1024, "receipt_mb": 25,
+    ("pro", {"name": "Pro", "year_cents": 999, "quota_mb": 5 * 1024, "receipt_mb": 25,
              "package": True, "extras": ["Accountant package (PDF, spreadsheets, receipts)"]}),
-    ("plus", {"name": "Nomad+", "price_cents": 199, "year_cents": 1999, "quota_mb": 25 * 1024, "receipt_mb": 50,
+    ("plus", {"name": "Nomad+", "year_cents": 1999, "quota_mb": 25 * 1024, "receipt_mb": 50,
               "package": True, "extras": ["Priority support"]}),
 ])
 PLAN_CURRENCY, PLAN_SYMBOL = "USD", "$"
+# Stripe (billing): API, timeouts, how old a webhook signature may be, the largest event body
+# read, and the subscription states that still pay for a plan (past_due: Stripe is retrying
+# the card, so the plan stays meanwhile).
+STRIPE_API_URL = "https://api.stripe.com/v1/"
+STRIPE_TIMEOUT_SECONDS = 10
+STRIPE_TOLERANCE_SECONDS = 300
+BILLING_WEBHOOK_MAX = 256 * 1024
+PAID_STATUSES = ("active", "trialing", "past_due")
+# The company that runs Nomad Life and sells its plans (legal pages, footer, structured data).
+COMPANY = {"name": "Nemax Tech LLC", "short": "Nemax Tech", "url": "https://nemax.tech",
+           "city": "Sofia", "country": "Bulgaria", "country_code": "BG", "uic": "207405380",
+           "vat": "BG207405380"}
 MAX_PRICE_CENTS = 1_000_000  # $10,000, a sanity cap for prices typed on the admin page
 PLAN_FEATURES = ["Unlimited years and stays", "Days per country with the 183 day line"]
 NOTES_MAX = 5000
@@ -144,6 +159,19 @@ GUIDES = [
                      "them.")},
 ]
 GUIDES_BY_SLUG = {g["slug"]: g for g in GUIDES}
+# Legal pages (/terms, /privacy, /refunds, templates/legal/<endpoint>.html): public and
+# indexable; updated is the date on the page and the sitemap's lastmod.
+LEGAL_PAGES = {
+    "terms": {"title": "Terms of Service", "updated": "2026-10-02",
+              "description": "The terms for using Nomad Life and its paid plans."},
+    "privacy": {"title": "Privacy Policy", "updated": "2026-10-02",
+                "description": "What Nomad Life stores about you, why, for how long, and your "
+                               "rights."},
+    "refunds": {"title": "Refund Policy", "updated": "2026-10-02",
+                "description": "How cancelling and refunds work for Nomad Life's yearly plans."},
+}
+# Days after a payment (the first one or a renewal) in which it is refunded in full on request.
+REFUND_DAYS = 14
 GUIDES_TITLE = "Guides for digital nomads | Nomad Life"
 GUIDES_DESCRIPTION = (f"Plain guides on the {RESIDENCE_THRESHOLD} day rule, counting your days per "
                       "country and the "
@@ -175,7 +203,7 @@ DOCS_TOC = [
                               ("manage-receipts", "Download, rename or delete"),
                               ("storage", "Storage")]),
     ("package", "Accountant package", []),
-    ("plans", "Plans", []),
+    ("plans", "Plans", [("billing", "Upgrade and billing")]),
     ("settings", "Settings", [("profile", "Name, password and email"),
                               ("two-factor", "Two-factor sign in"),
                               ("devices", "Devices and activity"),
@@ -472,6 +500,22 @@ def hcaptcha_settings():
     return sitekey, secret
 
 
+BILLING_KEYS = ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO",
+                "STRIPE_PRICE_PLUS")
+
+
+def billing_settings():
+    """The Stripe settings from config.env: all four set turns online payment on, all empty
+    leaves it off ("coming soon"); a partial setup would take money without knowing which plan
+    it pays for, or never hear of it, so it stops the app."""
+    values = {k: (os.getenv(k) or "").strip() for k in BILLING_KEYS}
+    if any(values.values()) and not all(values.values()):
+        missing = ", ".join(k for k, v in values.items() if not v)
+        raise SystemExit(f"config.env: online payment needs all of {', '.join(BILLING_KEYS)} "
+                         f"(missing: {missing}), or none of them to keep it off.")
+    return values
+
+
 def admin_emails(raw):
     return frozenset(e.strip().lower() for e in raw.replace(";", ",").split(",") if e.strip())
 
@@ -507,6 +551,7 @@ def safe_next(value):
 def create_app(overrides=None):
     app = Flask(__name__)
     hcaptcha_sitekey, hcaptcha_secret = hcaptcha_settings()
+    billing = billing_settings()
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY", "").strip(),
         APP_PORT=port_setting(),
@@ -520,6 +565,8 @@ def create_app(overrides=None):
         # hCaptcha on Sign up and Forgot password, so bots are refused before any email.
         HCAPTCHA_SITEKEY=hcaptcha_sitekey,
         HCAPTCHA_SECRET=hcaptcha_secret,
+        # Stripe: yearly plans paid on Stripe's hosted checkout (off while empty).
+        **billing,
         GMAIL_APP_PASSWORD=os.getenv("GMAIL_APP_PASSWORD", "").replace(" ", ""),
         DATABASE_PATH=_abs(os.getenv("DATABASE_PATH", "data/nomad.db")),
         UPLOAD_DIR=_abs(os.getenv("UPLOAD_DIR", "uploads")),
@@ -666,6 +713,8 @@ def create_app(overrides=None):
             # Numbered email changes are only read by their undo links (a day of margin).
             db.try_execute("DELETE FROM email_changes WHERE created_at < datetime('now', ?)",
                            (f"-{EMAIL_REVERT_MAX_AGE // 86400 + 1} days",))
+            db.try_execute("DELETE FROM billing_events WHERE received_at < datetime('now', ?)",
+                           (f"-{AUDIT_DAYS} days",))
             db.try_execute("DELETE FROM passkey_challenges WHERE created_at < datetime('now', ?)",
                            (f"-{PASSKEY_CEREMONY_SECONDS} seconds",))
 
@@ -695,7 +744,7 @@ def create_app(overrides=None):
     # also between releases.
     digest = hashlib.sha256()
     for name in ("css/style.css", "js/theme.js", "js/theme-init.js", "js/docs.js",
-                 "js/captcha.js", "js/passkeys.js"):
+                 "js/captcha.js", "js/passkeys.js", "js/billing.js"):
         with open(os.path.join(app.static_folder, name), "rb") as fh:
             digest.update(fh.read())
     asset_version = digest.hexdigest()[:10]
@@ -704,6 +753,7 @@ def create_app(overrides=None):
     def inject_globals():
         return {"app_version": APP_VERSION, "contact_email": CONTACT_EMAIL, "support_email": SUPPORT_EMAIL, "asset_version": asset_version, "countries": COUNTRIES, "country_data": COUNTRY_DATA,
                 "document_kinds": DOCUMENT_KINDS,
+                "billing_on": billing_on(), "company": COMPANY,
                 "max_receipt_bytes": receipt_limit(),
                 "max_receipt_label": format_size(receipt_limit(), "down"),
                 "current_plan": current_plan() if current_user.is_authenticated else None,
@@ -1411,6 +1461,11 @@ def breach_count(password):
     return 0
 
 
+def billing_on():
+    """Online payment works: config.env has every Stripe setting (billing_settings)."""
+    return all(current_app.config.get(k) for k in BILLING_KEYS)
+
+
 def captcha_on():
     return bool(current_app.config.get("HCAPTCHA_SITEKEY")
                 and current_app.config.get("HCAPTCHA_SECRET"))
@@ -1681,6 +1736,11 @@ AUDIT_LABELS = {
     "2fa_enabled": "Two-factor sign in turned on",
     "2fa_disabled": "Two-factor sign in turned off",
     "2fa_reset": "Two-factor sign in removed by the server operator",
+    "plan_upgraded": "Plan bought",
+    "plan_changed": "Plan switched",
+    "plan_renewed": "Plan renewed",
+    "plan_downgraded": "Plan ended",
+    "payment_failed": "Payment failed",
     "passkey_added": "Passkey added",
     "passkey_renamed": "Passkey renamed",
     "passkey_removed": "Passkey removed",
@@ -2081,6 +2141,11 @@ def site_meta():
     image = base + url_for("static", filename="img/og-image.jpg")
     organization = {"@type": "Organization", "@id": url + "#organization", "name": "Nomad Life",
                     "url": url, "email": CONTACT_EMAIL,
+                    "parentOrganization": {"@type": "Organization", "name": COMPANY["name"],
+                                           "url": COMPANY["url"], "vatID": COMPANY["vat"],
+                                           "address": {"@type": "PostalAddress",
+                                                       "addressLocality": COMPANY["city"],
+                                                       "addressCountry": COMPANY["country_code"]}},
                     "logo": {"@type": "ImageObject",
                              "url": base + url_for("static", filename="img/icon-512.png"),
                              "width": 512, "height": 512}}
@@ -2096,8 +2161,12 @@ def site_meta():
              "applicationCategory": "TravelApplication", "operatingSystem": "Any",
              "browserRequirements": "Requires a modern web browser",
              "isAccessibleForFree": True,
-             "offers": [{"@type": "Offer", "name": p["name"], "price": p["price"],
-                         "priceCurrency": PLAN_CURRENCY, "url": url + "#pricing"}
+             "offers": [dict({"@type": "Offer", "name": p["name"], "price": p["price"],
+                              "priceCurrency": PLAN_CURRENCY, "url": url + "#pricing"},
+                             **({"priceSpecification": {
+                                 "@type": "UnitPriceSpecification", "price": p["price"],
+                                 "priceCurrency": PLAN_CURRENCY, "unitText": "YEAR",
+                                 "valueAddedTaxIncluded": False}} if p["price_cents"] else {}))
                         for p in plan_catalog()],
              "featureList": ["Days per country for each solar year",
                              "183 day indicator for your base country",
@@ -2149,13 +2218,12 @@ def parse_price(raw):
 
 
 def price_overrides():
-    """Prices set on the admin page, {plan: (month_cents, year_cents)}, read once a request."""
+    """Yearly prices set on the admin page, {plan: year_cents}, read once a request."""
     from flask import g, has_app_context
     if not has_app_context():
         return {}
     if "plan_prices" not in g:
-        g.plan_prices = {r["plan"]: (r["month_cents"], r["year_cents"])
-                         for r in db.query("SELECT * FROM plan_prices")}
+        g.plan_prices = {r["plan"]: r["year_cents"] for r in db.query("SELECT * FROM plan_prices")}
     return g.plan_prices
 
 
@@ -2176,13 +2244,13 @@ def plan_catalog(config=None):
         if prev and quota // prev["quota_bytes"] >= 2:
             storage += f" ({quota // prev['quota_bytes']}x {prev['name']})"
         limits = [storage, f"Receipts up to {format_size(receipt, 'down')} each"]
-        defaults = (p["price_cents"], p["year_cents"])
-        month_cents, year_cents = defaults if key == "free" else overrides.get(key, defaults)
-        saving = max(month_cents * 12 - year_cents, 0)
-        plans.append({"key": key, "name": p["name"], "price_cents": month_cents,
-                      "year_cents": year_cents, "price": money(month_cents),
-                      "year": money(year_cents), "year_saving": money(saving) if saving else "",
-                      "default_price": money(p["price_cents"]), "default_year": money(p["year_cents"]),
+        year_cents = p["year_cents"] if key == "free" else overrides.get(key, p["year_cents"])
+        # price/price_cents: the yearly price (the only one); month: a twelfth of it, rounded
+        # down, shown as "about $0.83 a month".
+        plans.append({"key": key, "name": p["name"], "price_cents": year_cents,
+                      "year_cents": year_cents, "price": money(year_cents), "year": money(year_cents),
+                      "month": money(year_cents // 12),
+                      "default_price": money(p["year_cents"]), "default_year": money(p["year_cents"]),
                       "custom_price": key in overrides,
                       "package": p["package"],
                       "quota_bytes": quota, "receipt_bytes": receipt,
@@ -2820,6 +2888,164 @@ def back_to_movement(year_row, movement_id):
 def can_download_package(user):
     """Who may download the annual accountant package: plans from Pro on."""
     return plan_named(user.plan)["package"]
+
+
+# ---------- billing (Stripe) ----------
+# Stripe's hosted Checkout takes the payment and its customer portal handles cancelling,
+# switching plans and cards; the app only redirects there. Stripe's signed webhook is the one
+# source of truth for users.plan: nothing a browser sends ever sets a plan.
+
+def stripe_form(data, prefix=""):
+    """Stripe's form encoding: {"a": {"b": 1}, "c": [{"d": 2}]} -> a[b]=1, c[0][d]=2."""
+    pairs = []
+    items = data.items() if isinstance(data, dict) else enumerate(data)
+    for key, value in items:
+        name = f"{prefix}[{key}]" if prefix else str(key)
+        if isinstance(value, (dict, list)):
+            pairs += stripe_form(value, name)
+        elif value is not None:
+            pairs.append((name, "true" if value is True else "false" if value is False
+                          else str(value)))
+    return pairs
+
+
+def stripe_api(method, path, data=None, idempotency_key=None):
+    """Call Stripe's API (form encoded, Bearer secret key). The JSON answer, or None when
+    Stripe refused or could not be reached (logged)."""
+    cfg = current_app.config
+    body = urlencode(stripe_form(data)).encode() if data is not None else None
+    headers = {"Authorization": f"Bearer {cfg['STRIPE_SECRET_KEY']}",
+               "User-Agent": "Nomad-Life"}
+    if idempotency_key:  # a retried request never makes two customers or sessions
+        headers["Idempotency-Key"] = idempotency_key
+    req = urllib.request.Request(STRIPE_API_URL + path, data=body, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=STRIPE_TIMEOUT_SECONDS) as resp:
+            return json.loads(resp.read(1024 * 1024).decode("utf-8", "replace"))
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(exc.read(64 * 1024).decode("utf-8", "replace"))["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            detail = ""
+        exc.close()
+        current_app.logger.error("Stripe %s %s refused with HTTP %s: %s", method, path,
+                                 exc.code, detail)
+    except Exception as exc:  # noqa: BLE001 - offline, slow or changed service
+        current_app.logger.error("Stripe %s %s failed: %s", method, path, exc)
+    return None
+
+
+def stripe_signature_ok(payload, header, secret, now=None):
+    """Stripe's webhook signature: t=<time>,v1=<HMAC SHA-256 of "t.payload">, recent."""
+    fields = [part.split("=", 1) for part in (header or "").split(",") if "=" in part]
+    times = [v for k, v in fields if k == "t"]
+    signatures = [v for k, v in fields if k == "v1"]
+    if len(times) != 1 or not times[0].isdigit() or not signatures or not secret:
+        return False
+    if abs((now or time.time()) - int(times[0])) > STRIPE_TOLERANCE_SECONDS:
+        return False
+    expected = hmac.new(secret.encode(), times[0].encode() + b"." + payload,
+                        hashlib.sha256).hexdigest()
+    return any(hmac.compare_digest(expected, s) for s in signatures)
+
+
+def price_plans():
+    """{Stripe price id: plan key}, from config.env."""
+    cfg = current_app.config
+    return {cfg["STRIPE_PRICE_PRO"]: "pro", cfg["STRIPE_PRICE_PLUS"]: "plus"}
+
+
+def plan_rank(key):
+    keys = list(PLANS)
+    return keys.index(key) if key in keys else 0
+
+
+def active_subscription(user_id, conn=None):
+    """The account's subscription that still pays for a plan, or None."""
+    marks = ", ".join("?" * len(PAID_STATUSES))
+    sql = (f"SELECT * FROM subscriptions WHERE user_id = ? AND status IN ({marks}) "
+           "ORDER BY id DESC LIMIT 1")
+    if conn is not None:
+        return conn.execute(sql, (user_id, *PAID_STATUSES)).fetchone()
+    return db.query(sql, (user_id, *PAID_STATUSES), one=True)
+
+
+def stripe_period_end(sub):
+    """When the paid year ends: on the subscription, or (API 2025-03 on) on its item."""
+    end = sub.get("current_period_end")
+    if not end:
+        items = (sub.get("items") or {}).get("data") or [{}]
+        end = items[0].get("current_period_end")
+    if not isinstance(end, int):
+        return None
+    return datetime.fromtimestamp(end, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def apply_subscription(conn, sub, created):
+    """Store a subscription Stripe sent (in a write transaction) and set the account's plan
+    from all its subscriptions. Returns (user_id, plan before, plan after), or None when the
+    event changes nothing (older than one already applied, or no account to apply it to)."""
+    sub_id, customer = sub.get("id"), sub.get("customer")
+    if isinstance(customer, dict):
+        customer = customer.get("id")
+    if not isinstance(sub_id, str) or not isinstance(customer, str):
+        return None
+    items = (sub.get("items") or {}).get("data") or [{}]
+    price_id = ((items[0] or {}).get("price") or {}).get("id") or ""
+    plan = price_plans().get(price_id)
+    status = str(sub.get("status") or "")
+    row = conn.execute("SELECT * FROM subscriptions WHERE subscription_id = ?",
+                       (sub_id,)).fetchone()
+    if row and created < row["last_event_at"]:
+        return None  # Stripe sends events out of order: a newer one was applied already
+    if row:
+        # Once stored, a subscription stays with its account: nothing in a later event can
+        # move it (and the plan it pays for) to another one.
+        user_id = row["user_id"]
+    else:
+        user_id = None
+        wanted = str((sub.get("metadata") or {}).get("user_id") or "")
+        if wanted.isdigit():
+            found = conn.execute("SELECT id, stripe_customer_id FROM users WHERE id = ?",
+                                 (int(wanted),)).fetchone()
+            # The customer the app made for that account, or one it has none of yet.
+            if found and found["stripe_customer_id"] in (None, customer):
+                user_id = found["id"]
+        if user_id is None:
+            found = conn.execute("SELECT id FROM users WHERE stripe_customer_id = ?",
+                                 (customer,)).fetchone()
+            user_id = found["id"] if found else None
+    if plan is None:
+        current_app.logger.error("Stripe subscription %s has price %s, which is neither "
+                                 "STRIPE_PRICE_PRO nor STRIPE_PRICE_PLUS", sub_id, price_id)
+    values = (user_id, customer, price_id, plan or "free", status, stripe_period_end(sub),
+              1 if sub.get("cancel_at_period_end") else 0, created)
+    if row:
+        conn.execute("UPDATE subscriptions SET user_id = ?, customer_id = ?, price_id = ?, "
+                     "plan = ?, status = ?, current_period_end = ?, cancel_at_period_end = ?, "
+                     "last_event_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                     (*values, row["id"]))
+    else:
+        conn.execute("INSERT INTO subscriptions (user_id, customer_id, price_id, plan, status, "
+                     "current_period_end, cancel_at_period_end, last_event_at, subscription_id) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (*values, sub_id))
+    if user_id is None:
+        current_app.logger.error("Stripe subscription %s belongs to no account", sub_id)
+        return None
+    user = conn.execute("SELECT plan FROM users WHERE id = ?", (user_id,)).fetchone()
+    if user is None:
+        return None
+    conn.execute("UPDATE users SET stripe_customer_id = COALESCE(stripe_customer_id, ?) "
+                 "WHERE id = ?", (customer, user_id))
+    # The best plan any of its subscriptions still pays for; none: Free.
+    marks = ", ".join("?" * len(PAID_STATUSES))
+    paid = [r["plan"] for r in conn.execute(
+        f"SELECT plan FROM subscriptions WHERE user_id = ? AND status IN ({marks})",
+        (user_id, *PAID_STATUSES)) if r["plan"] in PLANS]
+    new_plan = max(paid, key=plan_rank) if paid else "free"
+    if new_plan != user["plan"]:
+        conn.execute("UPDATE users SET plan = ? WHERE id = ?", (new_plan, user_id))
+    return user_id, user["plan"], new_plan
 
 
 def build_package_data(year_row, include_notes):
@@ -3470,6 +3696,26 @@ def register_routes(app):
                 "@graph": [org, page, {"@type": "BreadcrumbList", "@id": page_url + "#breadcrumb",
                                        "itemListElement": crumbs}]}
 
+    def legal_page(endpoint):
+        page = LEGAL_PAGES[endpoint]
+        page_url = app.config["APP_BASE_URL"].rstrip("/") + url_for(endpoint)
+        return render_template(f"legal/{endpoint}.html", page=page, page_url=page_url,
+                               refund_days=REFUND_DAYS, audit_days=AUDIT_DAYS,
+                               verify_minutes=VERIFY_MINUTES, idle_days=SESSION_IDLE_DAYS,
+                               support_email=SUPPORT_EMAIL)
+
+    @app.route("/terms")
+    def terms():
+        return legal_page("terms")
+
+    @app.route("/privacy")
+    def privacy():
+        return legal_page("privacy")
+
+    @app.route("/refunds")
+    def refunds():
+        return legal_page("refunds")
+
     @app.route("/guides")
     def guides():
         """Public guides on day counting and tax residency, indexable like /docs."""
@@ -3506,7 +3752,7 @@ def register_routes(app):
             movements_max=MOVEMENTS_MAX, per_page_options=PER_PAGE_OPTIONS,
             fail_limit=LIMITS[("fail", "email")], limit_minutes=LIMIT_WINDOW_MINUTES,
             code_limit=LIMITS[("code", "email")],
-            passkeys_max=PASSKEYS_MAX,
+            passkeys_max=PASSKEYS_MAX, refund_days=REFUND_DAYS,
             remember_days=app.config["REMEMBER_COOKIE_DURATION"].days,
             reset_minutes=RESET_TOKEN_MAX_AGE // 60, email_change_minutes=EMAIL_CHANGE_MAX_AGE // 60,
             revert_days=EMAIL_REVERT_MAX_AGE // 86400, idle_days=SESSION_IDLE_DAYS,
@@ -3555,6 +3801,10 @@ def register_routes(app):
             urls.append(f"  <url><loc>{escape(base + url_for('guide', slug=g['slug']))}</loc>"
                         f"<lastmod>{g['updated']}</lastmod><changefreq>monthly</changefreq>"
                         f"<priority>0.7</priority></url>\n")
+        for endpoint, page in LEGAL_PAGES.items():
+            urls.append(f"  <url><loc>{escape(base + url_for(endpoint))}</loc>"
+                        f"<lastmod>{page['updated']}</lastmod><changefreq>yearly</changefreq>"
+                        f"<priority>0.3</priority></url>\n")
         xml = ('<?xml version="1.0" encoding="UTF-8"?>\n'
                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
                + "".join(urls) + "</urlset>\n")
@@ -3575,7 +3825,180 @@ def register_routes(app):
     @login_required
     def plan():
         mine = current_plan()
-        return render_template("plan.html", plan=mine, upgrade=next_plan(mine["key"]))
+        row = db.query("SELECT stripe_customer_id FROM users WHERE id = ?", (current_user.id,),
+                       one=True)
+        sub = db.query("SELECT * FROM subscriptions WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+                       (current_user.id,), one=True)
+        return render_template("plan.html", plan=mine, upgrade=next_plan(mine["key"]),
+                               subscription=sub, paying=active_subscription(current_user.id),
+                               has_customer=bool(row and row["stripe_customer_id"]),
+                               paid=request.args.get("paid") == "1")
+
+    def site_base():
+        return (app.config["APP_BASE_URL"] or request.host_url).rstrip("/")
+
+    @app.route("/billing/checkout", methods=["POST"])
+    @login_required
+    def billing_checkout():
+        """Start paying for a plan: Stripe's hosted Checkout, for this account (set here, never
+        by the form), yearly, with tax worked out by Stripe Tax."""
+        if not billing_on():
+            flash("Online payment is not available yet.", "info")
+            return redirect(url_for("plan"))
+        key = request.form.get("plan", "")
+        if key not in PLANS or key == "free":
+            abort(400)
+        row = db.query("SELECT * FROM users WHERE id = ?", (current_user.id,), one=True)
+        if plan_rank(row["plan"]) >= plan_rank(key):
+            flash(f"You are already on {plan_named(row['plan'])['name']}.", "info")
+            return redirect(url_for("plan"))
+        if active_subscription(row["id"]):
+            flash("You already pay for a plan. Switch it with Manage billing.", "info")
+            return redirect(url_for("plan"))
+        customer = row["stripe_customer_id"]
+        if not customer:
+            made = stripe_api("POST", "customers", {
+                "email": row["email"], "name": full_name(row) or None,
+                "metadata": {"user_id": row["id"]}}, idempotency_key=f"nl-customer-{row['id']}")
+            if not made or not made.get("id"):
+                flash("The payment page could not be opened. Please try again in a few "
+                      "minutes.", "error")
+                return redirect(url_for("plan"))
+            db.execute("UPDATE users SET stripe_customer_id = ? WHERE id = ? AND "
+                       "stripe_customer_id IS NULL", (made["id"], row["id"]))
+            customer = db.query("SELECT stripe_customer_id FROM users WHERE id = ?",
+                                (row["id"],), one=True)["stripe_customer_id"]
+        base = site_base()
+        price = {v: k for k, v in price_plans().items()}[key]
+        session_obj = stripe_api("POST", "checkout/sessions", {
+            "mode": "subscription", "customer": customer,
+            "line_items": [{"price": price, "quantity": 1}],
+            "client_reference_id": row["id"],
+            "metadata": {"user_id": row["id"]},
+            "subscription_data": {"metadata": {"user_id": row["id"]}},
+            "automatic_tax": {"enabled": True},
+            "tax_id_collection": {"enabled": True},
+            "customer_update": {"address": "auto", "name": "auto"},
+            "billing_address_collection": "required",
+            "custom_text": {"submit": {"message": (
+                "Your plan starts at once and renews every year until you cancel. By paying you "
+                "agree to the Terms and Refund Policy at " + base + url_for("terms") + " and "
+                + base + url_for("refunds") + ".")}},
+            "success_url": base + url_for("plan") + "?paid=1",
+            "cancel_url": base + url_for("plan"),
+        }, idempotency_key=f"nl-checkout-{row['id']}-{uuid.uuid4().hex}")
+        if not session_obj or not str(session_obj.get("url", "")).startswith("https://"):
+            flash("The payment page could not be opened. Please try again in a few minutes.",
+                  "error")
+            return redirect(url_for("plan"))
+        return redirect(session_obj["url"], 303)
+
+    @app.route("/billing/status")
+    @login_required
+    def billing_status():
+        """The account's plan now (the plan page waits for the webhook after paying)."""
+        row = db.query("SELECT plan FROM users WHERE id = ?", (current_user.id,), one=True)
+        return json_answer({"plan": row["plan"] if row else "free"})
+
+    @app.route("/billing/portal", methods=["POST"])
+    @login_required
+    def billing_portal():
+        """Stripe's customer portal: cancel, switch between Pro and Nomad+, card, invoices."""
+        row = db.query("SELECT stripe_customer_id FROM users WHERE id = ?", (current_user.id,),
+                       one=True)
+        if not billing_on() or not row or not row["stripe_customer_id"]:
+            flash("There is no billing account to manage yet.", "info")
+            return redirect(url_for("plan"))
+        portal = stripe_api("POST", "billing_portal/sessions", {
+            "customer": row["stripe_customer_id"], "return_url": site_base() + url_for("plan")})
+        if not portal or not str(portal.get("url", "")).startswith("https://"):
+            flash("Billing could not be opened. Please try again in a few minutes.", "error")
+            return redirect(url_for("plan"))
+        return redirect(portal["url"], 303)
+
+    @app.route("/billing/webhook", methods=["POST"])
+    def billing_webhook():
+        """Stripe's events, signed with STRIPE_WEBHOOK_SECRET. Each event id is applied once
+        (a retried delivery answers 200 and does nothing); an error answers 500 and rolls
+        everything back, so Stripe sends it again."""
+        if not billing_on():
+            abort(404)
+        if (request.content_length or 0) > BILLING_WEBHOOK_MAX:
+            return Response("too large", 413)
+        payload = request.get_data(cache=False)
+        if len(payload) > BILLING_WEBHOOK_MAX:
+            return Response("too large", 413)
+        if not stripe_signature_ok(payload, request.headers.get("Stripe-Signature"),
+                                   app.config["STRIPE_WEBHOOK_SECRET"]):
+            return Response("bad signature", 400)
+        try:
+            event = json.loads(payload)
+            event_id, kind = event["id"], event["type"]
+            obj, created = event["data"]["object"], int(event.get("created") or 0)
+        except (ValueError, KeyError, TypeError):
+            return Response("bad event", 400)
+        notices = []
+        with db.transaction() as conn:
+            if not conn.execute("INSERT OR IGNORE INTO billing_events (event_id, type) "
+                                "VALUES (?, ?)", (str(event_id), str(kind))).rowcount:
+                return Response("already handled", 200)
+            if kind in ("customer.subscription.created", "customer.subscription.updated",
+                        "customer.subscription.deleted"):
+                changed = apply_subscription(conn, obj, created)
+                if changed and changed[1] != changed[2]:
+                    user_id, before, after = changed
+                    user = conn.execute("SELECT email FROM users WHERE id = ?",
+                                        (user_id,)).fetchone()
+                    if plan_rank(after) == 0:
+                        event_name = "plan_downgraded"
+                    elif plan_rank(before) == 0:
+                        event_name = "plan_upgraded"
+                    else:
+                        event_name = "plan_changed"
+                    audit(event_name, user_id, user["email"],
+                          f"{plan_named(before)['name']} to {plan_named(after)['name']}",
+                          "Stripe", conn=conn)
+                    notices.append((event_name, user["email"], before, after))
+            elif kind == "checkout.session.completed":
+                customer, ref = obj.get("customer"), str(obj.get("client_reference_id") or "")
+                if isinstance(customer, str) and ref.isdigit():
+                    conn.execute("UPDATE users SET stripe_customer_id = ? WHERE id = ? AND "
+                                 "stripe_customer_id IS NULL", (customer, int(ref)))
+            elif kind in ("invoice.paid", "invoice.payment_failed"):
+                user = conn.execute("SELECT id, email FROM users WHERE stripe_customer_id = ?",
+                                    (str(obj.get("customer") or ""),)).fetchone()
+                if user and kind == "invoice.payment_failed":
+                    audit("payment_failed", user["id"], user["email"], "", "Stripe", conn=conn)
+                    notices.append(("payment_failed", user["email"], None, None))
+                elif user and obj.get("billing_reason") == "subscription_cycle":
+                    audit("plan_renewed", user["id"], user["email"], "", "Stripe", conn=conn)
+        for event_name, email, before, after in notices:
+            billing_notice(event_name, email, before, after)
+        return Response("ok", 200)
+
+    # Stripe signs it instead (stripe_signature_ok); CSRFProtect registers itself here.
+    app.extensions["csrf"].exempt(billing_webhook)
+
+    def billing_notice(event_name, email, before, after):
+        """Tell the account's mailbox about its plan (never for a renewal: Stripe emails the
+        receipt)."""
+        link = site_base() + url_for("plan")
+        if event_name == "payment_failed":
+            subject, what = ("Your Nomad Life payment did not go through",
+                             "We could not take the payment for your Nomad Life plan. Stripe "
+                             "will try again over the next days; update your card with Manage "
+                             "billing on your plan page so the plan stays on.")
+        elif event_name == "plan_downgraded":
+            subject, what = ("Your Nomad Life plan has ended",
+                             f"Your {plan_named(before)['name']} plan has ended and your "
+                             "account is on Free again. Your stays and receipts are kept; over "
+                             "the Free storage, new uploads wait until you free some space.")
+        else:
+            subject, what = (f"Welcome to Nomad Life {plan_named(after)['name']}",
+                             f"Your account is now on {plan_named(after)['name']}. Thank you "
+                             "for your support. Stripe emails the receipt and invoice.")
+        send_template_email(email, subject, "billing_notice", background=True, what=what,
+                            link=link, company=COMPANY)
 
     @app.route("/year/new", methods=["GET", "POST"])
     @login_required
@@ -4203,6 +4626,10 @@ def register_routes(app):
                     flash("Type your email address to confirm the deletion.", "error")
                 elif err:
                     flash(err, "error")
+                elif active_subscription(row["id"]):
+                    # Stripe would keep charging a deleted account every year.
+                    flash("Your plan is still paid for: cancel it with Manage billing on your "
+                          "plan page first, then delete the account.", "error")
                 # Only over the password checked above, as for a password change: a reset by
                 # email that finished meanwhile (the owner taking the account back) wins.
                 elif not delete_account(row["id"], row["password_hash"]):
@@ -4620,7 +5047,14 @@ def register_routes(app):
             "(SELECT COUNT(*) FROM tickets WHERE user_id = :id AND status = 'open') AS open_tickets",
             {"id": user_id}, one=True)
         state = admin_list_state(request.args)
+        subscription = db.query("SELECT * FROM subscriptions WHERE user_id = ? ORDER BY id DESC "
+                                "LIMIT 1", (user_id,), one=True)
         return render_template("admin_account.html", u=u, counts=counts, state=state,
+                               subscription=subscription,
+                               paying=bool(active_subscription(user_id)),
+                               stripe_dashboard="https://dashboard.stripe.com/" + (
+                                   "test/" if app.config["STRIPE_SECRET_KEY"].startswith(
+                                       "sk_test") else ""),
                                admin_url=admin_url, admin_hidden=admin_hidden,
                                back=admin_url(**state), plans=plan_catalog(),
                                activity=account_activity(u["email"], ADMIN_ACCOUNT_AUDIT_ROWS),
@@ -4631,42 +5065,41 @@ def register_routes(app):
     @app.route("/admin/plans/<key>", methods=["POST"])
     @login_required
     def admin_plan_price(key):
-        """Monthly and yearly price of a paid plan. Both empty: back to the prices in PLANS."""
+        """The yearly price of a paid plan, as shown on the site. It must match the plan's
+        Stripe price (what people are charged). Empty: back to the price in PLANS."""
         require_admin()
         if key not in PLANS or key == "free":
             abort(404)
         name = PLANS[key]["name"]
-        p = PLANS[key]
+        default = PLANS[key]["year_cents"]
         # Back to the same view of both tables, without an anchor: the message at the top of
         # the page stays in view.
         back = admin_url(**admin_list_state(request.form))
-        raw_month, raw_year = request.form.get("month", "").strip(), request.form.get("year", "").strip()
-        month, year = parse_price(raw_month), parse_price(raw_year)
-        # Both empty, or both equal to the defaults: no custom price is kept, so the plan
-        # follows the defaults in PLANS from now on.
-        if (not raw_month and not raw_year) or (month, year) == (p["price_cents"], p["year_cents"]):
+        raw_year = request.form.get("year", "").strip()
+        year = parse_price(raw_year)
+        # Empty, or equal to the default: no custom price is kept, so the plan follows the
+        # default in PLANS from now on.
+        if not raw_year or year == default:
             if db.execute_rowcount("DELETE FROM plan_prices WHERE plan = ?", (key,)):
-                audit("admin_price", None, "", f"{name}: default prices", current_user.email)
-                flash(f"{name} is back to its default prices (${money(p['price_cents'])} / "
-                      f"month, ${money(p['year_cents'])} / year).", "success")
+                audit("admin_price", None, "", f"{name}: default price", current_user.email)
+                flash(f"{name} is back to its default price (${money(default)} / year).",
+                      "success")
             else:
-                flash(f"{name} already uses its default prices (${money(p['price_cents'])} / "
-                      f"month, ${money(p['year_cents'])} / year).", "info")
+                flash(f"{name} already uses its default price (${money(default)} / year).",
+                      "info")
             return redirect(back)
-        if not month or not year or month > MAX_PRICE_CENTS or year > MAX_PRICE_CENTS:
-            flash(f"Enter both prices for {name} as amounts in dollars, for example 4 or 4.50 "
-                  "(up to 10000), or leave both empty for the default.", "error")
+        if not year or year > MAX_PRICE_CENTS:
+            flash(f"Enter the yearly price of {name} as an amount in dollars, for example 9 or "
+                  "9.99 (up to 10000), or leave it empty for the default.", "error")
             return redirect(back)
+        # month_cents is kept (a twelfth) for databases from before yearly only plans.
         db.execute("INSERT INTO plan_prices (plan, month_cents, year_cents) VALUES (?, ?, ?) "
                    "ON CONFLICT(plan) DO UPDATE SET month_cents = excluded.month_cents, "
                    "year_cents = excluded.year_cents, updated_at = CURRENT_TIMESTAMP",
-                   (key, month, year))
-        note = (" The yearly price is not below 12 months, so no saving is shown."
-                if year >= month * 12 else "")
-        audit("admin_price", None, "", f"{name}: ${money(month)} / month, ${money(year)} / year",
-              current_user.email)
-        flash(f"{name} now costs ${money(month)} / month and ${money(year)} / year.{note}",
-              "success")
+                   (key, year // 12, year))
+        audit("admin_price", None, "", f"{name}: ${money(year)} / year", current_user.email)
+        flash(f"{name} now shows ${money(year)} / year. Set the same price on its Stripe "
+              "product, which is what people are charged.", "success")
         return redirect(back)
 
     def csv_download(body, filename):
@@ -4916,6 +5349,9 @@ def register_routes(app):
                 pass
             elif request.form.get("confirm_email", "").strip().lower() != email:
                 flash("Type the email address to confirm the deletion.", "error")
+            elif active_subscription(user_id):
+                flash(f"{email} still pays for a plan: cancel the subscription in Stripe first, "
+                      "or Stripe keeps charging it.", "error")
             elif not delete_account(user_id):  # another admin was quicker: report it once
                 flash(f"The account {email} was already deleted.", "info")
                 back = admin_url(**state)

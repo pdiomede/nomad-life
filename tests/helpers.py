@@ -31,6 +31,9 @@ class AppTestCase(unittest.TestCase):
             "GMAIL_USER": "", "GMAIL_APP_PASSWORD": "",
             # Nor real hCaptcha keys: the captcha is off unless a test turns it on (test_captcha.py).
             "HCAPTCHA_SITEKEY": "", "HCAPTCHA_SECRET": "",
+            # Nor real Stripe keys: online payment is off unless a test turns it on.
+            "STRIPE_SECRET_KEY": "", "STRIPE_WEBHOOK_SECRET": "", "STRIPE_PRICE_PRO": "",
+            "STRIPE_PRICE_PLUS": "",
             # Nor may its size settings change what the tests expect: use the defaults.
             "MAX_RECEIPT_BYTES": 10 * appmod.MB, "USER_QUOTA_BYTES": 500 * appmod.MB,
             # Admin page tests of other features skip the two-factor requirement; the tests in

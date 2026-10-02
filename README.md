@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.2**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.3**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -61,6 +61,7 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | `PROXY_COUNT` | Reverse proxies in front of the app, so sign in limits see each visitor's address. Default `0`; use `1` behind nginx or Caddy. |
 | `PWNED_CHECK` | Refuse new passwords found in known data breaches (Have I Been Pwned; only the first 5 characters of the password's SHA-1 hash leave the server). Default `1`; set `0` on a server without internet access. |
 | `HCAPTCHA_SITEKEY`, `HCAPTCHA_SECRET` | hCaptcha on Sign up and Forgot password (keys from dashboard.hcaptcha.com). Empty by default, which turns it off; set both or neither. A hidden honeypot field is always on. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PLUS` | Online payment with Stripe (see [stripe.md](stripe.md)): the secret API key, the webhook signing secret, and the price ids of the two yearly plans. Empty by default, which keeps payment off ("coming soon"); set all four or none. |
 
 To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, confirmation and reset links are printed in the terminal.
 
@@ -155,12 +156,21 @@ Emails are notifications only: admins get one for each new ticket or message, th
 | Plan | Price | Receipt storage | Per receipt |
 | --- | --- | --- | --- |
 | Free | 0 | `USER_QUOTA_MB` (500 MB) | `MAX_RECEIPT_MB` (10 MB) |
-| Pro | $0.99 a month ($9.99 a year) | 5 GB | 25 MB |
-| Nomad+ | $1.99 a month ($19.99 a year) | 25 GB | 50 MB, plus priority support |
+| Pro | $9.99 a year | 5 GB | 25 MB |
+| Nomad+ | $19.99 a year | 25 GB | 50 MB, plus priority support |
 
-Paid plans never get less than Free, and a quota set on the admin page wins over the plan's. Plans are defined in `PLANS` in `app.py`. There is no payment yet, so an admin moves an account to another plan with the plan selector on the [admin page](#admin-page). Without an admin, change the database (`free`, `pro` or `plus`):
+Paid plans are yearly only, in US dollars before VAT or sales tax, sold by Nemax Tech LLC (Sofia, Bulgaria, VAT BG207405380). Paid plans never get less than Free, and a quota set on the admin page wins over the plan's. Plans are defined in `PLANS` in `app.py`.
 
-Prices can be changed by an admin on the admin page ("Plans and prices"); the prices in `PLANS` are the defaults. Storage limits and features are changed in `PLANS`.
+**Online payment (Stripe).** With the four `STRIPE_*` settings in `config.env`, the plan page's Upgrade button opens Stripe's hosted Checkout:
+- cards, Apple Pay and Google Pay;
+- VAT and sales tax worked out by Stripe Tax;
+- business customers can enter their VAT number.
+
+Stripe's signed webhook (`/billing/webhook`) then sets the plan; it is the only thing that does. **Manage billing** opens Stripe's customer portal (cancel, switch between Pro and Nomad+, card, invoices). Renewals, failed payments and cancellations move the plan automatically, and an account that still pays cannot be deleted until its plan is cancelled. Setting up the Stripe account is described step by step in [stripe.md](stripe.md). Without the settings, the button says "Online payment is coming soon".
+
+An admin can still give an account a plan with the plan selector on the [admin page](#admin-page), for example as a gift. Without an admin, change the database (`free`, `pro` or `plus`):
+
+Yearly prices can be changed on the admin page ("Plans & Prices"); keep them equal to the Stripe prices, which are what people are charged. The prices in `PLANS` are the defaults. Storage limits and features are changed in `PLANS`.
 
 ```bash
 sqlite3 data/nomad.db "UPDATE users SET plan = 'pro' WHERE email = 'you@example.com'"

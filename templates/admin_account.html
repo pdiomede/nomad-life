@@ -33,6 +33,7 @@
     <dt>Last sign in</dt><dd>{{ (u.last_login_at | localdate) if u.last_login_at else 'Never' }}</dd>
     <dt>Sign up IP</dt><dd>{% if u.signup_ip %}{{ ip_detail(u.signup_ip) }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
     <dt>Last sign in IP</dt><dd>{% if u.last_login_ip %}{{ ip_detail(u.last_login_ip) }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
+    <dt>Subscription</dt><dd>{% if subscription %}{% set sp = plans | selectattr('key', 'equalto', subscription.plan) | list %}{{ subscription.status | replace('_', ' ') }}, {{ sp[0].name if sp else subscription.plan }}{% if subscription.current_period_end %} <span class="muted">({{ 'ends' if subscription.cancel_at_period_end or subscription.status == 'canceled' else 'renews' }} {{ subscription.current_period_end | localdate }})</span>{% endif %} <a class="small" href="{{ stripe_dashboard }}subscriptions/{{ subscription.subscription_id }}" target="_blank" rel="noopener noreferrer">Stripe</a>{% else %}<span class="muted">None</span>{% endif %}</dd>
     <dt>Two-factor sign in</dt><dd>{% if u.has_2fa %}On <span class="muted">({% if u.has_totp %}authenticator app{% if u.passkeys %}, {% endif %}{% endif %}{% if u.passkeys %}{{ u.passkeys }} passkey{{ '' if u.passkeys == 1 else 's' }}{% endif %})</span>{% else %}Off{% endif %}</dd>
     <dt>Signed in devices</dt><dd>{{ counts.devices }}</dd>
     <dt>Years</dt><dd>{{ u.years }}</dd>
@@ -53,10 +54,11 @@
       <label for="plan-{{ u.id }}" class="small">Plan</label>
       <select id="plan-{{ u.id }}" name="plan">
         {% for p in plans %}
-          <option value="{{ p.key }}"{% if p.key == u.plan_key %} selected{% endif %}>{{ p.name }} ({% if p.price_cents %}${{ p.price }} / month, ${{ p.year }} / year{% else %}free{% endif %})</option>
+          <option value="{{ p.key }}"{% if p.key == u.plan_key %} selected{% endif %}>{{ p.name }} ({% if p.price_cents %}${{ p.year }} / year{% else %}free{% endif %})</option>
         {% endfor %}
       </select>
       <button class="btn btn-ghost btn-sm" type="submit" aria-label="Save plan for {{ u.email }}">Save</button>
+      {% if paying %}<p class="muted small admin-plan-note">Paid with Stripe: its next event sets the plan back. Change it in Stripe instead.</p>{% endif %}
     </form>
     <form method="post" action="{{ url_for('admin_user', user_id=u.id) }}" class="admin-quota">
       {{ ui.csrf() }}

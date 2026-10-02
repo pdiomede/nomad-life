@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS users (
     first_name TEXT NOT NULL DEFAULT '',
     last_name TEXT NOT NULL DEFAULT '',
     signup_ip TEXT NOT NULL DEFAULT '',
-    last_login_ip TEXT NOT NULL DEFAULT ''
+    last_login_ip TEXT NOT NULL DEFAULT '',
+    stripe_customer_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS years (
@@ -151,6 +152,33 @@ CREATE TABLE IF NOT EXISTS passkeys (
     last_used_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_passkeys_user ON passkeys(user_id);
+
+-- Paid plans (Stripe subscriptions, yearly). Stripe's webhook is the only writer: it says which
+-- plan a subscription pays for and its state; users.plan follows. user_id is kept NULL when the
+-- account is deleted, so the company's billing history stays. last_event_at is the Stripe time
+-- of the newest event applied: an older one arriving late is ignored.
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    subscription_id TEXT NOT NULL UNIQUE,
+    customer_id TEXT NOT NULL,
+    price_id TEXT NOT NULL DEFAULT '',
+    plan TEXT NOT NULL DEFAULT 'free',
+    status TEXT NOT NULL DEFAULT '',
+    current_period_end TEXT,
+    cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+    last_event_at INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
+-- Every Stripe event handled, by its id: a retried delivery is applied once. Pruned after
+-- AUDIT_DAYS.
+CREATE TABLE IF NOT EXISTS billing_events (
+    event_id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 -- The challenge of each passkey ceremony (kind 'register' or 'sign_in'), kept here because the
 -- session lives in the browser's cookie: an old cookie sent again would hold the challenge
 -- again. A challenge counts only while its row exists, and using it deletes the row (one use).
@@ -341,6 +369,7 @@ MIGRATIONS = [
     ("users", "totp_secret", ["ALTER TABLE users ADD COLUMN totp_secret TEXT"]),
     ("users", "totp_step", ["ALTER TABLE users ADD COLUMN totp_step INTEGER NOT NULL DEFAULT 0"]),
     ("user_sessions", "totp_setup", ["ALTER TABLE user_sessions ADD COLUMN totp_setup TEXT"]),
+    ("users", "stripe_customer_id", ["ALTER TABLE users ADD COLUMN stripe_customer_id TEXT"]),
     # The name set on the Settings page (optional; empty means not given).
     ("users", "first_name", ["ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''"]),
     ("users", "last_name", ["ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''"]),

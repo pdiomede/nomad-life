@@ -22,6 +22,7 @@
   {{ ui.honeypot() }}
   {{ ui.captcha() }}
   <button class="btn btn-primary btn-block" type="submit">Create account</button>
+  <p class="center muted small">By creating an account you agree to the <a href="{{ url_for('terms') }}">Terms</a> and the <a href="{{ url_for('privacy') }}">Privacy Policy</a>.</p>
   <p class="center muted small">Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
 </form>
 {% endblock %}

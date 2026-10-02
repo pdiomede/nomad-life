@@ -43,9 +43,10 @@ class NavigationTests(SupportBase):
         self.assertNotIn("Contact support", anon)
         self.assertEqual(self.app.test_client().get("/support").status_code, 302)
 
-    def test_footer_links_to_x(self):
+    def test_footer_links_to_the_company(self):
         html = self.app.test_client().get("/login").get_data(as_text=True)
-        self.assertIn('href="https://x.com/pdiomede"', html)
+        self.assertIn('Built by <a href="https://nemax.tech" target="_blank" rel="noopener">'
+                      'Nemax Tech</a>', html)
         self.assertNotIn("pdiomede.com", html)
         self.assertIn("Disallow: /support", self.client.get("/robots.txt").get_data(as_text=True))
 

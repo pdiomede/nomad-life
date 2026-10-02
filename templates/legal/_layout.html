@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{# A legal page: its own title and description, indexable, in the guides' reading layout, with
+   the company that runs Nomad Life. The text goes in the legal block. #}
+{% block title %}{{ page.title }} | Nomad Life{% endblock %}
+{% block description %}{{ page.description }}{% endblock %}
+{% block og_title %}{{ page.title }} | Nomad Life{% endblock %}
+{% block og_description %}{{ page.description }}{% endblock %}
+{% block robots %}index, follow{% endblock %}
+{% block og_url %}{{ page_url }}{% endblock %}
+{% block head_extra %}
+  <link rel="canonical" href="{{ page_url }}">
+{% endblock %}
+{% block content %}
+<article class="guide legal">
+  <nav class="guide-crumbs small" aria-label="Breadcrumb">
+    <a href="{{ url_for('landing') }}">Nomad Life</a> <span aria-hidden="true">&rsaquo;</span>
+    <span aria-current="page">{{ page.title }}</span>
+  </nav>
+  <header class="guide-head">
+    <p class="eyebrow">Legal</p>
+    <h1>{{ page.title }}</h1>
+    <p class="small muted">Updated <time datetime="{{ page.updated }}">{{ page.updated }}</time></p>
+  </header>
+  <div class="guide-body">
+    {% block legal %}{% endblock %}
+    <h2 id="contact">Who we are</h2>
+    <p>Nomad Life is run by <strong>{{ company.name }}</strong>, {{ company.city }}, {{ company.country }}. Company number (UIC) {{ company.uic }}, VAT number {{ company.vat }}. Write to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>, or about your account to <a href="mailto:{{ support_email }}">{{ support_email }}</a>.</p>
+  </div>
+  <nav class="guide-more" aria-label="Other legal pages">
+    <ul>
+      {% for endpoint, title in (('terms', 'Terms of Service'), ('privacy', 'Privacy Policy'), ('refunds', 'Refund Policy')) if endpoint != request.endpoint %}
+      <li><a href="{{ url_for(endpoint) }}">{{ title }}</a></li>
+      {% endfor %}
+    </ul>
+  </nav>
+</article>
+{% endblock %}

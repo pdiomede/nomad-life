@@ -1,0 +1,19 @@
+{% extends "legal/_layout.html" %}
+{% block legal %}
+<p>Paid plans are yearly. We want you to pay only for a plan you are happy with, so the rules are simple.</p>
+
+<h2 id="full-refund">A full refund within {{ refund_days }} days</h2>
+<p>Within {{ refund_days }} days of a payment, the first one or a yearly renewal, you can ask for a full refund, for any reason. Write to <a href="mailto:{{ support_email }}">{{ support_email }}</a> from your account's email address. The refund goes back to the card you paid with, usually within 5 to 10 business days, and your account moves to the Free plan.</p>
+
+<h2 id="cancel">Cancelling</h2>
+<p>You can cancel at any time with <strong>Manage billing</strong> on your plan page. The plan stays until the end of the year you already paid for and then does not renew. After the {{ refund_days }} days, the rest of a year is not refunded, unless the law where you live says otherwise.</p>
+
+<h2 id="renewal">Before a renewal</h2>
+<p>A plan renews automatically each year until you cancel. If a renewal surprised you, write to us within {{ refund_days }} days and we refund it in full.</p>
+
+<h2 id="switching">Switching plans</h2>
+<p>Moving up from Pro to Nomad+ charges only the difference for the rest of your year. Moving down takes effect at your next renewal.</p>
+
+<h2 id="free">Your data after a refund or cancellation</h2>
+<p>Nothing is deleted. On the Free plan your stays and receipts stay as they are; if they use more space than Free allows, you can still see and download them, and new uploads wait until you make room.</p>
+{% endblock %}

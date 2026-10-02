@@ -133,6 +133,6 @@ class BlinkAndPriceFormTests(AppTestCase):
         self.app.config["ADMIN_REQUIRE_2FA"] = False
         self.signup("admin@example.com")
         html = self.client.get("/admin").get_data(as_text=True)
-        self.assertEqual(html.count('<span class="price-field">'), 4)
+        self.assertEqual(html.count('<span class="price-field">'), 2)  # yearly only, 1.12.3
         self.assertIn(".admin-price .price-field { display: inline-flex; align-items: center; "
                       "gap: 6px; white-space: nowrap; }", read("static", "css", "style.css"))

@@ -1,0 +1,8 @@
+Hi{% if first_name %} {{ first_name }}{% endif %},
+
+{{ what }}
+
+Your plan: {{ link }}
+
+Nomad Life
+{{ site_url }}

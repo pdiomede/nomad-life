@@ -98,7 +98,7 @@ class DocsPageTests(AppTestCase):
         self.app.config["ADMIN_EMAILS"] = frozenset({"admin@example.com"})
         self.app.config["ADMIN_REQUIRE_2FA"] = False
         self.client.post("/admin/plans/pro", data={"month": "5", "year": "50"})
-        self.assertIn("$5 a month or $50 a year", self.page())
+        self.assertIn("<td>$50 a year</td>", self.page())
 
     def test_scripts_and_text_rules(self):
         html = self.page()
@@ -146,5 +146,5 @@ class DocsTouchesTests(AppTestCase):
                       'data-tip="Light or dark mode"', html)
         self.assertNotIn('title="Toggle theme"', html)
         # The plans table shows the default prices.
-        self.assertIn("$0.99 a month or $9.99 a year", html)
-        self.assertIn("$1.99 a month or $19.99 a year", html)
+        self.assertIn("<td>$9.99 a year</td>", html)
+        self.assertIn("<td>$19.99 a year</td>", html)

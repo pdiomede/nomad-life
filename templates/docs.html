@@ -277,7 +277,7 @@
               {% for p in plans %}
               <tr>
                 <th scope="row">{{ p.name }}</th>
-                <td>{% if p.price_cents %}${{ p.price }} a month or ${{ p.year }} a year{% else %}Free{% endif %}</td>
+                <td>{% if p.price_cents %}${{ p.year }} a year{% else %}Free{% endif %}</td>
                 <td class="num">{{ p.quota_bytes | filesize('down') }}</td>
                 <td class="num">{{ p.receipt_bytes | filesize('down') }}</td>
                 <td>{{ 'Yes' if p.package else 'No' }}</td>
@@ -286,7 +286,21 @@
             </tbody>
           </table>
         </div>
-        <p>Prices are in US dollars. Your plan is in the menu under your name. Online payment is coming soon.</p>
+        <p>Prices are in US dollars, for a year, before VAT or sales tax. Your plan is in the menu under your name.</p>
+        <section id="billing" class="doc-sub" data-doc-title="Upgrade and billing">
+          <h3>Upgrade and billing</h3>
+          {% if billing_on %}
+          <ol>
+            <li>Open <strong>Your plan</strong> and press <strong>Upgrade</strong>.</li>
+            <li>Pay on Stripe's secure page with a card, Apple Pay or Google Pay. VAT or sales tax is added where it applies; a business can enter its VAT number.</li>
+            <li>Back on Nomad Life, the new plan shows within seconds. Stripe emails the receipt and the invoice.</li>
+          </ol>
+          <p>Plans renew every year until you cancel. <strong>Manage billing</strong> on your plan page opens Stripe, where you cancel, switch between Pro and Nomad+ (moving up charges only the difference for the rest of your year), update your card and download invoices. A cancelled plan stays until the end of the year you paid for.</p>
+          {% else %}
+          <p>Online payment is coming soon. Plans will be paid yearly on Stripe's secure page, renew every year until you cancel, and be managed from your plan page.</p>
+          {% endif %}
+          <p>Within {{ refund_days }} days of a payment you get a full refund on request: see the <a href="{{ url_for('refunds') }}">Refund Policy</a>. Plans are sold by {{ company.name }}; see the <a href="{{ url_for('terms') }}">Terms</a>.</p>
+        </section>
         <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 

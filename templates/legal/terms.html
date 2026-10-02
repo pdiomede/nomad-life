@@ -1,0 +1,45 @@
+{% extends "legal/_layout.html" %}
+{% block legal %}
+<p>These terms apply when you use Nomad Life at {{ request.host }}, the service that counts the days you spend in each country and keeps your travel receipts. By creating an account you agree to them. If you do not agree, please do not use the service.</p>
+
+<h2 id="service">The service</h2>
+<p>Nomad Life is an organizer: it counts days and stores documents from what you enter. It does not give tax, legal or immigration advice, and its counts follow its own published rules, which may differ from the rules of a country. Check your situation with a qualified adviser before relying on a count for a decision.</p>
+
+<h2 id="account">Your account</h2>
+<ul>
+  <li>You must be at least 18 years old and give a working email address.</li>
+  <li>Keep your password and your two-factor methods to yourself. You are responsible for what is done with your account until you tell us it was used by someone else.</li>
+  <li>One account is for one person. Automated or bulk sign ups are not allowed and may be removed.</li>
+</ul>
+
+<h2 id="your-data">Your data</h2>
+<p>What you enter and upload stays yours. You give us only the rights needed to store it, show it to you and build the files you ask for, such as the accountant package. You can download your receipts and delete your account at any time on the Settings page. How we handle personal data is described in the <a href="{{ url_for('privacy') }}">Privacy Policy</a>.</p>
+
+<h2 id="acceptable-use">Acceptable use</h2>
+<p>Do not upload content you have no right to, malware, or illegal material; do not try to reach other people's data, overload or attack the service, or get around its limits. We may suspend an account that does, and tell you why unless the law or the safety of others prevents it.</p>
+
+<h2 id="plans">Plans and payment</h2>
+<ul>
+  <li>The Free plan costs nothing. Paid plans are sold by {{ company.name }} for one year at a time, at the price shown on the site in US dollars. VAT or sales tax is added at checkout where it applies.</li>
+  <li>Payments are processed by Stripe. We never see or store your full card number.</li>
+  <li><strong>A paid plan renews automatically</strong> every year at the price then in force, until you cancel. You can cancel at any time with Manage billing on your plan page; the plan then stays until the end of the year already paid and does not renew.</li>
+  <li>If we change the price of a plan, we tell you by email at least 30 days before your next renewal. You can cancel before it takes effect.</li>
+  <li>If a renewal payment fails, we and Stripe retry for a while; if it keeps failing, the account moves to the Free plan. Your stays and receipts are kept.</li>
+  <li>Refunds follow the <a href="{{ url_for('refunds') }}">Refund Policy</a>.</li>
+</ul>
+
+<h2 id="withdrawal">Right of withdrawal (consumers in the EU and UK)</h2>
+<p>When you buy a plan, you ask us to start it at once, and you acknowledge that the 14 day right of withdrawal for digital services ends once the service has started. You still get a full refund within {{ refund_days }} days of a payment under our <a href="{{ url_for('refunds') }}">Refund Policy</a>.</p>
+
+<h2 id="availability">Availability and changes</h2>
+<p>We work to keep Nomad Life available and your data safe, with backups, but we cannot promise it will always be free of interruptions or errors. We may improve or change features; if a change removes something important from a paid plan during its year, you may cancel and get a refund for the rest of that year.</p>
+
+<h2 id="liability">Liability</h2>
+<p>To the extent the law allows, the service is provided as it is, and our total liability for any claim is limited to the amount you paid us in the 12 months before it. Nothing in these terms limits liability that cannot be limited by law, such as for intent, gross negligence or your mandatory rights as a consumer.</p>
+
+<h2 id="ending">Ending your account</h2>
+<p>You can delete your account at any time on the Settings page (cancel a paid plan first). We may close an account that breaks these terms, after telling you why, and we remove unconfirmed accounts after {{ verify_minutes }} minutes.</p>
+
+<h2 id="law">Changes to these terms, and the law that applies</h2>
+<p>We may update these terms; the date above shows the latest version, and we tell account holders by email before important changes take effect. These terms are governed by the law of Bulgaria. If you are a consumer, you keep the protection of the mandatory laws of the country where you live, and you may also bring a claim in the courts there.</p>
+{% endblock %}

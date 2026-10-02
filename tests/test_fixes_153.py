@@ -95,11 +95,11 @@ class AdminFixTests(AppTestCase):
         self.client.post("/admin/plans/pro", data={"month": "2", "year": "20"})
         html = self.client.post("/admin/plans/pro", data={"month": "0.99", "year": "9.99"},
                                 follow_redirects=True).get_data(as_text=True)
-        self.assertIn("Pro is back to its default prices", html)
+        self.assertIn("Pro is back to its default price", html)
         # Clearing a plan that has no custom price changes nothing and records nothing.
         html = self.client.post("/admin/plans/plus", data={"month": "", "year": ""},
                                 follow_redirects=True).get_data(as_text=True)
-        self.assertIn("Nomad+ already uses its default prices", html)
+        self.assertIn("Nomad+ already uses its default price", html)
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM audit_log WHERE event = "
                                           "'admin_price'").fetchone()[0], events + 2)
