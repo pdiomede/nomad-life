@@ -1,4 +1,5 @@
 {% extends "auth/_layout.html" %}
+{% import "_macros.html" as ui with context %}
 {% block title %}Create account | Nomad Life{% endblock %}
 {% block heading %}Create your workspace{% endblock %}
 {% block sub %}Track where you live each year and keep your receipts safe.{% endblock %}
@@ -18,6 +19,8 @@
     <label for="confirm">Confirm password</label>
     <input id="confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" required>
   </div>
+  {{ ui.honeypot() }}
+  {{ ui.captcha() }}
   <button class="btn btn-primary btn-block" type="submit">Create account</button>
   <p class="center muted small">Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
 </form>

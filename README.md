@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.5.8**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.6.0**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -59,6 +59,7 @@ All settings live in `config.env` (see `config.env.example`). This file is git i
 | `ADMIN_EMAILS` | Comma separated emails of the accounts that can open the admin page. Empty by default. |
 | `PROXY_COUNT` | Reverse proxies in front of the app, so sign in limits see each visitor's address. Default `0`; use `1` behind nginx or Caddy. |
 | `PWNED_CHECK` | Refuse new passwords found in known data breaches (Have I Been Pwned; only the first 5 characters of the password's SHA-1 hash leave the server). Default `1`; set `0` on a server without internet access. |
+| `HCAPTCHA_SITEKEY`, `HCAPTCHA_SECRET` | hCaptcha on Sign up and Forgot password (keys from dashboard.hcaptcha.com). Empty by default, which turns it off; set both or neither. A hidden honeypot field is always on. |
 
 To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, confirmation and reset links are printed in the terminal.
 

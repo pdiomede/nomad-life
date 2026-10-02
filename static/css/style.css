@@ -176,6 +176,10 @@ p { margin: 0; }
 /* Utility */
 .muted { color: var(--muted); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* Bot trap on Sign up and Forgot password: off screen rather than display:none, which some bots skip. */
+.hp-field { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+/* hCaptcha widget (78px tall): keep its room so the button does not jump when it loads. */
+.captcha-box { display: flex; flex-direction: column; align-items: center; min-height: 78px; max-width: 100%; overflow-x: auto; }
 .small { font-size: 13px; }
 .card-intro { margin-bottom: 16px; }  /* space between a card's intro text and the form below it */
 .center { text-align: center; }

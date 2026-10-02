@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.6.0] - 2026-10-02
+
+### Added
+
+- **hCaptcha on Sign up and Forgot password.** Bots were signing up with made up Gmail addresses (such as `t.o.n.yluu.5.5.95@gmail.com`) that never confirm, and every sign up sent a confirmation email. With `HCAPTCHA_SITEKEY` and `HCAPTCHA_SECRET` in `config.env`, both forms show the hCaptcha check, and a form without a passed check is refused before any account, rate limit attempt or email. Without the keys the captcha is off, as before. Only these two pages allow hCaptcha's hosts in their Content-Security-Policy; the widget follows the light or dark theme. If hCaptcha cannot be reached, the form goes through (logged), as the breached password check does.
+- **Honeypot field** on the same two forms: an off screen "Website" field that people never see. A form that fills it in gets the usual answer, so the bot learns nothing, but no account is made and no email is sent.
+
 ## [1.5.8] - 2026-10-01
 
 ### Fixed

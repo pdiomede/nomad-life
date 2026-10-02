@@ -26,7 +26,7 @@ from datetime import date, datetime, timedelta, timezone
 import click
 import segno
 from dotenv import load_dotenv
-from flask import (Flask, Response, abort, after_this_request, current_app, flash,
+from flask import (Flask, Response, abort, after_this_request, current_app, flash, g,
                    has_request_context, redirect, render_template, request, send_file,
                    send_from_directory, session, url_for)
 from markupsafe import escape
@@ -44,7 +44,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.5.8"
+APP_VERSION = "1.6.0"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -197,6 +197,11 @@ SESSION_IDLE_DAYS = 31
 # skipped when the service does not answer in time.
 PWNED_URL = "https://api.pwnedpasswords.com/range/"
 PWNED_TIMEOUT_SECONDS = 3
+# hCaptcha on Sign up and Forgot password (off while config.env has no keys).
+HCAPTCHA_VERIFY_URL = "https://api.hcaptcha.com/siteverify"
+HCAPTCHA_TIMEOUT_SECONDS = 5
+# The visible "Website" field no person sees (off screen): only bots fill it in.
+HONEYPOT_FIELD = "website"
 # First bytes of each allowed receipt type, so a renamed file (an HTML page saved as .pdf,
 # say) is refused. PDFs may start with a little junk before %PDF (allowed by the format).
 FILE_SIGNATURES = {
@@ -215,6 +220,13 @@ CSP = ("default-src 'self'; script-src 'self'; "
        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
        "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+# The same policy on the pages that show the hCaptcha widget (its script, iframe, styles and
+# requests come from hcaptcha.com); every other page keeps CSP.
+HCAPTCHA_HOSTS = "https://hcaptcha.com https://*.hcaptcha.com"
+CAPTCHA_CSP = (CSP.replace("script-src 'self'", f"script-src 'self' {HCAPTCHA_HOSTS}")
+               .replace("style-src 'self'", f"style-src 'self' {HCAPTCHA_HOSTS}")
+               .replace("connect-src 'self'", f"connect-src 'self' {HCAPTCHA_HOSTS}")
+               .replace("object-src", f"frame-src {HCAPTCHA_HOSTS}; object-src"))
 EMAIL_CHANGE_MAX_AGE = 3600
 # How long the "undo this change" link sent to the old address works.
 EMAIL_REVERT_MAX_AGE = 7 * 24 * 3600
@@ -378,6 +390,17 @@ def proxy_count():
     return int(raw)
 
 
+def hcaptcha_settings():
+    """(site key, secret) from config.env: both empty turns the captcha off, one alone is a
+    mistake that would either show a widget nobody can pass or check nothing."""
+    sitekey = (os.getenv("HCAPTCHA_SITEKEY") or "").strip()
+    secret = (os.getenv("HCAPTCHA_SECRET") or "").strip()
+    if bool(sitekey) != bool(secret):
+        raise SystemExit("config.env: set both HCAPTCHA_SITEKEY and HCAPTCHA_SECRET, or "
+                         "leave both empty to turn the captcha off.")
+    return sitekey, secret
+
+
 def admin_emails(raw):
     return frozenset(e.strip().lower() for e in raw.replace(";", ",").split(",") if e.strip())
 
@@ -412,6 +435,7 @@ def safe_next(value):
 
 def create_app(overrides=None):
     app = Flask(__name__)
+    hcaptcha_sitekey, hcaptcha_secret = hcaptcha_settings()
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY", "").strip(),
         APP_PORT=port_setting(),
@@ -422,6 +446,9 @@ def create_app(overrides=None):
         # Reverse proxies in front of the app (0 when it is reached directly). The sign in
         # limits per IP address need the visitor's address, not the proxy's.
         PROXY_COUNT=proxy_count(),
+        # hCaptcha on Sign up and Forgot password, so bots are refused before any email.
+        HCAPTCHA_SITEKEY=hcaptcha_sitekey,
+        HCAPTCHA_SECRET=hcaptcha_secret,
         GMAIL_APP_PASSWORD=os.getenv("GMAIL_APP_PASSWORD", "").replace(" ", ""),
         DATABASE_PATH=_abs(os.getenv("DATABASE_PATH", "data/nomad.db")),
         UPLOAD_DIR=_abs(os.getenv("UPLOAD_DIR", "uploads")),
@@ -577,8 +604,11 @@ def create_app(overrides=None):
         # Pages may only run the app's own script files: even if some text ever escaped the
         # template escaping, an injected <script> or onerror= would not run. Receipts (PDFs
         # and images) only get frame-ancestors, as a full policy breaks Chrome's PDF viewer.
-        resp.headers.setdefault("Content-Security-Policy", CSP if resp.mimetype == "text/html"
-                                else "frame-ancestors 'none'")
+        if resp.mimetype == "text/html":
+            policy = CAPTCHA_CSP if g.get("captcha") else CSP
+        else:
+            policy = "frame-ancestors 'none'"
+        resp.headers.setdefault("Content-Security-Policy", policy)
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
         if request.endpoint != "static" and current_user.is_authenticated:
@@ -588,7 +618,8 @@ def create_app(overrides=None):
     # CSS and JS are cached for a week, so their URLs change whenever their content does,
     # also between releases.
     digest = hashlib.sha256()
-    for name in ("css/style.css", "js/theme.js", "js/theme-init.js", "js/docs.js"):
+    for name in ("css/style.css", "js/theme.js", "js/theme-init.js", "js/docs.js",
+                 "js/captcha.js"):
         with open(os.path.join(app.static_folder, name), "rb") as fh:
             digest.update(fh.read())
     asset_version = digest.hexdigest()[:10]
@@ -1181,6 +1212,55 @@ def breach_count(password):
             except ValueError:
                 return 0
     return 0
+
+
+def captcha_on():
+    return bool(current_app.config.get("HCAPTCHA_SITEKEY")
+                and current_app.config.get("HCAPTCHA_SECRET"))
+
+
+def hcaptcha_verify(token):
+    """True or False as hCaptcha answers for this token, None when it cannot be reached."""
+    cfg = current_app.config
+    data = urlencode({"secret": cfg["HCAPTCHA_SECRET"], "response": token,
+                      "remoteip": client_ip(), "sitekey": cfg["HCAPTCHA_SITEKEY"]}).encode()
+    req = urllib.request.Request(HCAPTCHA_VERIFY_URL, data=data,
+                                 headers={"User-Agent": "Nomad-Life"})
+    try:
+        with urllib.request.urlopen(req, timeout=HCAPTCHA_TIMEOUT_SECONDS) as resp:
+            answer = json.loads(resp.read(64 * 1024).decode("utf-8", "replace"))
+    except Exception as exc:  # noqa: BLE001 - offline, slow or changed service
+        current_app.logger.warning("hCaptcha check skipped: %s", exc)
+        return None
+    if not answer.get("success"):
+        current_app.logger.info("hCaptcha refused a form: %s", answer.get("error-codes"))
+    return answer.get("success") is True
+
+
+def captcha_passed():
+    """Whether the form's hCaptcha answer is good, or the captcha is off. A form without an
+    answer (a bot posting directly) fails without asking hCaptcha; a service that cannot be
+    reached lets the form through, as the breach check does, since nobody can cause that."""
+    if not captcha_on():
+        return True
+    token = request.form.get("h-captcha-response", "").strip()
+    if not token or len(token) > 8192:
+        return False
+    return hcaptcha_verify(token) is not False
+
+
+def honeypot_filled():
+    """Only bots fill in the off screen field."""
+    return bool(request.form.get(HONEYPOT_FIELD, "").strip())
+
+
+def captcha_page(template, status=200):
+    """Render Sign up or Forgot password, allowing the hCaptcha hosts in this page's CSP."""
+    g.captcha = captcha_on()
+    return render_template(template), status
+
+
+CAPTCHA_MESSAGE = "Please complete the check that shows you are not a robot."
 
 
 def password_problem(password, confirm, breaches=True):
@@ -2594,24 +2674,33 @@ def register_routes(app):
             email = request.form.get("email", "").strip().lower()
             password = request.form.get("password", "")
             confirm = request.form.get("confirm", "")
+            # The same answer whether or not the address has an account, so sign up cannot
+            # be used to find out who uses Nomad Life. The mailbox learns the rest.
+            sent = (f"We sent an email to {email}. Open the link in it within "
+                    f"{VERIFY_MINUTES} minutes to continue.")
+            if honeypot_filled():
+                # A bot: the usual answer, so it learns nothing, but no account and no email.
+                current_app.logger.info("Sign up refused by the honeypot from %s", client_ip())
+                flash(sent, "info")
+                return redirect(url_for("login"))
             if not valid_email(email):
                 flash("Please enter a valid email address.", "error")
             elif problem := password_problem(password, confirm, breaches=False):
                 flash(problem, "error")
+            elif not captcha_passed():
+                # Before the limit, so a person who missed the box does not use up attempts.
+                flash(CAPTCHA_MESSAGE, "error")
+                return captcha_page("auth/signup.html", 400)
             else:
                 wait, scope, _attempt = take_attempt("signup")
                 if wait:
                     flash(too_many_message(wait, scope, "sign ups"), "error")
-                    return render_template("auth/signup.html"), 429
+                    return captcha_page("auth/signup.html", 429)
                 # Checked for every address, known or not, so the answer reveals nothing.
                 problem = password_problem(password, confirm)
                 if problem:
                     flash(problem, "error")
-                    return render_template("auth/signup.html")
-                # The same answer whether or not the address has an account, so sign up cannot
-                # be used to find out who uses Nomad Life. The mailbox learns the rest.
-                sent = (f"We sent an email to {email}. Open the link in it within "
-                        f"{VERIFY_MINUTES} minutes to continue.")
+                    return captcha_page("auth/signup.html")
                 old = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
                 # Hashed for every address, and every email sent after answering (as for Forgot
                 # password): a known address must not answer sooner or later than a new one.
@@ -2658,7 +2747,7 @@ def register_routes(app):
                                               background=True):
                         flash("We could not send the email. Please try again in a few minutes.",
                               "error")
-                        return render_template("auth/signup.html")
+                        return captcha_page("auth/signup.html")
                     flash(sent, "info")
                     return redirect(url_for("login"))
                 row = db.query("SELECT * FROM users WHERE id = ?", (uid,), one=True)
@@ -2668,10 +2757,10 @@ def register_routes(app):
                     db.execute("DELETE FROM users WHERE id = ? AND verified_at IS NULL", (uid,))
                     flash("We could not send the confirmation email. Please try again in a few "
                           "minutes.", "error")
-                    return render_template("auth/signup.html")
+                    return captcha_page("auth/signup.html")
                 flash(sent, "info")
                 return redirect(url_for("login"))
-        return render_template("auth/signup.html")
+        return captcha_page("auth/signup.html")
 
     @app.route("/verify/<token>", methods=["GET", "POST"])
     def verify(token):
@@ -2864,10 +2953,19 @@ def register_routes(app):
         if request.method == "POST":
             purge_unverified()
             email = request.form.get("email", "").strip().lower()
+            answer = "If that email is registered, a reset link is on its way."
+            if honeypot_filled():
+                current_app.logger.info("Reset request refused by the honeypot from %s",
+                                        client_ip())
+                flash(answer, "info")
+                return redirect(url_for("login"))
+            if not captcha_passed():
+                flash(CAPTCHA_MESSAGE, "error")
+                return captcha_page("auth/forgot.html", 400)
             wait, scope, _attempt = take_attempt("forgot")
             if wait:
                 flash(too_many_message(wait, scope, "reset requests"), "error")
-                return render_template("auth/forgot.html"), 429
+                return captcha_page("auth/forgot.html", 429)
             def send_link():
                 row = db.query("SELECT * FROM users WHERE email = ?", (email,), one=True)
                 if row and not row["disabled"] and email_allowed(row["id"]):
@@ -2877,9 +2975,9 @@ def register_routes(app):
             # sends nothing, must not answer sooner than a registered one (seconds when Gmail
             # was awaited, still half a millisecond while the email was claimed and rendered).
             after_answer(send_link)
-            flash("If that email is registered, a reset link is on its way.", "info")
+            flash(answer, "info")
             return redirect(url_for("login"))
-        return render_template("auth/forgot.html")
+        return captcha_page("auth/forgot.html")
 
     @app.route("/reset/<token>", methods=["GET", "POST"])
     def reset(token):

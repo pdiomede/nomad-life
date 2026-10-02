@@ -29,6 +29,8 @@ class AppTestCase(unittest.TestCase):
             "UPLOAD_DIR": os.path.join(self.tmp, "uploads"),
             # config.env may hold real Gmail credentials: tests must never send email.
             "GMAIL_USER": "", "GMAIL_APP_PASSWORD": "",
+            # Nor real hCaptcha keys: the captcha is off unless a test turns it on (test_captcha.py).
+            "HCAPTCHA_SITEKEY": "", "HCAPTCHA_SECRET": "",
             # Nor may its size settings change what the tests expect: use the defaults.
             "MAX_RECEIPT_BYTES": 10 * appmod.MB, "USER_QUOTA_BYTES": 500 * appmod.MB,
             # Admin page tests of other features skip the two-factor requirement; the tests in

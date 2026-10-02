@@ -173,3 +173,24 @@
   </table>
 </div>
 {% endmacro %}
+
+{# Bot traps of the forms that email any address (sign up, forgot password). The honeypot is
+   off screen, not display:none, which some bots skip; only bots fill it in. #}
+{% macro honeypot() %}
+<div class="hp-field" aria-hidden="true">
+  <label for="website">Website</label>
+  <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+</div>
+{% endmacro %}
+
+{# hCaptcha widget, only when config.env has its keys; static/js/captcha.js loads hCaptcha's
+   script with the page's theme. #}
+{% macro captcha() %}
+{% if config.HCAPTCHA_SITEKEY and config.HCAPTCHA_SECRET %}
+<div class="captcha-box">
+  <div class="h-captcha" data-sitekey="{{ config.HCAPTCHA_SITEKEY }}"></div>
+  <noscript><p class="muted small center">Please turn on JavaScript to complete the check that shows you are not a robot.</p></noscript>
+</div>
+<script src="{{ url_for('static', filename='js/captcha.js', v=asset_version) }}" defer></script>
+{% endif %}
+{% endmacro %}
