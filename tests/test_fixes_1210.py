@@ -85,11 +85,13 @@ class SetupSecretTests(AppTestCase):
         self.assertNotEqual(first.group(1), second.group(1))
 
     def test_a_setup_key_of_another_account_is_refused(self):
+        # Since 1.11.1 the key lives in this browser's session row; one put in the cookie
+        # (as pages before kept it) counts for nothing.
         self.signup()
-        html = self.client.get("/settings").get_data(as_text=True)
-        secret = re.search(r'tfa-key">([\w ]+)<', html).group(1).replace(" ", "")
+        self.client.get("/settings")
+        secret = "JBSWY3DPEHPK3PXP"
         with self.client.session_transaction() as sess:
-            sess["totp_setup"] = {"uid": 999, "secret": secret}
+            sess["totp_setup"] = {"uid": 1, "secret": secret}
         html = self.client.post("/settings", data={
             "action": "2fa_enable", "code": code_now(secret), "current_password": "password1"},
             follow_redirects=True).get_data(as_text=True)

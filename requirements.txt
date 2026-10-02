@@ -10,6 +10,8 @@ fpdf2==2.8.8
 segno==1.6.6
 # Draws right to left names (Arabic, Hebrew) correctly in the accountant PDF.
 uharfbuzz==0.56.2
+# Passkeys (WebAuthn) as a second sign in step: checks the browser's signatures.
+webauthn==3.0.1
 # Production web server (see setup_vps.md); runWebApp.sh uses the built in one.
 gunicorn==26.2.0
 # Installed by the packages above, pinned too.
@@ -21,3 +23,10 @@ WTForms==3.2.2
 defusedxml==0.7.1
 fonttools==4.65.0
 pillow==12.3.0
+cbor2==6.1.5
+cffi==2.1.1
+cryptography==50.0.2
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
+pycparser==3.0
+pyOpenSSL==26.4.0

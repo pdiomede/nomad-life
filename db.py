@@ -109,11 +109,14 @@ CREATE INDEX IF NOT EXISTS idx_audit_confirmed ON audit_log(user_id, id)
 
 -- One row per signed in browser. Sign out deletes its row, so a copied session or remember
 -- cookie stops working at once. Rows unused for a while are pruned.
+-- totp_setup: the authenticator app key this browser is setting up, until a code from it
+-- turns two-factor on; kept here, never in the session cookie (signed, but readable).
 CREATE TABLE IF NOT EXISTS user_sessions (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    totp_setup TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
 
@@ -131,6 +134,33 @@ CREATE TABLE IF NOT EXISTS email_changes (
     undone_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_email_changes_user ON email_changes(user_id, id);
+
+-- Passkeys (WebAuthn) an account uses as its second sign in step, after the password.
+-- credential_id is the base64url id the browser gives; public_key the COSE key that checks
+-- each signature; sign_count the authenticator's counter (0 for synced passkeys, which never
+-- count). Two-factor sign in is on while an account has a passkey or an authenticator app.
+CREATE TABLE IF NOT EXISTS passkeys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    credential_id TEXT NOT NULL UNIQUE,
+    public_key BLOB NOT NULL,
+    sign_count INTEGER NOT NULL DEFAULT 0,
+    transports TEXT NOT NULL DEFAULT '[]',
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_passkeys_user ON passkeys(user_id);
+-- The challenge of each passkey ceremony (kind 'register' or 'sign_in'), kept here because the
+-- session lives in the browser's cookie: an old cookie sent again would hold the challenge
+-- again. A challenge counts only while its row exists, and using it deletes the row (one use).
+-- Rows older than the ceremony's minutes are pruned.
+CREATE TABLE IF NOT EXISTS passkey_challenges (
+    challenge TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 -- Support tickets: one row per ticket, its messages apart. updated_at moves with every message
 -- or status change; closed_at is NULL while open. The *_seen_id columns hold the last message
@@ -310,6 +340,7 @@ MIGRATIONS = [
     # code can never be used twice.
     ("users", "totp_secret", ["ALTER TABLE users ADD COLUMN totp_secret TEXT"]),
     ("users", "totp_step", ["ALTER TABLE users ADD COLUMN totp_step INTEGER NOT NULL DEFAULT 0"]),
+    ("user_sessions", "totp_setup", ["ALTER TABLE user_sessions ADD COLUMN totp_setup TEXT"]),
     # The name set on the Settings page (optional; empty means not given).
     ("users", "first_name", ["ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''"]),
     ("users", "last_name", ["ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''"]),

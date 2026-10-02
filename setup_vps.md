@@ -429,6 +429,7 @@ A server set up from an older copy of this guide lacks `--graceful-timeout 120` 
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
 
+- **1.11.1** adds passkeys to two-factor sign in. Upgrading installs new packages (`webauthn`, `cryptography` and their dependencies) with the usual `pip install -r requirements.txt` step, and creates the `passkeys` and `passkey_challenges` tables and the `user_sessions.totp_setup` column on start. Passkeys work only on the address in `APP_BASE_URL`: it must be the real `https://` address people use.
 - **1.6.0** adds hCaptcha to Sign up and Forgot password (off until configured). Create a site at https://dashboard.hcaptcha.com, add your domain to it, then put its site key in `HCAPTCHA_SITEKEY` and your account's secret in `HCAPTCHA_SECRET` in `config.env`, and restart. Set both or neither: one alone stops the app at start.
 - **1.5.8** adds the `email_changes` table on start (numbered email changes, so an **Undo this change** link keeps working when the address is changed again). Nothing to run. Undo links sent before the upgrade keep the old rule: they work only while the account still uses the new address.
 

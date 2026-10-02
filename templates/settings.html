@@ -69,51 +69,141 @@
   </section>
 
   <section class="card" id="two-factor" aria-labelledby="tfa-title">
-    <div class="card-head"><h2 id="tfa-title">Two-factor sign in</h2>{% if row.totp_secret %}<span class="pill pill-ok">On</span>{% endif %}</div>
-    {% if row.totp_secret %}
-    <p class="muted small card-intro">Signing in asks for a code from your authenticator app after your password.{% if current_user.is_admin %} The admin page needs it.{% endif %}</p>
-    <form method="post" class="stack">
-      {{ ui.csrf() }}
-      <input type="hidden" name="action" value="2fa_disable">
-      <div class="grid-2">
-        <div class="field">
-          <label for="tfa-off-current">Current password</label>
-          <input id="tfa-off-current" name="current_password" type="password" autocomplete="current-password" required>
-        </div>
-        <div class="field">
-          <label for="tfa-off-code">Code from the app</label>
-          <input id="tfa-off-code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required>
+    <div class="card-head"><h2 id="tfa-title">Two-factor sign in</h2>{% if has_2fa %}<span class="pill pill-ok">On</span>{% endif %}</div>
+    <p class="muted small card-intro">After your password, signing in also asks for a passkey or a code from an authenticator app. Set up either one, or both.{% if current_user.is_admin %} <strong>The admin page needs one of them.</strong>{% endif %}</p>
+
+    <div class="tfa-method" id="passkeys">
+      <div class="tfa-method-head">
+        <span class="tfa-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M2 21v-1a6 6 0 0 1 9.5-4.9"/><circle cx="18" cy="13" r="2.5"/><path d="M18 15.5V22l1.5-1.5L18 19"/></svg></span>
+        <div>
+          <h3 class="tfa-method-title">Passkeys</h3>
+          <p class="muted small">{% if passkeys %}{{ passkeys | length }} added{% else %}Face ID, Touch ID, Windows Hello, a security key or your password manager{% endif %}</p>
         </div>
       </div>
-      <div><button class="btn btn-danger" type="submit">Turn off two-factor sign in</button></div>
-    </form>
-    {% else %}
-    <p class="muted small card-intro">Protect your account with a 6 digit code from an authenticator app, asked after your password. Google Authenticator works, and so do Microsoft Authenticator, 1Password, Bitwarden and other apps.{% if current_user.is_admin %} <strong>The admin page needs it.</strong>{% endif %}</p>
-    <div class="tfa-setup">
-      <img class="tfa-qr" src="{{ totp.qr }}" width="185" height="185" alt="QR code to add Nomad Life to your authenticator app">
-      <ol class="tfa-steps small">
-        <li>In the app, tap <strong>+</strong> and choose <strong>Scan a QR code</strong>, then scan this code.</li>
-        <li>Can't scan it? Choose <strong>Enter a setup key</strong> and type this key (time based): <code class="tfa-key">{{ totp.grouped }}</code></li>
-        <li>Type the 6 digit code the app now shows for Nomad Life, with your password.</li>
-      </ol>
+      {% if passkeys %}
+      <ul class="passkey-list">
+        {% for pk in passkeys %}
+        <li class="passkey-item">
+          <div class="passkey-info">
+            <strong dir="auto">{{ pk.name }}</strong>
+            <span class="muted small">Added on {{ pk.created_at | localdate }}{% if pk.last_used_at %}, last used {{ pk.last_used_at | localdate }}{% else %}, not used yet{% endif %}</span>
+          </div>
+          <div class="passkey-actions">
+            <details class="passkey-more">
+              <summary class="btn btn-ghost btn-sm">Rename</summary>
+              <form method="post" class="passkey-inline">
+                {{ ui.csrf() }}
+                <input type="hidden" name="action" value="passkey_rename">
+                <input type="hidden" name="passkey_id" value="{{ pk.id }}">
+                <div class="field">
+                  <label for="pk-name-{{ pk.id }}">New name</label>
+                  <input id="pk-name-{{ pk.id }}" name="name" type="text" value="{{ pk.name }}" maxlength="{{ name_max }}" required dir="auto">
+                </div>
+                <div><button class="btn btn-primary btn-sm" type="submit">Save name</button></div>
+              </form>
+            </details>
+            <details class="passkey-more">
+              <summary class="btn btn-ghost btn-sm">Remove</summary>
+              <form method="post" class="passkey-inline" data-confirm-delete="the passkey &ldquo;{{ pk.name }}&rdquo;">
+                {{ ui.csrf() }}
+                <input type="hidden" name="action" value="passkey_remove">
+                <input type="hidden" name="passkey_id" value="{{ pk.id }}">
+                <input type="hidden" name="confirm_delete" value="">
+                <div class="field">
+                  <label for="pk-remove-{{ pk.id }}">Current password</label>
+                  <input id="pk-remove-{{ pk.id }}" name="current_password" type="password" autocomplete="current-password" required>
+                </div>
+                <div><button class="btn btn-danger btn-sm" type="submit">Remove passkey</button></div>
+              </form>
+            </details>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if passkeys | length < passkeys_max %}
+      {# static/js/passkeys.js checks the password and asks the browser for a new passkey first,
+         then sends it with this form. #}
+      <form method="post" class="stack" data-passkey-add data-options-url="{{ url_for('passkey_register_options') }}">
+        {{ ui.csrf() }}
+        <input type="hidden" name="action" value="passkey_add">
+        <input type="hidden" name="credential" value="">
+        <div class="grid-2">
+          <div class="field">
+            <label for="pk-new-name">Name <span class="muted">(optional)</span></label>
+            <input id="pk-new-name" name="name" type="text" maxlength="{{ name_max }}" placeholder="{{ passkey_name }}" dir="auto">
+          </div>
+          <div class="field">
+            <label for="pk-new-current">Current password</label>
+            <input id="pk-new-current" name="current_password" type="password" autocomplete="current-password" required>
+          </div>
+        </div>
+        <p class="passkey-error small" role="alert" data-passkey-error hidden></p>
+        <noscript><p class="muted small">Adding a passkey needs JavaScript.</p></noscript>
+        <p class="muted small">Other devices are signed out when you add one.</p>
+        <div><button class="btn btn-primary" type="submit">Add a passkey</button></div>
+      </form>
+      {% else %}
+      <p class="muted small">An account can have at most {{ passkeys_max }} passkeys. Remove one to add another.</p>
+      {% endif %}
     </div>
-    <form method="post" class="stack">
-      {{ ui.csrf() }}
-      <input type="hidden" name="action" value="2fa_enable">
-      <div class="grid-2">
-        <div class="field">
-          <label for="tfa-on-code">Code from the app</label>
-          <input id="tfa-on-code" name="code" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" autocomplete="one-time-code" required>
-        </div>
-        <div class="field">
-          <label for="tfa-on-current">Current password</label>
-          <input id="tfa-on-current" name="current_password" type="password" autocomplete="current-password" required>
+
+    <div class="tfa-method" id="authenticator">
+      <div class="tfa-method-head">
+        <span class="tfa-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 7h4M10 11h4M10 15h2"/></svg></span>
+        <div>
+          <h3 class="tfa-method-title">Authenticator app</h3>
+          <p class="muted small">{{ 'Added' if row.totp_secret else 'Not set up' }}</p>
         </div>
       </div>
-      <p class="muted small">Other devices are signed out when you turn it on.</p>
-      <div><button class="btn btn-primary" type="submit">Turn on two-factor sign in</button></div>
-    </form>
-    {% endif %}
+      {% if row.totp_secret %}
+      <p class="muted small card-intro">Signing in can ask for a 6 digit code from your authenticator app.</p>
+      <form method="post" class="stack">
+        {{ ui.csrf() }}
+        <input type="hidden" name="action" value="2fa_disable">
+        <div class="grid-2">
+          <div class="field">
+            <label for="tfa-off-current">Current password</label>
+            <input id="tfa-off-current" name="current_password" type="password" autocomplete="current-password" required>
+          </div>
+          <div class="field">
+            <label for="tfa-off-code">Code from the app</label>
+            <input id="tfa-off-code" name="code" type="text" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required>
+          </div>
+        </div>
+        <div><button class="btn btn-danger" type="submit">{{ 'Remove authenticator app' if passkeys else 'Turn off two-factor sign in' }}</button></div>
+      </form>
+      {% elif totp %}
+      <p class="muted small card-intro">A 6 digit code from an authenticator app. Google Authenticator works, and so do Microsoft Authenticator, 1Password, Bitwarden and other apps.</p>
+      <div class="tfa-setup">
+        <img class="tfa-qr" src="{{ totp.qr }}" width="185" height="185" alt="QR code to add Nomad Life to your authenticator app">
+        <ol class="tfa-steps small">
+          <li>In the app, tap <strong>+</strong> and choose <strong>Scan a QR code</strong>, then scan this code.</li>
+          <li>Can't scan it? Choose <strong>Enter a setup key</strong> and type this key (time based): <code class="tfa-key">{{ totp.grouped }}</code></li>
+          <li>Type the 6 digit code the app now shows for Nomad Life, with your password.</li>
+        </ol>
+      </div>
+      <form method="post" class="stack">
+        {{ ui.csrf() }}
+        <input type="hidden" name="action" value="2fa_enable">
+        <div class="grid-2">
+          <div class="field">
+            <label for="tfa-on-code">Code from the app</label>
+            <input id="tfa-on-code" name="code" type="text" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required>
+          </div>
+          <div class="field">
+            <label for="tfa-on-current">Current password</label>
+            <input id="tfa-on-current" name="current_password" type="password" autocomplete="current-password" required>
+          </div>
+        </div>
+        <p class="muted small">Other devices are signed out when you turn it on.</p>
+        <div><button class="btn btn-primary" type="submit">{{ 'Add authenticator app' if passkeys else 'Turn on two-factor sign in' }}</button></div>
+      </form>
+      {% else %}
+      <p class="muted small">To set up an authenticator app, sign out and sign in again first.</p>
+      {% endif %}
+    </div>
+    <script src="{{ url_for('static', filename='js/passkeys.js', v=asset_version) }}" defer></script>
   </section>
 
   <section class="card" id="email" aria-labelledby="email-title">

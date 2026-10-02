@@ -17,7 +17,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 import uuid
 from collections import OrderedDict
 import unicodedata
@@ -26,6 +26,12 @@ from datetime import date, datetime, timedelta, timezone
 
 import click
 import segno
+import webauthn
+from webauthn.helpers import base64url_to_bytes, bytes_to_base64url, options_to_json
+from webauthn.helpers.exceptions import WebAuthnException
+from webauthn.helpers.structs import (AuthenticatorSelectionCriteria, AuthenticatorTransport,
+                                      PublicKeyCredentialDescriptor, ResidentKeyRequirement,
+                                      UserVerificationRequirement)
 from dotenv import load_dotenv
 from flask import (Flask, Response, abort, after_this_request, current_app, flash, g,
                    has_request_context, redirect, render_template, request, send_file,
@@ -45,7 +51,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.11.0"
+APP_VERSION = "1.11.1"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -196,6 +202,12 @@ AUDIT_DAYS = 365
 ADMIN_AUDIT_PER_PAGE = 20
 # Two-factor sign in (TOTP, RFC 6238): 6 digits every 30 seconds, one step of clock drift
 # either way, and this long to type the code after the password.
+# Passkeys: at most this many per account; names as long as a first name; a ceremony (the
+# browser's passkey prompt) must finish within these seconds; the credential JSON a form may
+# carry (a few KB in practice).
+PASSKEYS_MAX = 10
+PASSKEY_CEREMONY_SECONDS = 300
+PASSKEY_CREDENTIAL_MAX = 64 * 1024
 TOTP_STEP_SECONDS = 30
 TOTP_PENDING_SECONDS = 300
 # A signed in browser not seen for this long is forgotten (the cookies last 30 days).
@@ -619,6 +631,8 @@ def create_app(overrides=None):
             # Numbered email changes are only read by their undo links (a day of margin).
             db.try_execute("DELETE FROM email_changes WHERE created_at < datetime('now', ?)",
                            (f"-{EMAIL_REVERT_MAX_AGE // 86400 + 1} days",))
+            db.try_execute("DELETE FROM passkey_challenges WHERE created_at < datetime('now', ?)",
+                           (f"-{PASSKEY_CEREMONY_SECONDS} seconds",))
 
     @app.after_request
     def security_headers(resp):
@@ -646,7 +660,7 @@ def create_app(overrides=None):
     # also between releases.
     digest = hashlib.sha256()
     for name in ("css/style.css", "js/theme.js", "js/theme-init.js", "js/docs.js",
-                 "js/captcha.js"):
+                 "js/captcha.js", "js/passkeys.js"):
         with open(os.path.join(app.static_folder, name), "rb") as fh:
             digest.update(fh.read())
     asset_version = digest.hexdigest()[:10]
@@ -773,16 +787,20 @@ def create_app(overrides=None):
                            one=True)
             if row is None:
                 raise click.ClickException(f"No account for {email}.")
-            if not row["totp_secret"]:
+            if not has_two_factor(row):
                 raise click.ClickException(f"Two-factor sign in is not on for {email}.")
-            db.execute("UPDATE users SET totp_secret = NULL, totp_step = 0 WHERE id = ?",
-                       (row["id"],))
+            # Both methods: the authenticator app and every passkey.
+            with db.transaction() as conn:
+                conn.execute("UPDATE users SET totp_secret = NULL, totp_step = 0 WHERE id = ?",
+                             (row["id"],))
+                conn.execute("DELETE FROM passkeys WHERE user_id = ?", (row["id"],))
             audit("2fa_reset", row["id"], email, "", "command line")
             security_alert(email, "Two-factor sign in was removed from your Nomad Life account "
                            "by the person who runs the server.",
                            advice=("This is usually because you lost the phone with your "
-                                   "authenticator app: sign in with your password and turn "
-                                   "two-factor sign in on again on the Settings page. If you did "
+                                   "authenticator app or your passkey: sign in with your password "
+                                   "and set up two-factor sign in again on the Settings page. If "
+                                   "you did "
                                    "not ask for this, reset your password now with the link "
                                    "below and contact the person who runs the server."))
         click.echo(f"Two-factor sign in removed from {email}. They can sign in with the "
@@ -1169,6 +1187,23 @@ def use_totp_step(user_id, step):
                             (step, user_id, step)).rowcount == 1
 
 
+def totp_setup_secret(user_id, create=True):
+    """The authenticator key this browser is setting up, kept in its user_sessions row: the
+    session cookie is signed but readable, so a key in it could be read from any copy of the
+    cookie and make codes for good. One per browser, so a key someone else saw while signed in
+    elsewhere is never the one turned on here; gone at sign out. None for a session without a
+    row (from before 1.2.10)."""
+    sid = getattr(current_user, "sid", None)
+    if not sid:
+        return None
+    if create:
+        db.execute("UPDATE user_sessions SET totp_setup = ? WHERE id = ? AND user_id = ? "
+                   "AND totp_setup IS NULL", (new_totp_secret(), sid, user_id))
+    found = db.query("SELECT totp_setup FROM user_sessions WHERE id = ? AND user_id = ?",
+                     (sid, user_id), one=True)
+    return found["totp_setup"] if found else None
+
+
 def totp_uri(secret, email):
     return (f"otpauth://totp/{quote('Nomad Life')}:{quote(email)}?secret={secret}"
             f"&issuer={quote('Nomad Life')}&period={TOTP_STEP_SECONDS}&digits=6")
@@ -1178,6 +1213,93 @@ def totp_qr(secret, email):
     """The setup QR code as a data URI (no inline SVG, so no markup built from user data)."""
     return segno.make(totp_uri(secret, email), error="m").svg_data_uri(
         scale=5, border=4, dark="#000000", light="#ffffff")
+
+
+# ---------- passkeys (WebAuthn), the other second sign in step ----------
+
+def passkey_site():
+    """(rp_id, origin) of the passkeys: from APP_BASE_URL, the address people use, so a
+    passkey made on a look-alike site never works here. Without one (a local run), the
+    address the browser used."""
+    parts = urlsplit(current_app.config.get("APP_BASE_URL") or request.host_url)
+    return parts.hostname or "localhost", f"{parts.scheme}://{parts.netloc}"
+
+
+def user_passkeys(user_id):
+    return db.query("SELECT * FROM passkeys WHERE user_id = ? ORDER BY id", (user_id,))
+
+
+def has_two_factor(row):
+    """Two-factor sign in is on while the account has an authenticator app or a passkey."""
+    return bool(row["totp_secret"]) or bool(db.query(
+        "SELECT 1 FROM passkeys WHERE user_id = ? LIMIT 1", (row["id"],), one=True))
+
+
+def passkey_descriptors(rows):
+    """The browser's description of passkeys (to exclude at registration, allow at sign in)."""
+    known = {t.value for t in AuthenticatorTransport}
+    out = []
+    for r in rows:
+        try:
+            transports = [AuthenticatorTransport(t) for t in json.loads(r["transports"])
+                          if t in known]
+        except (ValueError, TypeError):
+            transports = []
+        out.append(PublicKeyCredentialDescriptor(id=base64url_to_bytes(r["credential_id"]),
+                                                 transports=transports or None))
+    return out
+
+
+def new_passkey_challenge(user_id, kind, challenge):
+    """Record the challenge of a ceremony (see passkey_challenges); its base64url text. Only
+    the newest of an account and kind counts: asking again ends the earlier prompt, so asking
+    in a loop cannot pile up rows."""
+    text = bytes_to_base64url(challenge)
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM passkey_challenges WHERE user_id = ? AND kind = ?",
+                     (user_id, kind))
+        conn.execute("INSERT INTO passkey_challenges (challenge, user_id, kind) VALUES (?, ?, ?)",
+                     (text, user_id, kind))
+    return text
+
+
+def use_passkey_challenge(user_id, kind, text):
+    """Spend a challenge: True only once, and only while it is recent."""
+    if not isinstance(text, str) or not text:
+        return False
+    return db.execute_rowcount(
+        "DELETE FROM passkey_challenges WHERE challenge = ? AND user_id = ? AND kind = ? "
+        "AND created_at >= datetime('now', ?)",
+        (text, user_id, kind, f"-{PASSKEY_CEREMONY_SECONDS} seconds")) == 1
+
+
+def credential_from_form():
+    """The credential the browser made or signed (JSON in the form's credential field), as a
+    dict, or None when it is missing or not JSON."""
+    raw = request.form.get("credential", "")
+    if not raw or len(raw) > PASSKEY_CREDENTIAL_MAX:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) and isinstance(data.get("id"), str) else None
+
+
+def default_passkey_name():
+    """A name for a new passkey when none is typed: the device and browser it was made on."""
+    ua = request.headers.get("User-Agent", "")
+    device = next((name for key, name in (("iPhone", "iPhone"), ("iPad", "iPad"),
+                                          ("Android", "Android"), ("CrOS", "Chromebook"),
+                                          ("Macintosh", "Mac"), ("Windows", "Windows"),
+                                          ("Linux", "Linux")) if key in ua), "")
+    browser = next((name for key, name in (("Edg/", "Edge"), ("OPR/", "Opera"),
+                                           ("Firefox/", "Firefox"), ("FxiOS", "Firefox"),
+                                           ("CriOS", "Chrome"), ("Chrome/", "Chrome"),
+                                           ("Safari/", "Safari")) if key in ua), "")
+    if device and browser:
+        return f"{device} ({browser})"
+    return device or browser or "Passkey"
 
 
 # ---------- sessions and passwords ----------
@@ -1506,6 +1628,7 @@ AUDIT_LABELS = {
     "sign_in": "Signed in",
     "sign_in_failed": "Wrong password at sign in",
     "sign_in_code_failed": "Wrong two-factor code at sign in",
+    "sign_in_passkey_failed": "Passkey not accepted at sign in",
     "code_failed": "Wrong two-factor code on the Settings page",
     "password_check_failed": "Wrong current password on the Settings page",
     "email_reverted": "Email change undone from the old address",
@@ -1523,6 +1646,9 @@ AUDIT_LABELS = {
     "2fa_enabled": "Two-factor sign in turned on",
     "2fa_disabled": "Two-factor sign in turned off",
     "2fa_reset": "Two-factor sign in removed by the server operator",
+    "passkey_added": "Passkey added",
+    "passkey_renamed": "Passkey renamed",
+    "passkey_removed": "Passkey removed",
     "account_deleted": "Account deleted",
     "admin_plan": "Plan changed by an admin",
     "admin_quota": "Storage quota changed by an admin",
@@ -2973,9 +3099,9 @@ def register_routes(app):
                     return render_template("auth/login.html")
                 remember = bool(request.form.get("remember"))
                 next_url = safe_next(request.args.get("next", "")) or url_for("index")
-                if row["totp_secret"]:
-                    # The password was right; the code from the authenticator app comes next.
-                    # Nothing is signed in until then.
+                if has_two_factor(row):
+                    # The password was right; the code from the authenticator app or a passkey
+                    # comes next. Nothing is signed in until then.
                     session["tfa"] = {"uid": row["id"], "h": password_fingerprint(row["password_hash"]),
                                       "v": row["session_version"], "remember": remember,
                                       "next": next_url, "t": int(time.time())}
@@ -3004,26 +3130,41 @@ def register_routes(app):
         audit("sign_in", row["id"], row["email"], detail)
         return remember_device(redirect(next_url), row["email"])
 
-    @app.route("/login/code", methods=["GET", "POST"])
-    def login_code():
-        """Second step of signing in to an account with two-factor sign in turned on."""
-        if current_user.is_authenticated:
-            return redirect(url_for("index"))
-        pending = session.get("tfa") or {}
+    def pending_two_factor():
+        """(pending, row) of the sign in waiting for its second step, or (None, None) when
+        there is none, or it is stale: too old, or the password, sessions or two-factor
+        changed meanwhile."""
+        pending = session.get("tfa")
+        if not isinstance(pending, dict):
+            return None, None
         row = db.query("SELECT * FROM users WHERE id = ?", (pending.get("uid"),), one=True)
-        # Stale when too old, or when the password, sessions or two-factor changed meanwhile.
-        if (not row or row["disabled"] or not row["totp_secret"]
+        if (not row or row["disabled"] or not has_two_factor(row)
                 or time.time() - pending.get("t", 0) > TOTP_PENDING_SECONDS
                 or password_fingerprint(row["password_hash"]) != pending.get("h")
                 or row["session_version"] != pending.get("v")):
             session.pop("tfa", None)
+            return None, None
+        return pending, row
+
+    def login_code_page(row, status=200):
+        return render_template("auth/login_code.html", has_totp=bool(row["totp_secret"]),
+                               has_passkeys=bool(user_passkeys(row["id"]))), status
+
+    @app.route("/login/code", methods=["GET", "POST"])
+    def login_code():
+        """Second step of signing in to an account with two-factor sign in turned on: a code
+        from the authenticator app, or a passkey (login_passkey)."""
+        if current_user.is_authenticated:
+            return redirect(url_for("index"))
+        pending, row = pending_two_factor()
+        if row is None:
             flash("Please sign in again.", "info")
             return redirect(url_for("login"))
         if request.method == "POST":
             wait, scope, attempt = take_attempt("code", row["email"])
             if wait:
                 flash(too_many_message(wait, scope, "wrong codes"), "error")
-                return render_template("auth/login_code.html"), 429
+                return login_code_page(row, 429)
             step = totp_match(row["totp_secret"], request.form.get("code"), row["totp_step"])
             if step is not None and use_totp_step(row["id"], step):
                 clear_code_failures(row["email"], attempt)
@@ -3034,7 +3175,83 @@ def register_routes(app):
             audit("sign_in_code_failed", row["id"], row["email"])
             flash("That code is not correct, or was already used. Please enter the current code "
                   "from your authenticator app.", "error")
-        return render_template("auth/login_code.html")
+        return login_code_page(row)
+
+    def json_answer(data, status=200):
+        resp = Response(data if isinstance(data, str) else json.dumps(data), status=status,
+                        mimetype="application/json")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    @app.route("/login/passkey/options", methods=["POST"])
+    def login_passkey_options():
+        """What the browser needs to sign with one of the account's passkeys (JSON)."""
+        if current_user.is_authenticated:
+            return json_answer({"error": "You are already signed in.", "reload": True}, 400)
+        pending, row = pending_two_factor()
+        if row is None:
+            return json_answer({"error": "Please sign in again.", "reload": True}, 400)
+        keys = user_passkeys(row["id"])
+        if not keys:
+            return json_answer({"error": "This account has no passkey. Use the code from your "
+                                         "authenticator app."}, 400)
+        rp_id, _origin = passkey_site()
+        options = webauthn.generate_authentication_options(
+            rp_id=rp_id, allow_credentials=passkey_descriptors(keys),
+            user_verification=UserVerificationRequirement.PREFERRED,
+            timeout=PASSKEY_CEREMONY_SECONDS * 1000)
+        pending["pk"] = new_passkey_challenge(row["id"], "sign_in", options.challenge)
+        session["tfa"] = pending
+        return json_answer(options_to_json(options))
+
+    @app.route("/login/passkey", methods=["POST"])
+    def login_passkey():
+        """Second step of signing in with a passkey: the browser's signature, checked against
+        the passkey's public key and the challenge of login_passkey_options."""
+        if current_user.is_authenticated:
+            return redirect(url_for("index"))
+        pending, row = pending_two_factor()
+        if row is None:
+            flash("Please sign in again.", "info")
+            return redirect(url_for("login"))
+        wait, scope, attempt = take_attempt("code", row["email"])
+        if wait:
+            flash(too_many_message(wait, scope, "failed second steps"), "error")
+            return login_code_page(row, 429)
+        challenge = pending.pop("pk", None)
+        session["tfa"] = pending
+        credential = credential_from_form()
+        key = credential and db.query(
+            "SELECT * FROM passkeys WHERE credential_id = ? AND user_id = ?",
+            (credential["id"], row["id"]), one=True)
+        verified = None
+        # The challenge is spent first, whatever follows: a signature works at most once.
+        if key and use_passkey_challenge(row["id"], "sign_in", challenge):
+            rp_id, origin = passkey_site()
+            try:
+                verified = webauthn.verify_authentication_response(
+                    credential=credential, expected_challenge=base64url_to_bytes(challenge),
+                    expected_rp_id=rp_id, expected_origin=origin,
+                    credential_public_key=key["public_key"],
+                    credential_current_sign_count=key["sign_count"])
+            except (WebAuthnException, ValueError, TypeError, KeyError) as exc:
+                current_app.logger.warning("Passkey sign in refused: %s", exc)
+        # The counter moves only from the value checked: two uses of one signature (or of a
+        # copied authenticator) at once cannot both pass.
+        if verified is not None and db.execute_rowcount(
+                "UPDATE passkeys SET sign_count = ?, last_used_at = CURRENT_TIMESTAMP "
+                "WHERE id = ? AND sign_count = ?",
+                (verified.new_sign_count, key["id"], key["sign_count"])):
+            clear_code_failures(row["email"], attempt)
+            session.pop("tfa", None)
+            return finish_sign_in(row, pending.get("remember", False),
+                                  safe_next(pending.get("next", "")) or url_for("index"),
+                                  "with passkey")
+        audit("sign_in_passkey_failed", row["id"], row["email"])
+        flash("That passkey was not accepted. Please try again"
+              + (", or use the code from your authenticator app." if row["totp_secret"] else "."),
+              "error")
+        return login_code_page(row)
 
     @app.route("/logout", methods=["POST"])
     def logout():
@@ -3172,6 +3389,7 @@ def register_routes(app):
             movements_max=MOVEMENTS_MAX, per_page_options=PER_PAGE_OPTIONS,
             fail_limit=LIMITS[("fail", "email")], limit_minutes=LIMIT_WINDOW_MINUTES,
             code_limit=LIMITS[("code", "email")],
+            passkeys_max=PASSKEYS_MAX,
             remember_days=app.config["REMEMBER_COOKIE_DURATION"].days,
             reset_minutes=RESET_TOKEN_MAX_AGE // 60, email_change_minutes=EMAIL_CHANGE_MAX_AGE // 60,
             revert_days=EMAIL_REVERT_MAX_AGE // 86400, idle_days=SESSION_IDLE_DAYS,
@@ -3503,6 +3721,35 @@ def register_routes(app):
         forgive(attempt, row["email"], device)
         return None
 
+    @app.route("/settings/passkeys/options", methods=["POST"])
+    @login_required
+    def passkey_register_options():
+        """First half of adding a passkey: the current password is checked here, before the
+        browser makes a passkey that could then not be saved; JSON for the browser's prompt."""
+        row = db.query("SELECT * FROM users WHERE id = ?", (current_user.id,), one=True)
+        if not row:
+            return json_answer({"error": "Please sign in again.", "reload": True}, 400)
+        err = check_current_password(row)
+        if err:
+            return json_answer({"error": err}, 400)
+        keys = user_passkeys(row["id"])
+        if len(keys) >= PASSKEYS_MAX:
+            return json_answer({"error": f"An account can have at most {PASSKEYS_MAX} passkeys. "
+                                         "Remove one first."}, 400)
+        rp_id, _origin = passkey_site()
+        options = webauthn.generate_registration_options(
+            rp_id=rp_id, rp_name="Nomad Life", user_id=str(row["id"]).encode(),
+            user_name=row["email"], user_display_name=row["email"],
+            exclude_credentials=passkey_descriptors(keys),
+            authenticator_selection=AuthenticatorSelectionCriteria(
+                resident_key=ResidentKeyRequirement.PREFERRED,
+                user_verification=UserVerificationRequirement.PREFERRED),
+            timeout=PASSKEY_CEREMONY_SECONDS * 1000)
+        session["passkey_reg"] = {
+            "uid": row["id"], "h": password_fingerprint(row["password_hash"]),
+            "c": new_passkey_challenge(row["id"], "register", options.challenge)}
+        return json_answer(options_to_json(options))
+
     @app.route("/account", methods=["GET", "POST"])
     @login_required
     def account():
@@ -3549,6 +3796,20 @@ def register_routes(app):
                     return account_gone()
                 audit("sessions_revoked", row["id"], row["email"])
                 flash("Every other browser and device has been signed out.", "success")
+                return redirect(url_for("settings"))
+            if action == "passkey_rename":  # only a label: no password needed
+                name = clean_name(request.form.get("name", ""))
+                if not visible(name):
+                    flash("Type a name for the passkey.", "error")
+                elif len(name) > NAME_MAX:
+                    flash(f"A passkey name can be at most {NAME_MAX} characters.", "error")
+                elif not db.execute_rowcount(
+                        "UPDATE passkeys SET name = ? WHERE id = ? AND user_id = ?",
+                        (name, request.form.get("passkey_id", type=int), row["id"])):
+                    flash("This passkey was removed in the meantime.", "info")
+                else:
+                    audit("passkey_renamed", row["id"], row["email"], name)
+                    flash("The passkey was renamed.", "success")
                 return redirect(url_for("settings"))
             err = check_current_password(row)
             if action == "password":
@@ -3634,9 +3895,8 @@ def register_routes(app):
                         flash("We could not send the confirmation email. Please try again later.",
                               "error")
             elif action == "2fa_enable":
-                setup = session.get("totp_setup")
-                secret = (setup.get("secret") if isinstance(setup, dict)
-                          and setup.get("uid") == row["id"] else None)
+                session.pop("totp_setup", None)  # where pages before 1.11.1 kept it
+                secret = totp_setup_secret(row["id"], create=False)
                 step = totp_match(secret, request.form.get("code"))
                 if err:
                     flash(err, "error")
@@ -3655,22 +3915,26 @@ def register_routes(app):
                             "totp_secret IS NULL AND session_version = ?",
                             (secret, step, row["id"], row["password_hash"],
                              row["session_version"])):
-                        session.pop("totp_setup", None)
                         flash("This account was changed elsewhere in the meantime, so two-factor "
                               "sign in was not turned on. Please try again.", "error")
                         return redirect(url_for("settings"))
-                    session.pop("totp_setup", None)
+                    db.execute("UPDATE user_sessions SET totp_setup = NULL WHERE user_id = ?",
+                               (row["id"],))
                     if not stay_signed_in_here(row["id"]):
                         return account_gone()
                     audit("2fa_enabled", row["id"], row["email"])
-                    security_alert(row["email"], "Two-factor sign in was turned on for your "
-                                   "Nomad Life account.",
+                    had_passkeys = bool(user_passkeys(row["id"]))  # then it was on already
+                    security_alert(row["email"], "An authenticator app was added to two-factor "
+                                   "sign in for your Nomad Life account." if had_passkeys else
+                                   "Two-factor sign in was turned on for your Nomad Life account.",
                                    advice=("If this was you, there is nothing to do. If it was "
                                            "not you, a new password alone does not remove "
                                            "someone else's two-factor sign in: write to "
                                            f"{SUPPORT_EMAIL} from this address, and reset your "
                                            "password with the link below."))
-                    flash("Two-factor sign in is on. From now on, signing in also asks for a code "
+                    flash("The authenticator app was added: signing in can now also take a code "
+                          "from it. Other devices have been signed out." if had_passkeys else
+                          "Two-factor sign in is on. From now on, signing in also asks for a code "
                           "from your authenticator app. Other devices have been signed out.",
                           "success")
             elif action == "2fa_disable":
@@ -3690,11 +3954,122 @@ def register_routes(app):
                     db.execute("UPDATE users SET totp_secret = NULL, totp_step = 0 WHERE id = ?",
                                (row["id"],))
                     audit("2fa_disabled", row["id"], row["email"])
-                    security_alert(row["email"], "Two-factor sign in was turned off for your "
-                                   "Nomad Life account.")
-                    note = (" The admin page needs it: turn it on again to use it."
-                            if current_user.is_admin else "")
-                    flash("Two-factor sign in is off." + note, "success")
+                    if user_passkeys(row["id"]):  # the passkeys still ask for a second step
+                        security_alert(row["email"], "The authenticator app was removed from "
+                                       "two-factor sign in for your Nomad Life account. Your "
+                                       "passkeys still protect it.")
+                        flash("The authenticator app was removed. Signing in still asks for "
+                              "one of your passkeys.", "success")
+                    else:
+                        security_alert(row["email"], "Two-factor sign in was turned off for "
+                                       "your Nomad Life account.")
+                        note = (" The admin page needs it: turn it on again to use it."
+                                if current_user.is_admin else "")
+                        flash("Two-factor sign in is off." + note, "success")
+            elif action == "passkey_add":
+                reg = session.pop("passkey_reg", None)
+                credential = credential_from_form()
+                name = clean_name(request.form.get("name", ""))
+                name = name if visible(name) else default_passkey_name()
+                verified = None
+                if err:
+                    flash(err, "error")
+                elif len(name) > NAME_MAX:
+                    flash(f"A passkey name can be at most {NAME_MAX} characters.", "error")
+                # The request must be the one this browser started, for this account, over
+                # the password checked then, and its challenge unused.
+                elif not (isinstance(reg, dict) and reg.get("uid") == row["id"] and credential
+                          and reg.get("h") == password_fingerprint(row["password_hash"])
+                          and use_passkey_challenge(row["id"], "register", reg.get("c"))):
+                    flash("The passkey could not be added: the request expired or was already "
+                          "used. Please try again.", "error")
+                else:
+                    rp_id, origin = passkey_site()
+                    try:
+                        verified = webauthn.verify_registration_response(
+                            credential=credential, expected_challenge=base64url_to_bytes(reg["c"]),
+                            expected_rp_id=rp_id, expected_origin=origin)
+                    except (WebAuthnException, ValueError, TypeError, KeyError) as exc:
+                        current_app.logger.warning("Passkey registration refused: %s", exc)
+                        flash("The passkey could not be checked. Please try again.", "error")
+                if verified is not None:
+                    cid = bytes_to_base64url(verified.credential_id)
+                    response = credential.get("response")
+                    transports = response.get("transports") if isinstance(response, dict) else None
+                    transports = [t for t in transports if isinstance(t, str)][:10] \
+                        if isinstance(transports, list) else []
+                    with db.transaction() as conn:
+                        # Checked again under the write lock: the limit, a passkey already
+                        # added (another tab), and the account unchanged since the password
+                        # check (a reset by email, other sessions signed out).
+                        if conn.execute("SELECT COUNT(*) FROM passkeys WHERE user_id = ?",
+                                        (row["id"],)).fetchone()[0] >= PASSKEYS_MAX:
+                            result = "full"
+                        elif conn.execute("SELECT 1 FROM passkeys WHERE credential_id = ?",
+                                          (cid,)).fetchone():
+                            result = "exists"
+                        elif not conn.execute(
+                                "UPDATE users SET session_version = session_version + 1 "
+                                "WHERE id = ? AND password_hash = ? AND session_version = ?",
+                                (row["id"], row["password_hash"],
+                                 row["session_version"])).rowcount:
+                            result = "changed"
+                        else:
+                            conn.execute(
+                                "INSERT INTO passkeys (user_id, credential_id, public_key, "
+                                "sign_count, transports, name) VALUES (?, ?, ?, ?, ?, ?)",
+                                (row["id"], cid, verified.credential_public_key,
+                                 verified.sign_count, json.dumps(transports), name))
+                            result = "ok"
+                    if result == "full":
+                        flash(f"An account can have at most {PASSKEYS_MAX} passkeys. Remove one "
+                              "first.", "error")
+                    elif result == "exists":
+                        flash("This passkey is already added.", "info")
+                    elif result == "changed":
+                        flash("This account was changed elsewhere in the meantime, so the "
+                              "passkey was not added. Please try again.", "error")
+                    else:
+                        if not stay_signed_in_here(row["id"]):
+                            return account_gone()
+                        audit("passkey_added", row["id"], row["email"], name)
+                        # Never the passkey's name: whoever added it chose it.
+                        security_alert(row["email"], "A passkey was added to two-factor sign in "
+                                       "for your Nomad Life account.",
+                                       advice=("If this was you, there is nothing to do. If it "
+                                               "was not you, a new password alone does not "
+                                               "remove someone else's passkey: write to "
+                                               f"{SUPPORT_EMAIL} from this address, and reset "
+                                               "your password with the link below."))
+                        flash(f"The passkey \u201c{name}\u201d was added. Signing in now asks for "
+                              "it (or another two-factor method) after your password. Other "
+                              "devices have been signed out.", "success")
+            elif action == "passkey_remove":
+                key = None
+                if not delete_confirmed():
+                    pass
+                elif err:
+                    flash(err, "error")
+                else:
+                    with db.transaction() as conn:
+                        key = conn.execute("SELECT * FROM passkeys WHERE id = ? AND user_id = ?",
+                                           (request.form.get("passkey_id", type=int),
+                                            row["id"])).fetchone()
+                        if key:
+                            conn.execute("DELETE FROM passkeys WHERE id = ?", (key["id"],))
+                    if not key:
+                        flash("This passkey was already removed.", "info")
+                if key:
+                    audit("passkey_removed", row["id"], row["email"], key["name"])
+                    fresh = db.query("SELECT * FROM users WHERE id = ?", (row["id"],), one=True)
+                    off = not fresh or not has_two_factor(fresh)
+                    security_alert(row["email"], "A passkey was removed from two-factor sign in "
+                                   "for your Nomad Life account."
+                                   + (" Two-factor sign in is now off." if off else ""))
+                    note = (" The admin page needs it: add a passkey or an authenticator app to "
+                            "use it." if off and current_user.is_admin else "")
+                    flash(f"The passkey \u201c{key['name']}\u201d was removed."
+                          + (" Two-factor sign in is off." if off else "") + note, "success")
             elif action == "delete":
                 if not delete_confirmed():
                     pass
@@ -3720,13 +4095,11 @@ def register_routes(app):
                           "(SELECT COUNT(*) FROM documents WHERE user_id = ?) AS documents",
                           (row["id"], row["id"]), one=True)
         totp = None
-        if not row["totp_secret"]:
-            # A new secret for this setup, for this account only; it counts once a code from
-            # it is confirmed.
-            setup = session.get("totp_setup")
-            if not isinstance(setup, dict) or setup.get("uid") != row["id"]:
-                setup = session["totp_setup"] = {"uid": row["id"], "secret": new_totp_secret()}
-            secret = setup["secret"]
+        session.pop("totp_setup", None)  # where pages before 1.11.1 kept it
+        secret = None if row["totp_secret"] else totp_setup_secret(row["id"])
+        if secret:
+            # A new key for this setup, for this browser only; it counts once a code from it
+            # is confirmed.
             totp = {"secret": secret, "qr": totp_qr(secret, row["email"]),
                     # Groups of 4, as authenticator apps show and accept a typed key.
                     "grouped": " ".join(secret[i:i + 4] for i in range(0, len(secret), 4))}
@@ -3738,8 +4111,11 @@ def register_routes(app):
             "ORDER BY id DESC LIMIT 10", (row["id"],)))
         devices = db.query("SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = ?",
                            (row["id"],), one=True)["n"]
+        passkeys = user_passkeys(row["id"])
         return render_template("settings.html", row=row, counts=counts, account_storage=storage,
                                totp=totp, activity=activity, devices=max(devices, 1),
+                               passkeys=passkeys, has_2fa=bool(row["totp_secret"] or passkeys),
+                               passkeys_max=PASSKEYS_MAX, passkey_name=default_passkey_name(),
                                idle_days=SESSION_IDLE_DAYS, name_max=NAME_MAX)
 
     @app.route("/account/email/<token>", methods=["GET", "POST"])
@@ -3867,6 +4243,8 @@ def register_routes(app):
                     "totp_secret = NULL, totp_step = 0, session_version = session_version + 1 "
                     "WHERE id = ? AND email = ?",
                     (data["old"], locked_hash, row["id"], current["email"]))
+                # The same for passkeys: theirs would let them past the owner's new password.
+                conn.execute("DELETE FROM passkeys WHERE user_id = ?", (row["id"],))
                 # This change and every later one are undone: their undo links stop working,
                 # so whoever made them cannot move the account away from the owner again.
                 conn.execute("UPDATE email_changes SET undone_at = CURRENT_TIMESTAMP WHERE "
@@ -3907,8 +4285,8 @@ def register_routes(app):
         if not current_user.is_admin:
             abort(404)
         # Admins act on everyone's accounts, so a password alone is not enough.
-        if app.config["ADMIN_REQUIRE_2FA"] and not db.query(
-                "SELECT totp_secret FROM users WHERE id = ?", (current_user.id,), one=True)[0]:
+        if app.config["ADMIN_REQUIRE_2FA"] and not has_two_factor(db.query(
+                "SELECT id, totp_secret FROM users WHERE id = ?", (current_user.id,), one=True)):
             flash("Turn on two-factor sign in to use the admin page.", "info")
             abort(redirect(url_for("settings")))  # no anchor: the message stays in view
 
@@ -3955,7 +4333,10 @@ def register_routes(app):
         fake_sql, fake_params = fake_user_sql(app.config["ADMIN_EMAILS"], asof=asof)
         rows = db.query(
             "SELECT u.id, u.email, u.created_at, u.last_login_at, u.disabled, u.quota_bytes, "
-            "u.verified_at, u.plan, u.totp_secret IS NOT NULL AS has_2fa, u.first_name, u.last_name, "
+            "u.verified_at, u.plan, u.totp_secret IS NOT NULL AS has_totp, "
+            "(SELECT COUNT(*) FROM passkeys p WHERE p.user_id = u.id) AS passkeys, "
+            "(u.totp_secret IS NOT NULL OR EXISTS (SELECT 1 FROM passkeys p "
+            "WHERE p.user_id = u.id)) AS has_2fa, u.first_name, u.last_name, "
             "u.signup_ip, u.last_login_ip, "
             "(SELECT COUNT(*) FROM years y WHERE y.user_id = u.id) AS years, "
             "(SELECT COALESCE(SUM(size), 0) FROM documents d WHERE d.user_id = u.id) AS used, "

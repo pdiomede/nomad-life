@@ -304,12 +304,15 @@
         <section id="two-factor" class="doc-sub" data-doc-title="Two-factor sign in">
           <h3>Two-factor sign in</h3>
           {{ shot('two-factor', 'The Two-factor sign in card with a QR code (blurred here), three setup steps, the Code from the app and Current password fields and the Turn on two-factor sign in button', 'Scan the code with your authenticator app, then type the 6 digit code it shows.') }}
+          <p>After your password, signing in can also ask for a <strong>passkey</strong> or a <strong>code from an authenticator app</strong>. Set up either one, or both: the sign in page then offers both.</p>
+          <p><strong>Passkey</strong> (Face ID, Touch ID, Windows Hello, a security key, or a password manager such as iCloud Keychain, Google Password Manager or 1Password): under <strong>Passkeys</strong>, give it a name if you like, type your password and press <strong>Add a passkey</strong>, then confirm on your device. You can add up to {{ passkeys_max }}, one for each device, and rename or remove them there.</p>
+          <p><strong>Authenticator app:</strong></p>
           <ol>
             <li>In an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden) add an account by scanning the QR code, or type the setup key.</li>
             <li>Type the 6 digit code the app shows, and your password.</li>
             <li>Press <strong>Turn on two-factor sign in</strong>.</li>
           </ol>
-          <p>From then on, signing in asks for a code after your password. Lost your phone? See <a href="#lost-phone">Troubleshooting</a>.</p>
+          <p>Two-factor sign in stays on while you have a passkey or an authenticator app. Lost your phone or passkey? See <a href="#lost-phone">Troubleshooting</a>.</p>
         </section>
         <section id="devices" class="doc-sub" data-doc-title="Devices and activity">
           <h3>Devices and activity</h3>
@@ -346,7 +349,7 @@
         </section>
         <section id="lost-phone" class="doc-sub" data-doc-title="Lost phone with the authenticator app">
           <h3>Lost the phone with your authenticator app</h3>
-          <p>Write to <a href="mailto:{{ support_email }}">{{ support_email }}</a> from your account's email address. Once we have checked it is you, we remove two-factor sign in so you can sign in with your password and turn it on again.</p>
+          <p>If you set up both a passkey and an authenticator app, use the one you still have. Lost them all? Write to <a href="mailto:{{ support_email }}">{{ support_email }}</a> from your account's email address. Once we have checked it is you, we remove two-factor sign in (passkeys and app) so you can sign in with your password and set it up again.</p>
         </section>
         <section id="refused" class="doc-sub" data-doc-title="A receipt is refused">
           <h3>A receipt is refused</h3>

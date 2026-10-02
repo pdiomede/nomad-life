@@ -700,6 +700,25 @@ main:focus { outline: none; }
 
 /* Account page: two-factor setup and recent activity. The QR code keeps a white frame in dark
    mode too, so every authenticator app can read it. */
+/* Two-factor card: one block per method (passkeys, authenticator app), as a bordered box. */
+.tfa-method { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-top: 16px; }
+.tfa-method-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.tfa-method-head p { margin: 2px 0 0; }
+.tfa-method-title { margin: 0; font-size: 16px; }
+.tfa-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: none; border-radius: 8px; background: var(--surface-2); color: var(--muted); }
+.passkey-list { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 8px; }
+.passkey-item { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.passkey-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 200px; }
+.passkey-info strong { overflow-wrap: anywhere; }
+.passkey-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.passkey-more > summary { list-style: none; cursor: pointer; }
+.passkey-more > summary::-webkit-details-marker { display: none; }
+.passkey-more[open] { flex-basis: 100%; }
+.passkey-inline { display: grid; gap: 8px; margin-top: 8px; }
+.passkey-error { color: var(--error-text); margin: 0; }
+/* "or" between the passkey button and the code form on the second sign in step. */
+.auth-or { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
 .tfa-setup { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-bottom: 16px; }
 .tfa-qr { display: block; width: 185px; height: 185px; border-radius: 6px; background: #FFFFFF; flex: none; }
 .tfa-setup .stack { flex: 1 1 220px; min-width: 0; }

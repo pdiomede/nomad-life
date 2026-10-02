@@ -33,7 +33,7 @@
     <dt>Last sign in</dt><dd>{{ (u.last_login_at | localdate) if u.last_login_at else 'Never' }}</dd>
     <dt>Sign up IP</dt><dd>{% if u.signup_ip %}{{ ip_detail(u.signup_ip) }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
     <dt>Last sign in IP</dt><dd>{% if u.last_login_ip %}{{ ip_detail(u.last_login_ip) }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
-    <dt>Two-factor sign in</dt><dd>{{ 'On' if u.has_2fa else 'Off' }}</dd>
+    <dt>Two-factor sign in</dt><dd>{% if u.has_2fa %}On <span class="muted">({% if u.has_totp %}authenticator app{% if u.passkeys %}, {% endif %}{% endif %}{% if u.passkeys %}{{ u.passkeys }} passkey{{ '' if u.passkeys == 1 else 's' }}{% endif %})</span>{% else %}Off{% endif %}</dd>
     <dt>Signed in devices</dt><dd>{{ counts.devices }}</dd>
     <dt>Years</dt><dd>{{ u.years }}</dd>
     <dt>Movements</dt><dd>{{ counts.movements }}</dd>

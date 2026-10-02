@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.11.1] - 2026-10-02
+
+### Added
+
+- **Passkeys for two-factor sign in.** The Two-factor card on the Settings page now has two parts:
+  - **Passkeys:** add one with Face ID, Touch ID, Windows Hello, a security key or a password manager (iCloud Keychain, Google Password Manager, 1Password). There can be up to 10, each named after its device; rename or remove them there.
+  - **Authenticator app:** as before.
+- After the password, signing in offers **Use a passkey**, the code, or both. Two-factor sign in is on while an account has either one, and the admin page accepts both.
+- Adding or removing a passkey sends a security alert and needs your password. Adding one signs out your other devices, as turning on the authenticator app does.
+- Undoing an email change, and `flask reset-2fa`, remove the passkeys too.
+- Passkeys are checked with Duo's py_webauthn library (new pinned packages). Each passkey prompt works once, and a passkey whose counter goes back is refused (a copied security key).
+
+### Fixed
+
+Found in a review of two-factor sign in (authenticator app and passkeys):
+
+- **Medium.** The authenticator app's setup key travelled in the session cookie, which is signed but not encrypted. Anyone who ever got a copy of that cookie (a shared computer, a proxy log) could read the key and make codes for the account once two-factor sign in was on. The key now stays on the server, kept for that browser only, and goes at sign out.
+- **Low.** The code fields refused full width digits (such as ５) before sending them, although the server has accepted them since 1.2.10 for phone keyboards that type them.
+- **Low.** Adding an authenticator app to an account that already had passkeys said two-factor sign in "was turned on", in the page and the alert email, although it was on already. It now says the app was added.
+- **Low.** Each request for a passkey prompt kept a new challenge, so anyone with the password could make the server store them in a loop. Only the newest prompt of an account now counts.
+
 ## [1.11.0] - 2026-10-02
 
 ### Added
