@@ -7,9 +7,10 @@
   <title>Page not found | Nomad Life</title>
   <link rel="icon" type="image/png" href="/static/img/favicon-32.png">
   <script src="/static/js/theme-init.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Outfit:wght@700&display=swap" rel="stylesheet">
   <style>
+    /* The app's self hosted fonts (static/fonts/web), latin sets only: this page has no names. */
+    @font-face { font-family: "Inter"; font-weight: 400 700; font-display: swap; src: url("/static/fonts/web/inter-latin.woff2") format("woff2"); }
+    @font-face { font-family: "Outfit"; font-weight: 700; font-display: swap; src: url("/static/fonts/web/outfit-latin.woff2") format("woff2"); }
     /* Standalone on purpose: works when served by Flask or by any web server. */
     :root { --bg: #F1F1F3; --surface: #FFFFFF; --text: #303549; --muted: #62677B; --border: #EAEBEF;
             --primary: #383D51; --primary-text: #FFFFFF; --link: #A13A8C; color-scheme: light; }

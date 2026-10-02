@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.2] - 2026-10-02
+
+### Changed
+
+- **Fonts served by the app itself.** Inter and Outfit now come from `static/fonts/web` (with their SIL Open Font License files), no longer from Google Fonts:
+  - pages no longer wait for two connections to Google before drawing their text;
+  - visitors' addresses are no longer sent to Google;
+  - the security policy allows fonts from the site only.
+- The text font is preloaded, and each character set is its own file (Latin, Cyrillic, Greek, Vietnamese), so a page downloads only what it shows: about 60 KB for an English page.
+- The standalone "Page not found" page uses the same files.
+- Emails still name the fonts, with their usual fallbacks.
+
 ## [1.12.1] - 2026-10-02
 
 ### Added

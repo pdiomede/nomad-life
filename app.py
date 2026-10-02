@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.1"
+APP_VERSION = "1.12.2"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -282,8 +282,8 @@ FILE_SIGNATURES = {
 # Content-Security-Policy of every HTML page. Scripts only from static/js (no inline scripts or
 # on* attributes anywhere); inline style attributes stay allowed for the meters and map pins.
 CSP = ("default-src 'self'; script-src 'self'; "
-       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-       "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
+       "style-src 'self' 'unsafe-inline'; "
+       "font-src 'self'; img-src 'self' data:; connect-src 'self'; "
        "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 # The same policy on the pages that show the hCaptcha widget (its script, iframe, styles and
 # requests come from hcaptcha.com); every other page keeps CSP.
