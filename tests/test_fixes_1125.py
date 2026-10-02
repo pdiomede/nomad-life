@@ -73,6 +73,7 @@ class StaleCustomerTests(BillingCase):
                 return None
             return {"url": "https://checkout.stripe.com/x"}
         fake, calls = refusing("", {"customers": {"id": "cus_live"},
+                                    "subscriptions": {"data": []},
                                     "checkout/sessions": session})
         with mock.patch.object(appmod, "stripe_api", side_effect=fake):
             resp = self.client.post("/billing/checkout", data={"plan": "pro"})

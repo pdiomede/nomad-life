@@ -15,6 +15,7 @@
 
   <nav class="settings-nav" aria-label="Settings sections">
     <a href="#profile">Profile</a>
+    <a href="#plan">Plan</a>
     <a href="#password">Password</a>
     <a href="#two-factor">Two-factor</a>
     <a href="#email">Email</a>
@@ -41,6 +42,14 @@
       <p class="muted small">Optional. Shown in the menu at the top, used to greet you in our emails and printed on your accountant package.</p>
       <div><button class="btn btn-primary" type="submit">Save name</button></div>
     </form>
+  </section>
+
+  {# The plan lives on its own page (Upgrade, Manage billing); this card says where it stands. #}
+  <section class="card" id="plan" aria-labelledby="plan-title">
+    <div class="card-head"><h2 id="plan-title">Plan</h2><span class="pill pill-ok">{{ plan.name }}</span></div>
+    <p class="small">You are on <strong>{{ plan.name }}</strong>, with {{ account_storage.quota | filesize('down') }} of receipt storage.{% if paying %} {{ ui.plan_status(paying) }}{% endif %}</p>
+    <p class="muted small">{% if billing_on %}Upgrade, switch between plans, cancel, update your card or download invoices on your plan page.{% else %}See the plans and what each one includes on your plan page.{% endif %}</p>
+    <div><a class="btn btn-ghost" href="{{ url_for('plan') }}">Manage my plan</a></div>
   </section>
 
   <section class="card" id="password" aria-labelledby="pw-title">
@@ -264,6 +273,7 @@
   <section class="card danger-zone" id="delete" aria-labelledby="delete-title">
     <h2 id="delete-title">Delete my account</h2>
     <p class="muted small">Permanently removes your account, every year, movement and receipt. You will confirm twice and type your email.</p>
+    {% if charging %}<p class="small">Your paid plan is still open in Stripe: cancel it first with Manage billing on <a href="{{ url_for('plan') }}">your plan page</a>. Once it no longer renews, you can delete the account.</p>{% endif %}
     <form method="post" class="stack" data-confirm-delete="your account with all its years, movements and receipts" data-confirm-type="{{ row.email }}" data-confirm-field="confirm_email">
       {{ ui.csrf() }}
       <input type="hidden" name="action" value="delete">

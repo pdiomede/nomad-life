@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.6"
+APP_VERSION = "1.12.7"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -1848,11 +1848,13 @@ AUDIT_SORTS = {
 }
 
 
-def audit(event, user_id=None, email="", detail="", actor="", conn=None):
+def audit(event, user_id=None, email="", detail="", actor="", conn=None, ip=None):
     """Record a security event. Never fails the request it belongs to. With conn (inside
     db.transaction()) the row is part of that transaction: it is saved with the change it
-    records, or not at all, and an error is the caller's."""
-    ip = client_ip() if has_request_context() else ""  # none on the command line
+    records, or not at all, and an error is the caller's. ip="": the request is not the
+    person's (Stripe's webhook), so its address is not theirs to show."""
+    if ip is None:
+        ip = client_ip() if has_request_context() else ""  # none on the command line
     sql = ("INSERT INTO audit_log (user_id, email, actor, event, detail, ip) "
            "VALUES (?, ?, ?, ?, ?, ?)")
     args = (user_id, email or "", actor or "", event, detail or "", ip)
@@ -3096,6 +3098,16 @@ def open_subscription(user_id):
     return active_subscription(user_id, statuses=OPEN_STATUSES)
 
 
+def charging_subscription(user_id):
+    """A subscription Stripe will still charge: open (OPEN_STATUSES) and not cancelled at the
+    end of its paid year. Blocks deleting the account; a cancelled plan that runs to its end
+    does not, since nothing is charged any more (it ends on its own, user_id kept NULL)."""
+    marks = ", ".join("?" * len(OPEN_STATUSES))
+    return db.query(f"SELECT * FROM subscriptions WHERE user_id = ? AND status IN ({marks}) "
+                    "AND NOT (cancel_at_period_end = 1 AND status IN ('active', 'trialing')) "
+                    "ORDER BY id DESC LIMIT 1", (user_id, *OPEN_STATUSES), one=True)
+
+
 def stripe_period_end(sub):
     """When the paid year ends: on the subscription, or (API 2025-03 on) on its item."""
     end = sub.get("current_period_end")
@@ -3171,7 +3183,8 @@ def apply_subscription(conn, sub, created):
                      "current_period_end, cancel_at_period_end, last_event_at, subscription_id) "
                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (*values, sub_id))
     if user_id is None:
-        current_app.logger.error("Stripe subscription %s belongs to no account", sub_id)
+        if not row:  # stored already: the plan of a deleted account, running to its end
+            current_app.logger.error("Stripe subscription %s belongs to no account", sub_id)
         return None
     user = conn.execute("SELECT plan FROM users WHERE id = ?", (user_id,)).fetchone()
     if user is None:
@@ -3968,6 +3981,7 @@ def register_routes(app):
         g.billing_forms = True  # BILLING_CSP: Upgrade and Manage billing go on to Stripe
         return render_template("plan.html", plan=mine, upgrade=next_plan(mine["key"]),
                                subscription=sub, paying=open_subscription(current_user.id),
+                               plans_by_key={p["key"]: p for p in plan_catalog()},
                                has_customer=bool(row and row["stripe_customer_id"]),
                                paid=request.args.get("paid") == "1")
 
@@ -3993,7 +4007,25 @@ def register_routes(app):
             flash("You already have a plan with us. Switch or renew it with Manage billing.",
                   "info")
             return redirect(url_for("plan"))
-        customer = row["stripe_customer_id"] or new_stripe_customer(row)
+        customer, customer_renewed = row["stripe_customer_id"], False
+        if customer:
+            # Asked of Stripe, not only of the subscriptions table: a payment whose webhook is
+            # late (or blocked on its way) is not stored yet, and the Upgrade button still
+            # shows, so a second click would make a second yearly subscription.
+            listed = stripe_api("GET", "subscriptions?" + urlencode(
+                {"customer": customer, "status": "all", "limit": 20}))
+            if listed is None and stripe_customer_gone(row["id"], customer):
+                customer, customer_renewed = None, True  # nothing to find under a new one
+            elif listed is None:
+                flash("The payment page could not be opened. Please try again in a few "
+                      "minutes.", "error")
+                return redirect(url_for("plan"))
+            elif any(isinstance(s, dict) and s.get("status") in OPEN_STATUSES
+                     for s in listed.get("data") or []):
+                flash("You already have a plan with us. If you just paid, it shows here within "
+                      "a minute. Switch or renew it with Manage billing.", "info")
+                return redirect(url_for("plan"))
+        customer = customer or new_stripe_customer(row, retry=customer_renewed)
         if not customer:
             flash("The payment page could not be opened. Please try again in a few minutes.",
                   "error")
@@ -4025,7 +4057,6 @@ def register_routes(app):
             "cancel_url": base + url_for("plan"),
         }
         # Up to two known refusals are mended, in whichever order Stripe reports them.
-        customer_renewed = False
         for _ in range(3):
             session_obj = stripe_api("POST", "checkout/sessions", session_args,
                                      idempotency_key=f"nl-checkout-{row['id']}-{uuid.uuid4().hex}")
@@ -4136,7 +4167,7 @@ def register_routes(app):
                         event_name = "plan_changed"
                     audit(event_name, user_id, user["email"],
                           f"{plan_named(before)['name']} to {plan_named(after)['name']}",
-                          "Stripe", conn=conn)
+                          "Stripe", conn=conn, ip="")
                     notices.append((event_name, user["email"], before, after))
             elif kind == "checkout.session.completed":
                 customer, ref = obj.get("customer"), str(obj.get("client_reference_id") or "")
@@ -4147,10 +4178,12 @@ def register_routes(app):
                 user = conn.execute("SELECT id, email FROM users WHERE stripe_customer_id = ?",
                                     (str(obj.get("customer") or ""),)).fetchone()
                 if user and kind == "invoice.payment_failed":
-                    audit("payment_failed", user["id"], user["email"], "", "Stripe", conn=conn)
+                    audit("payment_failed", user["id"], user["email"], "", "Stripe", conn=conn,
+                          ip="")
                     notices.append(("payment_failed", user["email"], None, None))
                 elif user and obj.get("billing_reason") == "subscription_cycle":
-                    audit("plan_renewed", user["id"], user["email"], "", "Stripe", conn=conn)
+                    audit("plan_renewed", user["id"], user["email"], "", "Stripe", conn=conn,
+                          ip="")
         for event_name, email, before, after in notices:
             billing_notice(event_name, email, before, after)
         return Response("ok", 200)
@@ -4810,7 +4843,7 @@ def register_routes(app):
                     flash("Type your email address to confirm the deletion.", "error")
                 elif err:
                     flash(err, "error")
-                elif open_subscription(row["id"]):
+                elif charging_subscription(row["id"]):
                     # Stripe would keep charging a deleted account every year.
                     flash("Your plan is still paid for: cancel it with Manage billing on your "
                           "plan page first, then delete the account.", "error")
@@ -4850,6 +4883,8 @@ def register_routes(app):
                            (row["id"],), one=True)["n"]
         passkeys = user_passkeys(row["id"])
         return render_template("settings.html", row=row, counts=counts, account_storage=storage,
+                               plan=plan_named(row["plan"]), paying=open_subscription(row["id"]),
+                               charging=charging_subscription(row["id"]),
                                totp=totp, activity=activity, devices=max(devices, 1),
                                passkeys=passkeys, has_2fa=bool(row["totp_secret"] or passkeys),
                                passkeys_max=PASSKEYS_MAX, passkey_name=default_passkey_name(),
@@ -5535,7 +5570,7 @@ def register_routes(app):
                 pass
             elif request.form.get("confirm_email", "").strip().lower() != email:
                 flash("Type the email address to confirm the deletion.", "error")
-            elif open_subscription(user_id):
+            elif charging_subscription(user_id):
                 flash(f"{email} still pays for a plan: cancel the subscription in Stripe first, "
                       "or Stripe keeps charging it.", "error")
             elif not delete_account(user_id):  # another admin was quicker: report it once

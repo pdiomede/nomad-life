@@ -22,7 +22,7 @@
   {% call ui.plan_card(plan, current=True, heading="h2") %}
     <p class="muted small">{{ storage.used | filesize('down') }} used of {{ storage.quota | filesize('down') }}.</p>
     {% if paying %}
-      <p class="muted small">{% if paying.cancel_at_period_end %}Cancelled: ends on {{ paying.current_period_end | localdate }}.{% elif paying.status in ('past_due', 'unpaid') %}<strong>The last payment did not go through.</strong> Update your card with Manage billing.{% elif paying.status == 'paused' %}Paused. Resume it with Manage billing.{% elif paying.current_period_end %}Renews on {{ paying.current_period_end | localdate }}.{% endif %}</p>
+      <p class="muted small">{{ ui.plan_status(paying) }}</p>
     {% endif %}
     {% if has_customer and billing_on %}
       <form method="post" action="{{ url_for('billing_portal') }}">
@@ -41,6 +41,9 @@
           <button class="btn btn-primary btn-block" type="submit">Upgrade to {{ upgrade.name }}, ${{ upgrade.year }} / year</button>
         </form>
         <p class="muted small">Secure payment on Stripe. VAT or sales tax is added where it applies. Renews yearly; cancel any time. <a href="{{ url_for('refunds') }}">Refund policy</a>.</p>
+      {% elif billing_on and paying and paying.status in ('unpaid', 'paused') %}
+        {# Not paid for, so the account is on Free; its subscription still exists in Stripe. #}
+        <p class="muted small">Your {{ plans_by_key[paying.plan].name if paying.plan in plans_by_key else 'paid' }} plan is waiting: {{ 'pay the open invoice' if paying.status == 'unpaid' else 'resume it' }} with Manage billing to get it back.</p>
       {% elif billing_on and paying %}
         <p class="muted small">Switch to {{ upgrade.name }} with Manage billing: you only pay the difference for the rest of your year.</p>
       {% else %}

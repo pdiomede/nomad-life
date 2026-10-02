@@ -118,6 +118,9 @@
 </nav>
 {% endmacro %}
 
+{# Where a Stripe subscription stands, in one sentence (plan page and Settings). #}
+{% macro plan_status(sub) %}{% if sub.cancel_at_period_end %}Cancelled: ends on {{ sub.current_period_end | localdate }}.{% elif sub.status in ('past_due', 'unpaid') %}<strong>The last payment did not go through.</strong> Update your card with Manage billing.{% elif sub.status == 'paused' %}Paused. Resume it with Manage billing.{% elif sub.current_period_end %}Renews on {{ sub.current_period_end | localdate }}.{% endif %}{% endmacro %}
+
 {# One plan: name, price, limits and features. Used by the plan page and the landing page. #}
 {% macro plan_card(p, current=False, highlight=False, heading="h3") %}
 <div class="card plan-card{% if current %} plan-current{% endif %}{% if highlight %} plan-highlight{% endif %}">

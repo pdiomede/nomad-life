@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.7] - 2026-10-02
+
+### Fixed
+
+From a second review of the payment flow, including how the plan shows in the account's pages (5 bugs found):
+
+- **Medium.** A payment whose webhook was late, or blocked on its way, could be made twice: until the webhook arrived, the plan page still offered **Upgrade**, and checkout only looked at the app's own records. Checkout now first asks Stripe whether the customer already has a plan. If so, it says the plan shows within a minute and points to Manage billing; if Stripe cannot answer, no payment page opens.
+- **Medium.** A plan cancelled in Manage billing kept blocking "Delete my account" until the end of its paid year, up to a year, although Stripe never charges it again. Only a plan that still renews (or whose payment is being retried) blocks deleting now, on the Settings page and the admin page. The cancelled plan runs to its end in Stripe without an account, as before.
+- **Low.** The Settings page said nothing about the plan. A new **Plan** card (and a "Plan" link at the top) shows the plan, its storage and where it stands ("Renews on", "Cancelled: ends on", "The last payment did not go through"), with **Manage my plan** to the plan page. Above **Delete my account**, a plan that still renews is named, with what to do first.
+- **Low.** Plan and payment events from Stripe ("Plan bought", "Payment failed") recorded the address of Stripe's server as the account's IP, shown in the owner's security activity, where an unknown address reads as a stranger. They now record none.
+- **Low.** With a plan unpaid or paused in Stripe, the plan page offered to "switch to Pro and only pay the difference", while that plan was the one waiting. It now says to pay the open invoice, or resume the plan, with Manage billing.
+
 ## [1.12.6] - 2026-10-02
 
 ### Fixed
