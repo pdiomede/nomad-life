@@ -32,6 +32,22 @@ class IpLookupTests(AppTestCase):
         self.assertEqual(page.count('href="https://ipinfo.io/8.8.8.8"'), 2)  # sign up, sign in
         self.assertIn('href="/admin?search=8.8.8.8#accounts">Same IP</a>', page)
 
+    def test_accounts_table_links_public_ip(self):
+        client = self.app.test_client()
+        client.environ_base["REMOTE_ADDR"] = "8.8.8.8"
+        self.signup("a@example.com", client=client)
+        html = self.admin.get("/admin").get_data(as_text=True)
+        row = html.split(">a@example.com</a>", 1)[1]
+        cell = row[:row.index("</tr>")]
+        self.assertIn('<a href="https://ipinfo.io/8.8.8.8" target="_blank" '
+                      'rel="noopener noreferrer"', cell)
+        self.assertIn('</a><br><span class="muted">at last sign in</span>', cell)
+        # The admin signed up from the test client's 127.0.0.1: no location, plain text.
+        admin_row = html.split(">admin@example.com</a>", 1)[1]
+        admin_row = admin_row[:admin_row.index("</tr>")]
+        self.assertIn('127.0.0.1<br><span class="muted">at last sign in</span>', admin_row)
+        self.assertNotIn("ipinfo.io", admin_row)
+
 
 if __name__ == "__main__":
     unittest.main()

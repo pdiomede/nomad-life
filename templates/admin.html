@@ -136,7 +136,7 @@
           <td class="small nowrap hide-sm"><span class="tag">{{ u.plan_name }}</span>{% if u.quota_bytes is not none %}<br><span class="muted">custom quota</span>{% endif %}</td>
           <td class="small nowrap hide-sm">{{ u.created_at | localdate }}</td>
           <td class="small nowrap">{{ (u.last_login_at | localdate) if u.last_login_at else 'Never' }}</td>
-          <td class="small admin-ip hide-sm">{% if u.last_login_ip %}{{ u.last_login_ip }}<br><span class="muted">at last sign in</span>{% elif u.signup_ip %}{{ u.signup_ip }}<br><span class="muted">at sign up</span>{% else %}<span class="muted">not recorded</span>{% endif %}</td>
+          <td class="small admin-ip hide-sm">{% if u.last_login_ip %}{{ ui.ip_link(u.last_login_ip) }}<br><span class="muted">at last sign in</span>{% elif u.signup_ip %}{{ ui.ip_link(u.signup_ip) }}<br><span class="muted">at sign up</span>{% else %}<span class="muted">not recorded</span>{% endif %}</td>
           <td class="num small nowrap hide-sm">{{ u.used | filesize('down') }} / {{ u.quota | filesize('down') }}</td>
           <td class="admin-view hide-sm"><a class="btn btn-ghost btn-sm" href="{{ account_url(u.id, state) }}" aria-label="View {{ u.email }}">View</a></td>
         </tr>

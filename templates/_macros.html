@@ -196,3 +196,7 @@
 <script src="{{ url_for('static', filename='js/captcha.js', v=asset_version) }}" defer></script>
 {% endif %}
 {% endmacro %}
+
+{# An IP address as a link to its location on ipinfo.io, in a new tab; addresses with no
+   location (local, private and documentation ranges) stay plain text (app.py ip_lookup_url). #}
+{% macro ip_link(ip) %}{% set url = ip_lookup_url(ip) %}{% if url %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer" title="Location on ipinfo.io (opens in a new tab)">{{ ip }}<span class="visually-hidden"> (location on ipinfo.io, opens in a new tab)</span></a>{% else %}{{ ip }}{% endif %}{% endmacro %}

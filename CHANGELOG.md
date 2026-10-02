@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.9.0] - 2026-10-02
+
+### Added
+
+- **IP locations in the admin accounts table.** The IP column of the accounts table on `/admin` now opens the address's ipinfo.io page in a new tab, as the account page does since 1.8.0: city, region, country, a map and the network owner. Local, private and documentation addresses stay plain text.
+
 ## [1.8.1] - 2026-10-02
 
 ### Fixed
