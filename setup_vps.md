@@ -223,29 +223,48 @@ Cloudflare's free plan can serve the domain's DNS and, with its proxy on (the or
 2. **Switch the nameservers** at the registrar to the two Cloudflare gives (turn DNSSEC off there first, and on again in Cloudflare later). Wait for Cloudflare's "site is active" email.
 3. **SSL/TLS → Overview: Full (strict).** The server has its own Let's Encrypt certificate (above). "Flexible" talks to the server over plain HTTP, which certbot's redirect answers with HTTPS again: an endless redirect loop. Renewals keep working through the proxy.
 4. **Turn off what rewrites pages:** Speed → **Rocket Loader** off, and Scrape Shield → **Email Address Obfuscation** off. Both inject scripts the app's Content-Security-Policy refuses, and the obfuscation also changes the contact addresses on the pages.
-5. **Real visitor addresses.** With the proxy off (grey cloud, DNS only) skip this: nothing changes. With it on, let nginx take the address from Cloudflare's `CF-Connecting-IP` header, but only from Cloudflare's own ranges (so nobody reaching the server directly can fake it). A small script writes the ranges, which Cloudflare publishes and changes now and then:
+5. **Real visitor addresses.** With the proxy off (grey cloud, DNS only) skip this: nothing changes. With it on, do this **before** turning the proxy on: let nginx take the address from Cloudflare's `CF-Connecting-IP` header, but only from Cloudflare's own ranges (so nobody reaching the server directly can fake it), and only for this site: the ranges go in a snippet that the Nomad Life server block includes, so other sites on the same nginx are not touched. First check that nothing sets it already (`sudo grep -rn real_ip /etc/nginx/` prints nothing). A small script writes the ranges, which Cloudflare publishes and changes now and then, and puts the previous file back if nginx refuses the new one:
 
    ```bash
    sudo tee /usr/local/sbin/cloudflare-real-ip >/dev/null <<'EOF'
    #!/bin/sh
-   # Cloudflare's address ranges for nginx's real IP module; run weekly by cron.
+   # Cloudflare's address ranges for nginx's real IP module, in a snippet that only the Nomad
+   # Life server block includes (other sites on this nginx are not touched). Run weekly by cron.
    set -e
-   out=/etc/nginx/conf.d/cloudflare-real-ip.conf
+   out=/etc/nginx/snippets/cloudflare-real-ip.conf
    tmp=$(mktemp)
    for list in ips-v4 ips-v6; do
        curl -fsS "https://www.cloudflare.com/$list" | sed '/^$/d; s/.*/set_real_ip_from &;/' >> "$tmp"
    done
    grep -q set_real_ip_from "$tmp"            # never install an empty list
    echo "real_ip_header CF-Connecting-IP;" >> "$tmp"
+   [ -f "$out" ] && cp "$out" "$out.bak"
    install -m 644 "$tmp" "$out" && rm -f "$tmp"
-   nginx -t -q && systemctl reload nginx
+   if nginx -t -q; then
+       systemctl reload nginx
+   else
+       # Never leave a config nginx refuses: put the previous one back.
+       if [ -f "$out.bak" ]; then mv "$out.bak" "$out"; else rm -f "$out"; fi
+       echo "nginx refused the new ranges; nothing changed" >&2
+       exit 1
+   fi
    EOF
    sudo chmod 755 /usr/local/sbin/cloudflare-real-ip
    sudo /usr/local/sbin/cloudflare-real-ip
    echo '17 4 * * 1 root /usr/local/sbin/cloudflare-real-ip' | sudo tee /etc/cron.d/cloudflare-real-ip
    ```
 
-   nginx then uses the visitor's address as `$remote_addr`, and the `X-Forwarded-For` line of the server block passes it on as the last entry, which is the one the app reads: keep `PROXY_COUNT=1` in `config.env`. Check it by signing in from your phone on mobile data: on `/admin` your **Last sign in IP** must be the phone's address (its ipinfo.io page names your mobile carrier), not a Cloudflare one.
+   Then include the snippet in the `server { listen 443 ssl ... }` block that certbot made in `/etc/nginx/sites-available/nomad-life`, under `server_name`, and reload:
+
+   ```nginx
+   include /etc/nginx/snippets/cloudflare-real-ip.conf;
+   ```
+
+   ```bash
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+   nginx then uses the visitor's address as `$remote_addr` for this site, and the `X-Forwarded-For` line of the server block passes it on as the last entry, which is the one the app reads: keep `PROXY_COUNT=1` in `config.env`. Check it by signing in from your phone on mobile data: on `/admin` your **Last sign in IP** must be the phone's address (its ipinfo.io page names your mobile carrier), not a Cloudflare one (`162.158...`, `172.64...` to `172.71...`, `104.16...` to `104.31...`). Without this step every visitor shares a few Cloudflare addresses, so the per address limits (sign up, sign in) block real people.
 6. **Limits to know:** on the free plan Cloudflare gives up on a request after 100 seconds (error 524) and refuses uploads over 100 MB. Receipts stay far below that; only a very large accountant package on a slow server could get near the time limit.
 
 hCaptcha and the app's Gmail sending are not affected: the hCaptcha site keeps the same domain, and mail leaves the server directly.
