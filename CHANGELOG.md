@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.6] - 2026-10-02
+
+### Fixed
+
+- **High.** **Upgrade** and **Manage billing** on the plan page did nothing. The pages' security policy lets forms submit only to Nomad Life (`form-action 'self'`), and browsers apply that to the redirect that answers a form too, so the jump to Stripe's checkout or customer portal was blocked without a word. The plan page alone now also allows `checkout.stripe.com` and `billing.stripe.com`; every other page keeps the strict policy.
+
 ## [1.12.5] - 2026-10-02
 
 ### Fixed

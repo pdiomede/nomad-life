@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.5"
+APP_VERSION = "1.12.6"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -326,6 +326,10 @@ CAPTCHA_CSP = (CSP.replace("script-src 'self'", f"script-src 'self' {HCAPTCHA_HO
                .replace("style-src 'self'", f"style-src 'self' {HCAPTCHA_HOSTS}")
                .replace("connect-src 'self'", f"connect-src 'self' {HCAPTCHA_HOSTS}")
                .replace("object-src", f"frame-src {HCAPTCHA_HOSTS}; object-src"))
+# The plan page's forms answer with a redirect to Stripe's checkout or customer portal, and
+# browsers hold such redirects to form-action too: only that page may send them there.
+STRIPE_FORM_HOSTS = "https://checkout.stripe.com https://billing.stripe.com"
+BILLING_CSP = CSP.replace("form-action 'self'", f"form-action 'self' {STRIPE_FORM_HOSTS}")
 # Browser features no page uses: refused for the page and anything it embeds (hCaptcha too).
 PERMISSIONS_POLICY = ("accelerometer=(), browsing-topics=(), camera=(), display-capture=(), "
                       "geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), "
@@ -733,7 +737,8 @@ def create_app(overrides=None):
         # template escaping, an injected <script> or onerror= would not run. Receipts (PDFs
         # and images) only get frame-ancestors, as a full policy breaks Chrome's PDF viewer.
         if resp.mimetype == "text/html":
-            policy = CAPTCHA_CSP if g.get("captcha") else CSP
+            policy = (CAPTCHA_CSP if g.get("captcha")
+                      else BILLING_CSP if g.get("billing_forms") else CSP)
         else:
             policy = "frame-ancestors 'none'"
         resp.headers.setdefault("Content-Security-Policy", policy)
@@ -3960,6 +3965,7 @@ def register_routes(app):
                        one=True)
         sub = db.query("SELECT * FROM subscriptions WHERE user_id = ? ORDER BY id DESC LIMIT 1",
                        (current_user.id,), one=True)
+        g.billing_forms = True  # BILLING_CSP: Upgrade and Manage billing go on to Stripe
         return render_template("plan.html", plan=mine, upgrade=next_plan(mine["key"]),
                                subscription=sub, paying=open_subscription(current_user.id),
                                has_customer=bool(row and row["stripe_customer_id"]),
