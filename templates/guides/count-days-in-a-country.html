@@ -1,0 +1,46 @@
+{% extends "guides/_layout.html" %}
+{% block article %}
+<p>Counting the days you spent in a country sounds simple until you try it for a whole year: flights that cross midnight, a weekend trip you forgot, two countries in one day. Here is how to get the number right, and keep it right.</p>
+
+<h2 id="travel-days">Arrival and departure days</h2>
+<p>This is where most counts go wrong. Countries do not agree on whether a travel day counts:</p>
+<ul>
+  <li><strong>Any part of a day counts as a full day</strong> in many countries. The day you land and the day you leave both count.</li>
+  <li><strong>Only days you are there at midnight count</strong> in some, such as the United Kingdom (with exceptions, for example for people only passing through).</li>
+  <li>The Schengen 90/180 rule, a visa rule rather than a tax one, counts both the day you enter and the day you leave.</li>
+</ul>
+<p>The result: under each country's own rules, a day you flew from one to the other can count for both. Add up your days per country and the total can be more than the days in the year. That is not a mistake in your list; it is how the rules work. It is also why being "just under" {{ threshold }} days is risky when you counted the travel days for only one side.</p>
+
+<h2 id="local-dates">Use local dates</h2>
+<p>Write each stay with the dates where you were: the date you landed, in the local time, and the date you left. An overnight flight that leaves on the 3rd and lands on the 4th means the 3rd ends in one country and the 4th starts in the other. Boarding passes and booking confirmations show local times, which makes them the best source.</p>
+
+<h2 id="short-trips">Short trips count too</h2>
+<p>A weekend in another country, a two day conference, a day trip across a border: each one moves days away from where you were based. Leaving them out makes your base country look stronger than it was, and they are exactly what a tax office can find in your card statements.</p>
+
+<h2 id="leap-years">Leap years</h2>
+<p>A leap year has 366 days, so {{ threshold }} days is exactly half of it rather than just over. Some countries use "more than half the year" and so require one more day in a leap year. Check how yours words its rule.</p>
+
+<h2 id="how-nomad-life-counts">How Nomad Life counts</h2>
+<p>Nomad Life gives each day to one country at most, so your days per country always add up to the days of the year:</p>
+<ul>
+  <li>Your stays (movements, in the app) count in full, planned future ones too.</li>
+  <li>Days without a stay count for your base country, once they have passed.</li>
+  <li>A day shared by two stays, such as a travel day, counts for the stay that started later.</li>
+  <li>A stay inside your base country counts for the base country.</li>
+</ul>
+<p>When two stays overlap by more than a travel day, the dashboard warns you, so a typo in a date does not quietly move a week to the wrong country. The <a href="{{ url_for('docs') }}#counting">documentation</a> has a worked example. Because each country's rules for travel days differ, treat travel days near the {{ threshold }} day line with care and ask your adviser which side they fall on.</p>
+
+<h2 id="rebuild-a-year">Rebuilding a past year</h2>
+<p>If you did not keep a record, you can still rebuild one. Go through, roughly from most to least useful:</p>
+<ol>
+  <li><strong>Flight, train and bus bookings</strong> in your email.</li>
+  <li><strong>Accommodation bookings</strong>: rental contracts, hotel and short stay confirmations.</li>
+  <li><strong>Card and bank statements</strong>, which show the country of each payment day by day.</li>
+  <li><strong>Your phone's location history</strong>, if it was on.</li>
+  <li><strong>Passport stamps</strong>, keeping in mind that borders inside the Schengen area do not stamp.</li>
+</ol>
+<p>Fill in the stays month by month, then look for gaps: a gap in a record of a year abroad is usually a trip you forgot.</p>
+
+<h2 id="keep-it-right">Keep it right as you go</h2>
+<p>The easiest year to count is the one you logged as it happened. Add each stay when you book it, fix the dates when plans change, and keep the booking or bill with it. See <a href="{{ url_for('guide', slug='proof-of-residence-documents') }}">which documents prove where you lived</a>.</p>
+{% endblock %}

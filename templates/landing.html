@@ -105,6 +105,19 @@
   <p class="muted small center">Prices in US dollars. Online payment is coming soon.</p>
 </section>
 
+<section class="guides-teaser" aria-labelledby="guides-title">
+  <h2 id="guides-title" class="section-title">Guides</h2>
+  <ul class="guide-cards">
+    {% for g in guides %}
+    <li class="card">
+      <h3><a href="{{ url_for('guide', slug=g.slug) }}">{{ g.title }}</a></h3>
+      <p class="muted small">{{ g.description }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="center small"><a href="{{ url_for('guides') }}">All guides</a></p>
+</section>
+
 <section class="card cta" aria-labelledby="cta-title">
   <div>
     <h2 id="cta-title">Ready to track your year?</h2>

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{# One guide: its own title, description, link preview and structured data (Article with a
+   breadcrumb, app.py guide_page_data), then the text, a note that it is not advice, a call to
+   try the app and the other guides. The text goes in the article block. #}
+{% block title %}{{ guide.seo_title }}{% endblock %}
+{% block description %}{{ guide.description }}{% endblock %}
+{% block og_title %}{{ guide.title }}{% endblock %}
+{% block og_description %}{{ guide.description }}{% endblock %}
+{% block robots %}index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1{% endblock %}
+{% block og_url %}{{ page_url }}{% endblock %}
+{% block head_extra %}
+  <meta property="article:modified_time" content="{{ guide.updated }}">
+  <link rel="canonical" href="{{ page_url }}">
+  <script type="application/ld+json">{{ page_data | tojson }}</script>
+{% endblock %}
+{% block content %}
+<article class="guide">
+  <nav class="guide-crumbs small" aria-label="Breadcrumb">
+    <a href="{{ url_for('landing') }}">Nomad Life</a> <span aria-hidden="true">&rsaquo;</span>
+    <a href="{{ url_for('guides') }}">Guides</a> <span aria-hidden="true">&rsaquo;</span>
+    <span aria-current="page">{{ guide.title }}</span>
+  </nav>
+  <header class="guide-head">
+    <p class="eyebrow">Guide</p>
+    <h1>{{ guide.title }}</h1>
+    <p class="guide-lead muted">{{ guide.description }}</p>
+    <p class="small muted">Updated <time datetime="{{ guide.updated }}">{{ guide.updated }}</time></p>
+  </header>
+  <div class="guide-body">
+    {% block article %}{% endblock %}
+    <p class="guide-note small">This guide explains general rules to help you ask the right questions. It is not tax or legal advice: rules change and differ by country, so check your own situation with a tax adviser.</p>
+  </div>
+  <section class="card cta guide-cta" aria-labelledby="guide-cta-title">
+    <div>
+      <h2 id="guide-cta-title">Count your days without a spreadsheet</h2>
+      <p class="muted small">Nomad Life counts your days in each country, marks the {{ threshold }} day line and keeps your receipts with each stay. Free to start.</p>
+    </div>
+    <a class="btn btn-primary btn-lg" href="{{ url_for('signup') }}">Start free</a>
+  </section>
+  {% set others = guides | rejectattr('slug', 'equalto', guide.slug) | list %}
+  {% if others %}
+  <nav class="guide-more" aria-labelledby="guide-more-title">
+    <h2 id="guide-more-title">More guides</h2>
+    <ul>
+      {% for g in others %}
+      <li><a href="{{ url_for('guide', slug=g.slug) }}">{{ g.title }}</a><span class="muted small">{{ g.description }}</span></li>
+      {% endfor %}
+    </ul>
+  </nav>
+  {% endif %}
+</article>
+{% endblock %}

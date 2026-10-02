@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.11.1**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.0**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -8,6 +8,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 
 - A simple landing page that explains the app, with a "Launch app" button to sign in.
 - Documentation at `/docs` (see [Documentation](#documentation)), opened from the question mark in the header, the menu under your name or the footer.
+- Public guides at `/guides`: the 183 day rule, counting your days per country, and the documents that prove where you lived. Linked from the landing page, the footer and the docs.
 - Share buttons for X, LinkedIn, Facebook, WhatsApp, Telegram and Reddit, with a link preview image.
 - A friendly 404 page for wrong links.
 - One private workspace per user with sign up, sign in and password reset by email (Gmail). New accounts confirm their email with a link and a "Confirm my account" button on the page it opens (so company mail scanners, which open every link, cannot confirm an account for someone), and accounts not confirmed within 20 minutes are deleted.
@@ -206,7 +207,7 @@ The 404 page is a standalone file, `static/404.html`. The app already serves it 
 
 ## SEO
 
-The landing page and the documentation (`/docs`) are ready for search engines: keyword title and description, canonical URL, Open Graph and Twitter card tags, structured data (JSON-LD), `robots.txt` and `sitemap.xml`. Sign in and app pages are marked `noindex` so private pages stay out of search results. Set `APP_BASE_URL` to your public HTTPS address before going live, because the canonical URL, sitemap and previews are built from it.
+The landing page, the documentation (`/docs`) and the guides (`/guides`) are ready for search engines: keyword title and description, canonical URL, Open Graph and Twitter card tags, structured data (JSON-LD), `robots.txt` and `sitemap.xml`. Sign in and app pages are marked `noindex` so private pages stay out of search results. Set `APP_BASE_URL` to your public HTTPS address before going live, because the canonical URL, sitemap and previews are built from it.
 
 ## Disclaimer
 

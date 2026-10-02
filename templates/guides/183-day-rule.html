@@ -1,0 +1,40 @@
+{% extends "guides/_layout.html" %}
+{% block article %}
+<p>If you live on the move, you have probably heard that you become a tax resident of a country once you spend {{ threshold }} days there. It is a useful rule of thumb, and many countries do use it. But it is only one of several tests, and the most common mistake nomads make is to treat it as the only one.</p>
+
+<h2 id="what-it-says">What the rule says</h2>
+<p>In many countries, being physically present for {{ threshold }} days or more in a tax year makes you a tax resident there. A resident usually pays tax on income from all over the world, not only on what was earned in that country. That is why the number matters so much.</p>
+<p>{{ threshold }} days is just over half a year, so usually only one country can reach it in a year (two only when travel days count for both countries at once, see below). That is where the idea of "staying below {{ threshold }} days everywhere" comes from.</p>
+
+<h2 id="not-the-only-test">It is one test, not the only one</h2>
+<p>Day count is the easiest test to measure, so it gets the most attention. Most countries also look at your ties, and these can make you resident with far fewer days:</p>
+<ul>
+  <li><strong>A permanent home</strong> you own or rent and can use at any time, even while you are away.</li>
+  <li><strong>Your family</strong>, such as a partner or children who live there.</li>
+  <li><strong>Your economic interests</strong>: where you work, where your company or clients are, where your income and assets sit.</li>
+  <li><strong>Registration</strong>: being listed at an address or in a population register.</li>
+</ul>
+<p>Some countries go further. The United States, for example, taxes its citizens wherever they live, whatever their day count.</p>
+
+<h2 id="under-everywhere">Staying under {{ threshold }} days everywhere does not make you tax free</h2>
+<p>A common plan is to keep moving so no country ever reaches {{ threshold }} days. The trouble is that the country you lived in before usually does not let go just because you left. Many keep treating you as resident until you can show you have settled somewhere else, and some do so for years. Leaving properly, by ending your lease, deregistering and moving your life, is often what actually ends residency, not the day count.</p>
+
+<h2 id="tax-year">The tax year is not always the calendar year</h2>
+<p>Check which period your country counts. Many use the calendar year, from 1 January to 31 December. The United Kingdom's tax year runs from 6 April to 5 April. Some countries count any 12 month period, so the {{ threshold }} days can span two calendar years.</p>
+
+<h2 id="which-days-count">Not every country counts a day the same way</h2>
+<p>Countries disagree on what "a day" is. Some count any part of a day, so the day you land and the day you leave both count in full. The United Kingdom mostly counts the days you are there at midnight. The United States uses a weighted formula over three years: all your days this year, a third of last year's and a sixth of the year before. You are resident if that total reaches {{ threshold }} and you spent at least 31 days there this year. Our guide on <a href="{{ url_for('guide', slug='count-days-in-a-country') }}">counting your days</a> goes through the details.</p>
+
+<h2 id="two-countries">When two countries both claim you</h2>
+<p>You can end up resident in two countries at once, for example in one on day count and in another because of your home there. Tax treaties between countries settle this with tie breaker rules. Most follow the same order: first where you have a permanent home, then where your personal and economic life is centred, then where you usually live, and finally your nationality. A treaty only applies between the two countries that signed it, so check whether one exists for yours.</p>
+
+<h2 id="schengen">Do not mix it up with the Schengen 90/180 rule</h2>
+<p>The Schengen rule, at most 90 days in any 180 day period, is about how long a visitor may stay in the Schengen area. It is a visa rule, not a tax rule. You can respect it and still become a tax resident somewhere, or break it without any tax effect.</p>
+
+<h2 id="what-to-do">What to do about it</h2>
+<ol>
+  <li><strong>Keep a day by day record</strong> of where you are, as you go. Rebuilding a year from memory is hard and easy to challenge.</li>
+  <li><strong>Keep the documents that prove it</strong>: rental contracts, hotel bills, tickets. See <a href="{{ url_for('guide', slug='proof-of-residence-documents') }}">which documents prove where you lived</a>.</li>
+  <li><strong>Talk to a tax adviser before the year ends</strong>, while you can still change your plans, not after.</li>
+</ol>
+{% endblock %}

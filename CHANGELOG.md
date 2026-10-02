@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.0] - 2026-10-02
+
+### Added
+
+- **Guides for digital nomads** at `/guides`, public and ready for search engines:
+  - The 183 day rule, explained for digital nomads.
+  - How to count the days you spend in each country.
+  - Which documents prove where you lived.
+  
+  Each one has its own title, description and link preview, Article structured data with a breadcrumb, a note that it is not tax advice, and a "Start free" box.
+- **Links:** the guides are in the sitemap, on the landing page (above "Ready to track your year?"), in the footer, and in the docs' section on the 183 day line.
+
 ## [1.11.1] - 2026-10-02
 
 ### Added

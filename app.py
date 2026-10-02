@@ -51,7 +51,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.11.1"
+APP_VERSION = "1.12.0"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -118,6 +118,35 @@ SITE_DESCRIPTION = ("Track the days you spend in each country and keep your trav
                     "all in one place. Made for digital nomads.")
 SHARE_TEXT = "Track the days you spend in each country and keep your travel receipts safe."
 # Search result snippet for the landing page (title under 60 and description under 160 characters).
+# Public guides (/guides/<slug>, templates/guides/<slug>.html), for people searching about
+# day counting and tax residency. Indexable and in the sitemap; updated is the date shown on
+# the page, in its structured data and as the sitemap's lastmod: change it with the text.
+GUIDES = [
+    {"slug": "183-day-rule", "updated": "2026-10-02",
+     "title": f"The {RESIDENCE_THRESHOLD} day rule, explained for digital nomads",
+     "seo_title": f"The {RESIDENCE_THRESHOLD} day rule explained for digital nomads | Nomad Life",
+     "description": (f"What the {RESIDENCE_THRESHOLD} day rule really says about tax residency, "
+                     "why staying under it "
+                     "everywhere does not make you tax free, and how to keep a record that holds "
+                     "up.")},
+    {"slug": "count-days-in-a-country", "updated": "2026-10-02",
+     "title": "How to count the days you spend in each country",
+     "seo_title": "How to count your days in each country | Nomad Life",
+     "description": ("Arrival and departure days, overlapping stays, short trips and leap years: "
+                     "how to count your days per country correctly, and how to rebuild a past "
+                     "year.")},
+    {"slug": "proof-of-residence-documents", "updated": "2026-10-02",
+     "title": "Which documents prove where you lived",
+     "seo_title": "Proof of residence documents for digital nomads | Nomad Life",
+     "description": ("The rental contracts, bills, tickets and statements that show where you "
+                     "spent your year, which ones carry the most weight, and how long to keep "
+                     "them.")},
+]
+GUIDES_BY_SLUG = {g["slug"]: g for g in GUIDES}
+GUIDES_TITLE = "Guides for digital nomads | Nomad Life"
+GUIDES_DESCRIPTION = (f"Plain guides on the {RESIDENCE_THRESHOLD} day rule, counting your days per "
+                      "country and the "
+                      "documents that prove where you lived.")
 DOCS_TITLE = "Documentation | Nomad Life"
 DOCS_DESCRIPTION = ("How to use Nomad Life: set up a year and your base, log your stays, see how "
                     "days are counted toward the 183 day line, keep receipts and download the "
@@ -2056,6 +2085,7 @@ def site_meta():
     }
     return {"title": SITE_TITLE, "description": SITE_DESCRIPTION, "share_text": SHARE_TEXT,
             "docs_title": DOCS_TITLE, "docs_description": DOCS_DESCRIPTION, "docs_data": docs_data,
+            "guides_title": GUIDES_TITLE, "guides_description": GUIDES_DESCRIPTION,
             "seo_title": SEO_TITLE, "seo_description": SEO_DESCRIPTION, "base": base,
             "url": url, "image": image, "share_links": links, "structured_data": structured_data}
 
@@ -3368,7 +3398,56 @@ def register_routes(app):
 
     @app.route("/")
     def landing():
-        return render_template("landing.html", plans=plan_catalog())
+        return render_template("landing.html", plans=plan_catalog(), guides=GUIDES)
+
+    def guide_page_data(page_url, guide=None):
+        """JSON-LD of /guides (a collection) or of one guide (an article), with a breadcrumb
+        and the Organization of every public page."""
+        meta = site_meta()
+        home = meta["url"]
+        org = meta["structured_data"]["@graph"][0]
+        index_url = meta["base"] + url_for("guides")
+        crumbs = [{"@type": "ListItem", "position": 1, "name": "Nomad Life", "item": home},
+                  {"@type": "ListItem", "position": 2, "name": "Guides", "item": index_url}]
+        if guide:
+            crumbs.append({"@type": "ListItem", "position": 3, "name": guide["title"],
+                           "item": page_url})
+            page = {"@type": "Article", "@id": page_url + "#article", "url": page_url,
+                    "headline": guide["title"], "description": guide["description"],
+                    "datePublished": guide["updated"], "dateModified": guide["updated"],
+                    "inLanguage": "en", "image": meta["image"],
+                    "author": {"@type": "Person", "name": "Paolo Diomede",
+                               "url": "https://x.com/pdiomede"},
+                    "publisher": {"@id": home + "#organization"},
+                    "mainEntityOfPage": page_url, "breadcrumb": {"@id": page_url + "#breadcrumb"}}
+        else:
+            page = {"@type": "CollectionPage", "@id": page_url + "#page", "url": page_url,
+                    "name": "Guides for digital nomads", "description": GUIDES_DESCRIPTION,
+                    "inLanguage": "en", "publisher": {"@id": home + "#organization"},
+                    "breadcrumb": {"@id": page_url + "#breadcrumb"},
+                    "hasPart": [{"@type": "Article", "headline": g["title"],
+                                 "url": meta["base"] + url_for("guide", slug=g["slug"])}
+                                for g in GUIDES]}
+        return {"@context": "https://schema.org",
+                "@graph": [org, page, {"@type": "BreadcrumbList", "@id": page_url + "#breadcrumb",
+                                       "itemListElement": crumbs}]}
+
+    @app.route("/guides")
+    def guides():
+        """Public guides on day counting and tax residency, indexable like /docs."""
+        page_url = app.config["APP_BASE_URL"].rstrip("/") + url_for("guides")
+        return render_template("guides/index.html", guides=GUIDES, page_url=page_url,
+                               page_data=guide_page_data(page_url), threshold=RESIDENCE_THRESHOLD)
+
+    @app.route("/guides/<slug>")
+    def guide(slug):
+        found = GUIDES_BY_SLUG.get(slug)
+        if not found:
+            abort(404)
+        page_url = app.config["APP_BASE_URL"].rstrip("/") + url_for("guide", slug=slug)
+        return render_template(f"guides/{slug}.html", guide=found, guides=GUIDES,
+                               page_url=page_url, page_data=guide_page_data(page_url, found),
+                               threshold=RESIDENCE_THRESHOLD)
 
     docs_shots_file = os.path.join(app.static_folder, "img", "docs", "shots.json")
     try:
@@ -3420,7 +3499,7 @@ def register_routes(app):
     @app.route("/sitemap.xml")
     def sitemap_xml():
         base = app.config["APP_BASE_URL"].rstrip("/")
-        # The two public pages: the landing page and the documentation.
+        # The public pages: the landing page, the documentation and the guides.
         urls = []
         for endpoint, template, priority in (("landing", "landing.html", "1.0"),
                                              ("docs", "docs.html", "0.8")):
@@ -3429,6 +3508,15 @@ def register_routes(app):
             urls.append(f"  <url><loc>{escape(base + url_for(endpoint))}</loc>"
                         f"<lastmod>{lastmod}</lastmod><changefreq>monthly</changefreq>"
                         f"<priority>{priority}</priority></url>\n")
+        # The guides: their index (as new as the newest guide) and each one.
+        newest = max(g["updated"] for g in GUIDES)
+        urls.append(f"  <url><loc>{escape(base + url_for('guides'))}</loc>"
+                    f"<lastmod>{newest}</lastmod><changefreq>monthly</changefreq>"
+                    f"<priority>0.7</priority></url>\n")
+        for g in GUIDES:
+            urls.append(f"  <url><loc>{escape(base + url_for('guide', slug=g['slug']))}</loc>"
+                        f"<lastmod>{g['updated']}</lastmod><changefreq>monthly</changefreq>"
+                        f"<priority>0.7</priority></url>\n")
         xml = ('<?xml version="1.0" encoding="UTF-8"?>\n'
                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
                + "".join(urls) + "</urlset>\n")

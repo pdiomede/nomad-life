@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ site.guides_title }}{% endblock %}
+{% block description %}{{ site.guides_description }}{% endblock %}
+{% block og_title %}{{ site.guides_title }}{% endblock %}
+{% block og_description %}{{ site.guides_description }}{% endblock %}
+{% block robots %}index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1{% endblock %}
+{% block og_url %}{{ page_url }}{% endblock %}
+{% block head_extra %}
+  <link rel="canonical" href="{{ page_url }}">
+  <script type="application/ld+json">{{ page_data | tojson }}</script>
+{% endblock %}
+{% block content %}
+<div class="guide">
+  <nav class="guide-crumbs small" aria-label="Breadcrumb">
+    <a href="{{ url_for('landing') }}">Nomad Life</a> <span aria-hidden="true">&rsaquo;</span>
+    <span aria-current="page">Guides</span>
+  </nav>
+  <header class="guide-head">
+    <p class="eyebrow">Guides</p>
+    <h1>Guides for digital nomads</h1>
+    <p class="guide-lead muted">{{ site.guides_description }}</p>
+  </header>
+  <ul class="guide-list">
+    {% for g in guides %}
+    <li class="card guide-item">
+      <h2><a href="{{ url_for('guide', slug=g.slug) }}">{{ g.title }}</a></h2>
+      <p class="muted">{{ g.description }}</p>
+      <p class="small muted">Updated <time datetime="{{ g.updated }}">{{ g.updated }}</time></p>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="muted small">Looking for how the app works? See the <a href="{{ url_for('docs') }}">documentation</a>.</p>
+</div>
+{% endblock %}
