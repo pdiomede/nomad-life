@@ -215,6 +215,41 @@ Once HTTPS works, add HSTS inside the `server { listen 443 ... }` block that cer
 add_header Strict-Transport-Security "max-age=31536000" always;
 ```
 
+### Optional: Cloudflare in front
+
+Cloudflare's free plan can serve the domain's DNS and, with its proxy on (the orange cloud), sit between visitors and the server. The app needs nothing new, but nginx must pass on the visitor's real address, or every sign up IP, sign in limit and ipinfo.io link would show Cloudflare's.
+
+1. **Add the domain.** At https://dash.cloudflare.com choose **Add a domain** and the **Free** plan. Before continuing, check that the imported records match the registrar's: the `A` (and `AAAA`) records of the domain and `www`, and every `MX` and `TXT` record, or mail to the domain stops.
+2. **Switch the nameservers** at the registrar to the two Cloudflare gives (turn DNSSEC off there first, and on again in Cloudflare later). Wait for Cloudflare's "site is active" email.
+3. **SSL/TLS → Overview: Full (strict).** The server has its own Let's Encrypt certificate (above). "Flexible" talks to the server over plain HTTP, which certbot's redirect answers with HTTPS again: an endless redirect loop. Renewals keep working through the proxy.
+4. **Turn off what rewrites pages:** Speed → **Rocket Loader** off, and Scrape Shield → **Email Address Obfuscation** off. Both inject scripts the app's Content-Security-Policy refuses, and the obfuscation also changes the contact addresses on the pages.
+5. **Real visitor addresses.** With the proxy off (grey cloud, DNS only) skip this: nothing changes. With it on, let nginx take the address from Cloudflare's `CF-Connecting-IP` header, but only from Cloudflare's own ranges (so nobody reaching the server directly can fake it). A small script writes the ranges, which Cloudflare publishes and changes now and then:
+
+   ```bash
+   sudo tee /usr/local/sbin/cloudflare-real-ip >/dev/null <<'EOF'
+   #!/bin/sh
+   # Cloudflare's address ranges for nginx's real IP module; run weekly by cron.
+   set -e
+   out=/etc/nginx/conf.d/cloudflare-real-ip.conf
+   tmp=$(mktemp)
+   for list in ips-v4 ips-v6; do
+       curl -fsS "https://www.cloudflare.com/$list" | sed '/^$/d; s/.*/set_real_ip_from &;/' >> "$tmp"
+   done
+   grep -q set_real_ip_from "$tmp"            # never install an empty list
+   echo "real_ip_header CF-Connecting-IP;" >> "$tmp"
+   install -m 644 "$tmp" "$out" && rm -f "$tmp"
+   nginx -t -q && systemctl reload nginx
+   EOF
+   sudo chmod 755 /usr/local/sbin/cloudflare-real-ip
+   sudo /usr/local/sbin/cloudflare-real-ip
+   echo '17 4 * * 1 root /usr/local/sbin/cloudflare-real-ip' | sudo tee /etc/cron.d/cloudflare-real-ip
+   ```
+
+   nginx then uses the visitor's address as `$remote_addr`, and the `X-Forwarded-For` line of the server block passes it on as the last entry, which is the one the app reads: keep `PROXY_COUNT=1` in `config.env`. Check it by signing in from your phone on mobile data: on `/admin` your **Last sign in IP** must be the phone's address (its ipinfo.io page names your mobile carrier), not a Cloudflare one.
+6. **Limits to know:** on the free plan Cloudflare gives up on a request after 100 seconds (error 524) and refuses uploads over 100 MB. Receipts stay far below that; only a very large accountant package on a slow server could get near the time limit.
+
+hCaptcha and the app's Gmail sending are not affected: the hCaptcha site keeps the same domain, and mail leaves the server directly.
+
 ## 9. Firewall
 
 ```bash
