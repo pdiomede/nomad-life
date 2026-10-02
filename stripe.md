@@ -203,7 +203,12 @@ When the account is activated (step 1) and the test run works:
 4. Add the **live webhook endpoint** (step 8) and copy its new signing secret.
 5. Create the **live key** (step 9: `sk_live_...` or a restricted `rk_live_...`).
 6. Put the four live values in `config.env` on the server and restart.
-7. Make one real purchase with your own card, check that the plan changes, then refund it (step 12).
+7. Forget what the test purchases left in the database (the live webhook never updates them: a test purchase would keep its plan and block a real checkout). From `/var/www/nomad-life`, the command asks the live account about each stored subscription and customer and only forgets those it does not know. Look first with `--dry-run`, then run it without:
+
+    ```bash
+    .venv/bin/flask --app app forget-test-billing --dry-run
+    ```
+8. Make one real purchase with your own card, check that the plan changes, then refund it (step 12).
 
 ## 12. Day to day
 

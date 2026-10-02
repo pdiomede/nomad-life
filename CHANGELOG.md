@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.5] - 2026-10-02
+
+### Fixed
+
+From a review of the whole Stripe payment flow (6 bugs found):
+
+- **Medium.** A plan cancelled in Stripe's customer portal still showed "Renews on ..." on the plan page and "renews" on the admin page. New subscriptions use Stripe's flexible billing, where the portal sets the end day (`cancel_at`) and leaves `cancel_at_period_end` off, which was the only thing read. Both are read now, and the page shows "Cancelled: ends on" with the day the plan ends.
+- **Medium.** A Stripe customer that Stripe no longer knows broke checkout and Manage billing for that account for good: one made while testing with the test keys, once the live keys are in, or one deleted in Stripe's dashboard. When Stripe answers "No such customer", the app now forgets it; checkout makes a new customer and opens the payment page.
+- **Medium.** Test purchases stayed in the database after the switch to the live keys, since the live webhook never updates them: the account kept the plan it had bought in test mode, and could neither buy a real plan nor be deleted. The new command `flask --app app forget-test-billing` (live keys only, `--dry-run` to look first) asks the live account about each stored subscription and customer and forgets only those it does not know; a plan an admin gave stays. `stripe.md` adds it to the go-live steps.
+- **Low.** After an email change (or its undo), Stripe kept the old address, so receipts, invoices, renewal reminders and failed payment emails from Stripe went there. The Stripe customer now gets the new address.
+- **Low.** Back from checkout, when Stripe's webhook had arrived first (it often does), the plan page waited 30 seconds for a change that had already happened, then said the plan had not updated yet. It now says the plan is active, and the waiting page also stops as soon as the subscription is stored.
+- **Low.** Moving down from Nomad+ to Pro sent "Welcome to Nomad Life Pro ... Thank you for your support". It now says the plan is now Pro and what happens to storage over the new limit.
+
+### Changed
+
+- The two **Upgrade** buttons on the dashboard (receipt storage and accountant package) are teal, the color of the map pins, in light and dark themes.
+
 ## [1.12.4] - 2026-10-02
 
 ### Fixed

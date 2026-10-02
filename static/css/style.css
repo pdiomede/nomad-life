@@ -225,6 +225,9 @@ p { margin: 0; }
 .btn-ghost:hover { background: var(--surface-2); }
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-danger:hover { filter: brightness(0.88); }  /* darken, never fade: white text keeps its contrast */
+/* Upgrade buttons wear the map's pin color, so the paid plans read as one accent. */
+.btn-upgrade { background: var(--map-pin); color: var(--map-pin-text); border-color: var(--map-pin); }
+.btn-upgrade:hover { filter: brightness(0.9); }
 .btn-danger-ghost { background: transparent; color: var(--error-text); border-color: transparent; }
 .btn-danger-ghost:hover { background: var(--error-bg); }
 /* On the tinted row of the current stay the two tints would add up and dim the red text. */

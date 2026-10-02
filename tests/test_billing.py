@@ -238,7 +238,7 @@ class CheckoutTests(BillingCase):
         html = self.client.get("/plan?paid=1").get_data(as_text=True)
         self.assertIn("data-billing-wait", html)
         self.assertIn("js/billing.js", html)
-        self.assertEqual(self.client.get("/billing/status").get_json(), {"plan": "free"})
+        self.assertEqual(self.client.get("/billing/status").get_json(), {"plan": "free", "paying": False})
 
     def test_status_needs_sign_in(self):
         self.assertEqual(self.app.test_client().get("/billing/status").status_code, 302)

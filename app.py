@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.4"
+APP_VERSION = "1.12.5"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -896,6 +896,70 @@ def create_app(overrides=None):
                                    "below and contact the person who runs the server."))
         click.echo(f"Two-factor sign in removed from {email}. They can sign in with the "
                    "password alone and turn it on again on the Settings page.")
+
+    @app.cli.command("forget-test-billing")
+    @click.option("--dry-run", is_flag=True, help="Only show the report, change nothing.")
+    def forget_test_billing(dry_run):
+        """After switching to live Stripe keys: forget the subscriptions and customers made in
+        test mode, which the live webhook never updates (a test purchase would keep its plan,
+        block a real checkout and the account's deletion). Asks Stripe about each one with the
+        live key: only what Stripe answers "No such ..." for is forgotten."""
+        if not billing_on() or "_live_" not in app.config["STRIPE_SECRET_KEY"]:
+            raise click.ClickException("Put the live Stripe keys in config.env first: this "
+                                       "asks the live account which ids it does not know.")
+        with app.test_request_context(environ_base={"REMOTE_ADDR": "command line"}):
+            def unknown(kind, object_id):
+                if stripe_api("GET", f"{kind}s/{object_id}") is not None:
+                    return False
+                if f"no such {kind}" in g.get("stripe_error", "").lower():
+                    return True
+                raise click.ClickException(f"Stripe did not answer about {object_id}; nothing "
+                                           "was changed. Try again later.")
+            subs = [r for r in db.query("SELECT * FROM subscriptions ORDER BY id")
+                    if unknown("subscription", r["subscription_id"])]
+            customers = [r for r in db.query("SELECT id, email, stripe_customer_id FROM users "
+                                             "WHERE stripe_customer_id IS NOT NULL ORDER BY id")
+                         if unknown("customer", r["stripe_customer_id"])]
+            if not subs and not customers:
+                click.echo("Nothing from test mode: every stored subscription and customer "
+                           "exists in the live account.")
+                return
+            for r in subs:
+                click.echo(f"Subscription {r['subscription_id']} ({r['plan']}, {r['status']}), "
+                           f"account {r['user_id'] or 'deleted'}")
+            for r in customers:
+                click.echo(f"Customer {r['stripe_customer_id']} of {r['email']}")
+            if dry_run:
+                click.echo("Dry run: nothing changed.")
+                return
+            if not click.confirm(f"Forget these {len(subs)} subscriptions and {len(customers)} "
+                                 "customers?"):
+                click.echo("Nothing changed.")
+                return
+            changed = []
+            with db.transaction() as conn:
+                for r in subs:
+                    conn.execute("DELETE FROM subscriptions WHERE id = ? AND subscription_id = ?",
+                                 (r["id"], r["subscription_id"]))
+                for r in customers:
+                    conn.execute("UPDATE users SET stripe_customer_id = NULL WHERE id = ? AND "
+                                 "stripe_customer_id = ?", (r["id"], r["stripe_customer_id"]))
+                # Accounts whose plan a test subscription paid for: what is left pays, or Free
+                # (a plan an admin gave, which no test subscription paid for, stays).
+                for uid in {r["user_id"] for r in subs if r["user_id"]}:
+                    user = conn.execute("SELECT email, plan FROM users WHERE id = ?",
+                                        (uid,)).fetchone()
+                    test_paid = {r["plan"] for r in subs
+                                 if r["user_id"] == uid and r["status"] in PAID_STATUSES}
+                    after = paid_plan(conn, uid)
+                    if user and user["plan"] in test_paid and after != user["plan"]:
+                        conn.execute("UPDATE users SET plan = ? WHERE id = ?", (after, uid))
+                        audit("plan_downgraded", uid, user["email"],
+                              f"{plan_named(user['plan'])['name']} to {plan_named(after)['name']}"
+                              " (test mode purchase forgotten)", "command line", conn=conn)
+                        changed.append(user["email"])
+        click.echo(f"Forgot {len(subs)} subscriptions and {len(customers)} customers."
+                   + (f" Back on a lower plan: {', '.join(changed)}." if changed else ""))
 
     @app.cli.command("check-fake-users")
     @click.option("--min-age-hours", type=click.IntRange(0, None), default=FAKE_MIN_AGE_HOURS,
@@ -2959,6 +3023,46 @@ def stripe_signature_ok(payload, header, secret, now=None):
     return any(hmac.compare_digest(expected, s) for s in signatures)
 
 
+def new_stripe_customer(row, retry=False):
+    """Make the account's Stripe customer and store it (a parallel request's wins). The
+    customer id, or None when Stripe could not be reached. retry: the stored one was gone, so
+    the idempotency key must be new (the old key would hand back the customer that is gone)."""
+    key = f"nl-customer-{row['id']}" + (f"-{uuid.uuid4().hex}" if retry else "")
+    made = stripe_api("POST", "customers", {
+        "email": row["email"], "name": full_name(row) or None,
+        "metadata": {"user_id": row["id"]}}, idempotency_key=key)
+    if not made or not isinstance(made.get("id"), str):
+        return None
+    db.execute("UPDATE users SET stripe_customer_id = ? WHERE id = ? AND "
+               "stripe_customer_id IS NULL", (made["id"], row["id"]))
+    stored = db.query("SELECT stripe_customer_id FROM users WHERE id = ?", (row["id"],), one=True)
+    return stored["stripe_customer_id"] if stored else None
+
+
+def stripe_customer_gone(user_id, customer):
+    """After a refused call: Stripe has no such customer (one made with the test keys, now
+    asked with the live ones, or deleted in the dashboard). Forgets it and returns True, so
+    the next checkout makes a new one instead of failing forever."""
+    if "no such customer" not in g.get("stripe_error", "").lower():
+        return False
+    db.execute("UPDATE users SET stripe_customer_id = NULL WHERE id = ? AND "
+               "stripe_customer_id = ?", (user_id, customer))
+    current_app.logger.warning("Stripe has no customer %s: forgotten for account %s",
+                               customer, user_id)
+    return True
+
+
+def stripe_sync_email(user_id):
+    """Give the account's Stripe customer its new email address, so Stripe's receipts,
+    invoices and renewal reminders follow an email change. Best effort: logged on failure."""
+    if not billing_on():
+        return
+    row = db.query("SELECT email, stripe_customer_id FROM users WHERE id = ?", (user_id,),
+                   one=True)
+    if row and row["stripe_customer_id"]:
+        stripe_api("POST", f"customers/{row['stripe_customer_id']}", {"email": row["email"]})
+
+
 def price_plans():
     """{Stripe price id: plan key}, from config.env."""
     cfg = current_app.config
@@ -2998,6 +3102,15 @@ def stripe_period_end(sub):
     return datetime.fromtimestamp(end, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def paid_plan(conn, user_id):
+    """The best plan any of the account's subscriptions still pays for; none: Free."""
+    marks = ", ".join("?" * len(PAID_STATUSES))
+    paid = [r["plan"] for r in conn.execute(
+        f"SELECT plan FROM subscriptions WHERE user_id = ? AND status IN ({marks})",
+        (user_id, *PAID_STATUSES)) if r["plan"] in PLANS]
+    return max(paid, key=plan_rank) if paid else "free"
+
+
 def apply_subscription(conn, sub, created):
     """Store a subscription Stripe sent (in a write transaction) and set the account's plan
     from all its subscriptions. Returns (user_id, plan before, plan after), or None when the
@@ -3035,8 +3148,14 @@ def apply_subscription(conn, sub, created):
     if plan is None:
         current_app.logger.error("Stripe subscription %s has price %s, which is neither "
                                  "STRIPE_PRICE_PRO nor STRIPE_PRICE_PLUS", sub_id, price_id)
-    values = (user_id, customer, price_id, plan or "free", status, stripe_period_end(sub),
-              1 if sub.get("cancel_at_period_end") else 0, created)
+    # Cancelled from the portal: classic billing sets cancel_at_period_end, flexible billing
+    # (the default for new subscriptions) sets only cancel_at, the day the plan ends.
+    cancel_at = sub.get("cancel_at")
+    cancelling = bool(sub.get("cancel_at_period_end")) or isinstance(cancel_at, int)
+    ends = (datetime.fromtimestamp(cancel_at, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            if isinstance(cancel_at, int) else stripe_period_end(sub))
+    values = (user_id, customer, price_id, plan or "free", status, ends,
+              1 if cancelling else 0, created)
     if row:
         conn.execute("UPDATE subscriptions SET user_id = ?, customer_id = ?, price_id = ?, "
                      "plan = ?, status = ?, current_period_end = ?, cancel_at_period_end = ?, "
@@ -3054,12 +3173,7 @@ def apply_subscription(conn, sub, created):
         return None
     conn.execute("UPDATE users SET stripe_customer_id = COALESCE(stripe_customer_id, ?) "
                  "WHERE id = ?", (customer, user_id))
-    # The best plan any of its subscriptions still pays for; none: Free.
-    marks = ", ".join("?" * len(PAID_STATUSES))
-    paid = [r["plan"] for r in conn.execute(
-        f"SELECT plan FROM subscriptions WHERE user_id = ? AND status IN ({marks})",
-        (user_id, *PAID_STATUSES)) if r["plan"] in PLANS]
-    new_plan = max(paid, key=plan_rank) if paid else "free"
+    new_plan = paid_plan(conn, user_id)
     if new_plan != user["plan"]:
         conn.execute("UPDATE users SET plan = ? WHERE id = ?", (new_plan, user_id))
     return user_id, user["plan"], new_plan
@@ -3873,19 +3987,11 @@ def register_routes(app):
             flash("You already have a plan with us. Switch or renew it with Manage billing.",
                   "info")
             return redirect(url_for("plan"))
-        customer = row["stripe_customer_id"]
+        customer = row["stripe_customer_id"] or new_stripe_customer(row)
         if not customer:
-            made = stripe_api("POST", "customers", {
-                "email": row["email"], "name": full_name(row) or None,
-                "metadata": {"user_id": row["id"]}}, idempotency_key=f"nl-customer-{row['id']}")
-            if not made or not made.get("id"):
-                flash("The payment page could not be opened. Please try again in a few "
-                      "minutes.", "error")
-                return redirect(url_for("plan"))
-            db.execute("UPDATE users SET stripe_customer_id = ? WHERE id = ? AND "
-                       "stripe_customer_id IS NULL", (made["id"], row["id"]))
-            customer = db.query("SELECT stripe_customer_id FROM users WHERE id = ?",
-                                (row["id"],), one=True)["stripe_customer_id"]
+            flash("The payment page could not be opened. Please try again in a few minutes.",
+                  "error")
+            return redirect(url_for("plan"))
         base = site_base()
         price = {v: k for k, v in price_plans().items()}[key]
         terms, refunds_url = base + url_for("terms"), base + url_for("refunds")
@@ -3912,19 +4018,33 @@ def register_routes(app):
             "success_url": base + url_for("plan") + "?paid=1",
             "cancel_url": base + url_for("plan"),
         }
-        session_obj = stripe_api("POST", "checkout/sessions", session_args,
-                                 idempotency_key=f"nl-checkout-{row['id']}-{uuid.uuid4().hex}")
-        if session_obj is None and "terms of service" in g.get("stripe_error", "").lower():
-            # Stripe asks for the agreement only once the account's public details name a
-            # terms of service URL: until someone sets it, take the payment with the text alone.
-            current_app.logger.error("Stripe checkout without the terms checkbox: set the Terms "
-                                     "of service URL in Stripe's public details")
-            session_args.pop("consent_collection")
-            session_args["custom_text"] = {"submit": {"message": (
-                "Your plan starts at once and renews every year until you cancel. By paying you "
-                f"agree to the Terms and Refund Policy at {terms} and {refunds_url}.")}}
+        # Up to two known refusals are mended, in whichever order Stripe reports them.
+        customer_renewed = False
+        for _ in range(3):
             session_obj = stripe_api("POST", "checkout/sessions", session_args,
                                      idempotency_key=f"nl-checkout-{row['id']}-{uuid.uuid4().hex}")
+            if session_obj is not None:
+                break
+            if not customer_renewed and stripe_customer_gone(row["id"], customer):
+                # Made in test mode before the live keys, or deleted in Stripe's dashboard.
+                customer_renewed = True
+                customer = new_stripe_customer(row, retry=True)
+                if not customer:
+                    break
+                session_args["customer"] = customer
+            elif ("consent_collection" in session_args
+                  and "terms of service" in g.get("stripe_error", "").lower()):
+                # Stripe asks for the agreement only once the account's public details name a
+                # terms of service URL: until someone sets it, take the payment with the text
+                # alone.
+                current_app.logger.error("Stripe checkout without the terms checkbox: set the "
+                                         "Terms of service URL in Stripe's public details")
+                session_args.pop("consent_collection")
+                session_args["custom_text"] = {"submit": {"message": (
+                    "Your plan starts at once and renews every year until you cancel. By paying "
+                    f"you agree to the Terms and Refund Policy at {terms} and {refunds_url}.")}}
+            else:
+                break
         if not session_obj or not str(session_obj.get("url", "")).startswith("https://"):
             flash("The payment page could not be opened. Please try again in a few minutes.",
                   "error")
@@ -3936,7 +4056,8 @@ def register_routes(app):
     def billing_status():
         """The account's plan now (the plan page waits for the webhook after paying)."""
         row = db.query("SELECT plan FROM users WHERE id = ?", (current_user.id,), one=True)
-        return json_answer({"plan": row["plan"] if row else "free"})
+        return json_answer({"plan": row["plan"] if row else "free",
+                            "paying": bool(open_subscription(current_user.id))})
 
     @app.route("/billing/portal", methods=["POST"])
     @login_required
@@ -3949,6 +4070,9 @@ def register_routes(app):
             return redirect(url_for("plan"))
         portal = stripe_api("POST", "billing_portal/sessions", {
             "customer": row["stripe_customer_id"], "return_url": site_base() + url_for("plan")})
+        if portal is None and stripe_customer_gone(current_user.id, row["stripe_customer_id"]):
+            flash("There is no billing account to manage yet.", "info")
+            return redirect(url_for("plan"))
         if not portal or not str(portal.get("url", "")).startswith("https://"):
             flash("Billing could not be opened. Please try again in a few minutes.", "error")
             return redirect(url_for("plan"))
@@ -4042,6 +4166,11 @@ def register_routes(app):
                              f"Your {plan_named(before)['name']} plan has ended and your "
                              "account is on Free again. Your stays and receipts are kept; over "
                              "the Free storage, new uploads wait until you free some space.")
+        elif plan_rank(after) < plan_rank(before):  # Nomad+ to Pro: no "welcome" for less
+            subject, what = (f"Your Nomad Life plan is now {plan_named(after)['name']}",
+                             f"Your account moved from {plan_named(before)['name']} to "
+                             f"{plan_named(after)['name']}. Your stays and receipts are kept; "
+                             "over the new storage, new uploads wait until you free some space.")
         else:
             subject, what = (f"Welcome to Nomad Life {plan_named(after)['name']}",
                              f"Your account is now on {plan_named(after)['name']}. Thank you "
@@ -4777,6 +4906,7 @@ def register_routes(app):
             flash("Another account started using this email address in the meantime.", "error")
             return redirect(url_for("settings") if current_user.is_authenticated else url_for("login"))
         audit("email_changed", row["id"], new, f"{row['email']} to {new}")
+        stripe_sync_email(row["id"])
         # The old mailbox hears about it too: if the account was taken over, that is where the
         # owner still reads.
         # This address has no account any more, so a password reset link would not work here:
@@ -4868,6 +4998,7 @@ def register_routes(app):
         if current_user.is_authenticated and current_user.id == row["id"]:
             sign_out()
         audit("email_reverted", row["id"], data["old"], f"{current['email']} to {data['old']}")
+        stripe_sync_email(row["id"])
         fresh = db.query("SELECT * FROM users WHERE id = ?", (row["id"],), one=True)
         # Without the name, as the security alerts: whoever changed the address may have set
         # it ("Hi Ignore this email,") in the email the owner takes the account back with.

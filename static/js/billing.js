@@ -1,6 +1,6 @@
 // After paying on Stripe's checkout the plan page opens with ?paid=1. The plan changes when
 // Stripe's webhook reaches the server, usually within seconds: ask for it every 2 seconds for
-// up to 30, and reload (without ?paid=1) once it changed.
+// up to 30, and reload (without ?paid=1) once it changed or the subscription is stored.
 (function () {
   var box = document.querySelector("[data-billing-wait]");
   if (!box || !window.fetch) return;
@@ -11,7 +11,7 @@
     fetch(url, { credentials: "same-origin", headers: { "Accept": "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (data.plan && data.plan !== before) {
+        if ((data.plan && data.plan !== before) || data.paying) {
           window.location.replace(window.location.pathname);
         } else if (Date.now() - started < 30000) {
           setTimeout(tick, 2000);

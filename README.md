@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.4**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.5**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -167,6 +167,12 @@ Paid plans are yearly only, in US dollars before VAT or sales tax, sold by Nemax
 - business customers can enter their VAT number.
 
 Stripe's signed webhook (`/billing/webhook`) then sets the plan; it is the only thing that does. **Manage billing** opens Stripe's customer portal (cancel, switch between Pro and Nomad+, card, invoices). Renewals, failed payments and cancellations move the plan automatically, and an account that still pays cannot be deleted until its plan is cancelled. Setting up the Stripe account is described step by step in [stripe.md](stripe.md). Without the settings, the button says "Online payment is coming soon".
+
+After testing with Stripe's test keys and switching `config.env` to the live ones, forget what the test purchases left behind (the live webhook never updates them, so a test purchase would keep its plan). The command asks the live account about each stored subscription and customer and only forgets the ones it does not know; `--dry-run` only lists them:
+
+```bash
+.venv/bin/flask --app app forget-test-billing
+```
 
 An admin can still give an account a plan with the plan selector on the [admin page](#admin-page), for example as a gift. Without an admin, change the database (`free`, `pro` or `plus`):
 

@@ -207,7 +207,7 @@
         {% elif storage.low %}
           <span class="pill pill-warn">Almost full</span>
         {% endif %}
-        <a class="btn btn-ghost btn-sm" href="{{ url_for('plan') }}">{{ 'Upgrade' if next_plan_name else 'Your plan' }}</a>
+        <a class="btn {{ 'btn-upgrade' if next_plan_name else 'btn-ghost' }} btn-sm" href="{{ url_for('plan') }}">{{ 'Upgrade' if next_plan_name else 'Your plan' }}</a>
       </div>
     </div>
     <p class="stat-value">{{ storage.left | filesize('down') }} <span class="muted stat-of">left</span></p>
@@ -221,7 +221,7 @@
   <section class="card package-card" aria-labelledby="package-title">
     <div class="card-head">
       <h2 id="package-title">Accountant package</h2>
-      {% if not current_plan.package %}<a class="btn btn-ghost btn-sm" href="{{ url_for('plan') }}" aria-label="Upgrade to Pro for the accountant package">Upgrade</a>{% endif %}
+      {% if not current_plan.package %}<a class="btn btn-upgrade btn-sm" href="{{ url_for('plan') }}" aria-label="Upgrade to Pro for the accountant package">Upgrade</a>{% endif %}
     </div>
     <p class="muted small">One ZIP for {{ y.year }}: a PDF summary, your timeline and country totals as spreadsheets, and every receipt, ready to share with your accountant.</p>
     {% if current_plan.package %}

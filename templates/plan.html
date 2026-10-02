@@ -10,7 +10,10 @@
   </div>
 </div>
 
-{% if paid %}
+{% if paid and paying %}
+{# Stripe's webhook was quicker than the way back from checkout: nothing to wait for. #}
+<p class="card billing-wait" role="status">Payment received. Thank you, your plan is active.</p>
+{% elif paid %}
 {# After Stripe's checkout: the plan changes when Stripe's webhook arrives; billing.js waits for it. #}
 <p class="card billing-wait" role="status" data-billing-wait data-status-url="{{ url_for('billing_status') }}" data-plan="{{ plan.key }}">Payment received. Your plan updates in a few seconds.</p>
 {% endif %}
@@ -53,5 +56,5 @@
   {% endif %}
 </div>
 <p class="muted small">Prices in US dollars, paid yearly, before VAT or sales tax. Plans are sold by {{ company.name }}, {{ company.city }}, {{ company.country }} (VAT {{ company.vat }}). <a href="{{ url_for('terms') }}">Terms</a> &middot; <a href="{{ url_for('privacy') }}">Privacy</a> &middot; <a href="{{ url_for('refunds') }}">Refunds</a></p>
-{% if paid %}<script src="{{ url_for('static', filename='js/billing.js', v=asset_version) }}" defer></script>{% endif %}
+{% if paid and not paying %}<script src="{{ url_for('static', filename='js/billing.js', v=asset_version) }}" defer></script>{% endif %}
 {% endblock %}
