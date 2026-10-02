@@ -70,7 +70,7 @@ class VerifyButtonTests(AppTestCase):
         strict = appmod.create_app({
             "TESTING": True, "DATABASE_PATH": os.path.join(tmp, "t.db"),
             "UPLOAD_DIR": os.path.join(tmp, "u"), "GMAIL_USER": "", "GMAIL_APP_PASSWORD": "",
-            "PWNED_CHECK": False})  # CSRF on, as in production
+            "PWNED_CHECK": False, "HCAPTCHA_SITEKEY": "", "HCAPTCHA_SECRET": ""})  # CSRF on, as in production
         client = strict.test_client()
         page = client.get("/signup").get_data(as_text=True)
         token = page.split('name="csrf_token" value="', 1)[1].split('"', 1)[0]

@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.8.1] - 2026-10-02
+
+### Fixed
+
+Found in a review of the hCaptcha and honeypot protection (1.6.0, 1.7.0). The IP location links of 1.8.0 were reviewed too, with nothing to fix.
+
+- **Medium.** When hCaptcha answered a check with an HTTP error such as 429 (too many checks), the form went through as if hCaptcha could not be reached. A bot posting made up answers can cause exactly that, and then every form passed. Only an hCaptcha that cannot be reached, or that has an outage (5xx), lets forms through now; any other answer fails the check.
+- **Medium.** The honeypot field was called "website", a field that password managers such as 1Password fill from a saved identity. A person whose password manager filled it got "We sent an email" and nothing else. It now has a name no password manager fills, carries their "ignore this field" attributes, and its hidden label says to leave it empty.
+- **Low.** A double click on **Create account** or **Send reset link** sent the form twice with one hCaptcha answer, which only works once: the email went out, but the page showed "Please complete the check". Both forms now ignore a second submit.
+- **Low.** Refused checks, honeypot hits and dotted Gmail sign ups were logged below the level the app writes, so nothing about them reached the server log. Wrong hCaptcha keys refused every sign up without a trace. They are now warnings, and the refusals that mean the keys in `config.env` are wrong are errors that name the two settings.
+- **Low.** Forgot password emptied the email field after a failed check. It keeps the address now, as Sign up does.
+- **Low.** Switching between light and dark left the hCaptcha box in the old theme. It is drawn again in the new one, unless the check is already done (drawing it again would undo it).
+- **Low.** Two tests that build their own app sign up, and failed once `config.env` held hCaptcha keys. They turn the captcha off, like the shared test setup.
+
 ## [1.8.0] - 2026-10-02
 
 ### Added

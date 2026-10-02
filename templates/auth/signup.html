@@ -4,7 +4,7 @@
 {% block heading %}Create your workspace{% endblock %}
 {% block sub %}Track where you live each year and keep your receipts safe.{% endblock %}
 {% block form %}
-<form method="post" class="stack">
+<form method="post" class="stack" data-submit-once>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="field">
     <label for="email">Email</label>

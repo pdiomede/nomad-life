@@ -4,11 +4,11 @@
 {% block heading %}Reset your password{% endblock %}
 {% block sub %}Enter your email and we will send you a reset link.{% endblock %}
 {% block form %}
-<form method="post" class="stack">
+<form method="post" class="stack" data-submit-once>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="field">
     <label for="email">Email</label>
-    <input id="email" name="email" type="email" autocomplete="email" required autofocus>
+    <input id="email" name="email" type="email" autocomplete="email" value="{{ request.form.email }}" required autofocus>
   </div>
   {{ ui.honeypot() }}
   {{ ui.captcha() }}

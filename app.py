@@ -15,6 +15,7 @@ import struct
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 from urllib.parse import quote, urlencode
 import uuid
@@ -44,7 +45,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.8.1"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -203,8 +204,12 @@ PWNED_TIMEOUT_SECONDS = 3
 # hCaptcha on Sign up and Forgot password (off while config.env has no keys).
 HCAPTCHA_VERIFY_URL = "https://api.hcaptcha.com/siteverify"
 HCAPTCHA_TIMEOUT_SECONDS = 5
-# The visible "Website" field no person sees (off screen): only bots fill it in.
-HONEYPOT_FIELD = "website"
+# The off screen field no person sees: only bots fill it in. Not called "website" or the like,
+# which password managers fill from a saved identity (the person would get no email).
+HONEYPOT_FIELD = "hp_check"
+# hCaptcha refusals that mean config.env is wrong, not that a bot answered: every form fails.
+HCAPTCHA_CONFIG_ERRORS = frozenset({"missing-input-secret", "invalid-input-secret",
+                                    "sitekey-secret-mismatch", "not-using-dummy-passcode"})
 # Gmail ignores dots, so bots sign up as t.o.n.yluu.5.5.95@gmail.com: one mailbox, endless
 # "new" addresses. People rarely use more than two (first.middle.last).
 GMAIL_DOMAINS = ("gmail.com", "googlemail.com")
@@ -1249,12 +1254,24 @@ def hcaptcha_verify(token):
     try:
         with urllib.request.urlopen(req, timeout=HCAPTCHA_TIMEOUT_SECONDS) as resp:
             answer = json.loads(resp.read(64 * 1024).decode("utf-8", "replace"))
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        # hCaptcha answered, so it is not out of reach: a refusal such as 429 (too many checks,
+        # which a bot posting made up answers can cause) must not let every form through.
+        current_app.logger.warning("hCaptcha check failed with HTTP %s", exc.code)
+        return None if exc.code >= 500 else False
     except Exception as exc:  # noqa: BLE001 - offline, slow or changed service
         current_app.logger.warning("hCaptcha check skipped: %s", exc)
         return None
-    if not answer.get("success"):
-        current_app.logger.info("hCaptcha refused a form: %s", answer.get("error-codes"))
-    return answer.get("success") is True
+    if answer.get("success") is True:
+        return True
+    codes = answer.get("error-codes") or []
+    if HCAPTCHA_CONFIG_ERRORS.intersection(codes):
+        current_app.logger.error("hCaptcha refuses every form: check HCAPTCHA_SITEKEY and "
+                                 "HCAPTCHA_SECRET in config.env (%s)", ", ".join(codes))
+    else:
+        current_app.logger.warning("hCaptcha refused a form: %s", ", ".join(codes) or "no reason")
+    return False
 
 
 def captcha_passed():
@@ -2706,7 +2723,7 @@ def register_routes(app):
                     f"{VERIFY_MINUTES} minutes to continue.")
             if honeypot_filled():
                 # A bot: the usual answer, so it learns nothing, but no account and no email.
-                current_app.logger.info("Sign up refused by the honeypot from %s", client_ip())
+                current_app.logger.warning("Sign up refused by the honeypot from %s", client_ip())
                 flash(sent, "info")
                 return redirect(url_for("login"))
             if not valid_email(email):
@@ -2719,8 +2736,8 @@ def register_routes(app):
                 return captcha_page("auth/signup.html", 400)
             elif dotted_gmail(email):
                 # A bot's dot trick address: the usual answer, but no account and no email.
-                current_app.logger.info("Sign up refused for a dotted Gmail address from %s",
-                                        client_ip())
+                current_app.logger.warning("Sign up refused for a dotted Gmail address from %s",
+                                           client_ip())
                 flash(sent, "info")
                 return redirect(url_for("login"))
             else:
@@ -2987,8 +3004,8 @@ def register_routes(app):
             email = request.form.get("email", "").strip().lower()
             answer = "If that email is registered, a reset link is on its way."
             if honeypot_filled():
-                current_app.logger.info("Reset request refused by the honeypot from %s",
-                                        client_ip())
+                current_app.logger.warning("Reset request refused by the honeypot from %s",
+                                           client_ip())
                 flash(answer, "info")
                 return redirect(url_for("login"))
             if not captcha_passed():

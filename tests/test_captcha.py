@@ -20,12 +20,12 @@ class CaptchaOffTests(AppTestCase):
         self.assertNotIn(b"h-captcha", resp.data)
         self.assertNotIn("hcaptcha", resp.headers["Content-Security-Policy"])
         # The honeypot is there even without the captcha.
-        self.assertIn(b'name="website"', resp.data)
+        self.assertIn(f'name="{appmod.HONEYPOT_FIELD}"'.encode(), resp.data)
         self.client.post("/signup", data=FORM)
         self.assertEqual(len(self.outbox), 1)
 
     def test_honeypot_on_signup(self):
-        resp = self.client.post("/signup", data={**FORM, "website": "http://spam.example"},
+        resp = self.client.post("/signup", data={**FORM, appmod.HONEYPOT_FIELD: "http://spam.example"},
                                 follow_redirects=True)
         self.assertIn(b"We sent an email to bot@example.com", resp.data)
         self.assertEqual(self.outbox, [])
@@ -39,7 +39,7 @@ class CaptchaOffTests(AppTestCase):
         self.age_emails()
         self.outbox.clear()
         resp = self.app.test_client().post("/forgot", data={"email": "a@example.com",
-                                                             "website": "x"},
+                                                             appmod.HONEYPOT_FIELD: "x"},
                                            follow_redirects=True)
         self.assertIn(b"a reset link is on its way", resp.data)
         self.assertEqual(self.outbox, [])
