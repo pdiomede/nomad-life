@@ -45,7 +45,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.10.0"
+APP_VERSION = "1.10.1"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -208,8 +208,10 @@ HCAPTCHA_TIMEOUT_SECONDS = 5
 # which password managers fill from a saved identity (the person would get no email).
 HONEYPOT_FIELD = "hp_check"
 # hCaptcha refusals that mean config.env is wrong, not that a bot answered: every form fails.
+# (not-using-dummy-secret: the test site key with a real secret.)
 HCAPTCHA_CONFIG_ERRORS = frozenset({"missing-input-secret", "invalid-input-secret",
-                                    "sitekey-secret-mismatch", "not-using-dummy-passcode"})
+                                    "sitekey-secret-mismatch", "not-using-dummy-passcode",
+                                    "not-using-dummy-secret"})
 # Gmail ignores dots, so bots sign up as t.o.n.yluu.5.5.95@gmail.com: one mailbox, endless
 # "new" addresses. People rarely use more than two (first.middle.last).
 GMAIL_DOMAINS = ("gmail.com", "googlemail.com")
@@ -1247,8 +1249,13 @@ def captcha_on():
 def hcaptcha_verify(token):
     """True or False as hCaptcha answers for this token, None when it cannot be reached."""
     cfg = current_app.config
-    data = urlencode({"secret": cfg["HCAPTCHA_SECRET"], "response": token,
-                      "remoteip": client_ip(), "sitekey": cfg["HCAPTCHA_SITEKEY"]}).encode()
+    params = {"secret": cfg["HCAPTCHA_SECRET"], "response": token,
+              "sitekey": cfg["HCAPTCHA_SITEKEY"]}
+    try:
+        params["remoteip"] = str(ipaddress.ip_address(client_ip()))
+    except ValueError:
+        pass  # "unknown": hCaptcha refuses even a right answer (invalid-remoteip)
+    data = urlencode(params).encode()
     req = urllib.request.Request(HCAPTCHA_VERIFY_URL, data=data,
                                  headers={"User-Agent": "Nomad-Life"})
     try:

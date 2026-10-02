@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.10.1] - 2026-10-02
+
+### Fixed
+
+Found in a second review of the hCaptcha protection (1.6.0 to 1.8.1) and the IP location links (1.8.0 to 1.10.0), checked against hCaptcha's live verify service.
+
+- **Medium.** When the app does not know the visitor's address (such as gunicorn listening on a Unix socket), it sent hCaptcha `remoteip=unknown`. hCaptcha then refuses even a right answer (`invalid-remoteip`), so nobody could sign up or reset a password. The address is now sent only when it is one.
+- **Low.** The test site key left in `config.env` with a real secret refused every form, but was logged as an ordinary refusal, not as the error that names the two settings: hCaptcha answers `not-using-dummy-secret`, a code the list of key mistakes lacked.
+- **Low.** When hCaptcha's script could not load (offline, a firewall or a content blocker), Sign up and Forgot password showed an empty space, then "Please complete the check" for a check that was never there. The box now says the check could not load and what to try.
+- **Low.** Copying an IP address from the admin tables or the account page also copied the hidden screen reader text: "8.8.8.8 (location on ipinfo.io, opens in a new tab)", which then found nothing in the admin search. Screen readers now get that text from the link's label, so a copy gives only the address.
+
 ## [1.10.0] - 2026-10-02
 
 ### Added

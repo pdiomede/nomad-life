@@ -36,5 +36,14 @@
   var script = document.createElement("script");
   script.src = "https://js.hcaptcha.com/1/api.js?render=explicit&onload=nlCaptchaReady";
   script.async = true;
+  // Blocked or offline: say so, instead of an empty box and "Please complete the check".
+  script.onerror = function () {
+    var note = document.createElement("p");
+    note.className = "captcha-failed small center";
+    note.setAttribute("role", "alert");
+    note.textContent = "The check that shows you are not a robot could not load. Check your " +
+      "connection, or allow hcaptcha.com in your content blocker, then reload this page.";
+    box.appendChild(note);
+  };
   document.head.appendChild(script);
 })();
