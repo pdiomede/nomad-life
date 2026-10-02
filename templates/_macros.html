@@ -163,10 +163,10 @@
       <tr>
         <td class="small activity-time"><span class="nowrap">{{ e.created_at[:10] }}</span> <span class="nowrap">{{ e.created_at[11:19] }}</span></td>
         <td class="activity-event">{{ e.label }}{% if e.detail %} <span class="muted small"><bdi>({{ e.detail }})</bdi></span>{% endif %}{% if e.actor %} <span class="muted small">by <bdi>{{ e.actor }}</bdi></span>{% endif %}
-          <span class="activity-sub small show-sm">{{ account }}{% if e.ip %} &middot; <span class="muted">{{ e.ip }}</span>{% endif %}</span>
+          <span class="activity-sub small show-sm">{{ account }}{% if e.ip %} &middot; <span class="muted">{{ ip_link(e.ip) }}</span>{% endif %}</span>
         </td>
         <td class="small activity-account hide-sm">{{ account }}</td>
-        <td class="small activity-ip hide-sm">{% if e.ip %}{{ e.ip }}{% else %}<span class="muted">none</span>{% endif %}</td>
+        <td class="small activity-ip hide-sm">{% if e.ip %}{{ ip_link(e.ip) }}{% else %}<span class="muted">none</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

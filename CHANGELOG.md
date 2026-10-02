@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.10.0] - 2026-10-02
+
+### Added
+
+- **IP locations in the Security activity tables.** The IP of each event in the Security activity table on `/admin`, and in the recent activity on an account's admin page, now opens the address's ipinfo.io page in a new tab, also in the line under the event on phones. Local, private and documentation addresses stay plain text.
+
 ## [1.9.0] - 2026-10-02
 
 ### Added

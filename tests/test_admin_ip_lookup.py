@@ -29,7 +29,8 @@ class IpLookupTests(AppTestCase):
         page = self.admin.get(f"/admin/users/{uid}").get_data(as_text=True)
         self.assertIn('<a href="https://ipinfo.io/8.8.8.8" target="_blank" '
                       'rel="noopener noreferrer"', page)
-        self.assertEqual(page.count('href="https://ipinfo.io/8.8.8.8"'), 2)  # sign up, sign in
+        details = page.split('id="details-title"', 1)[1].split("</dl>", 1)[0]
+        self.assertEqual(details.count('href="https://ipinfo.io/8.8.8.8"'), 2)  # sign up, sign in
         self.assertIn('href="/admin?search=8.8.8.8#accounts">Same IP</a>', page)
 
     def test_accounts_table_links_public_ip(self):
@@ -47,6 +48,27 @@ class IpLookupTests(AppTestCase):
         admin_row = admin_row[:admin_row.index("</tr>")]
         self.assertIn('127.0.0.1<br><span class="muted">at last sign in</span>', admin_row)
         self.assertNotIn("ipinfo.io", admin_row)
+
+
+    def test_activity_tables_link_public_ips(self):
+        with self.db() as conn:
+            uid = conn.execute("SELECT id FROM users WHERE email = 'admin@example.com'").fetchone()[0]
+            conn.execute("DELETE FROM audit_log")
+            conn.executemany("INSERT INTO audit_log (event, user_id, email, ip) VALUES (?, ?, ?, ?)",
+                             [("login_failed", uid, "admin@example.com", "8.8.8.8"),
+                              ("login_failed", uid, "admin@example.com", "10.0.0.5")])
+        link = '<a href="https://ipinfo.io/8.8.8.8" target="_blank" rel="noopener noreferrer"'
+        html = self.admin.get("/admin").get_data(as_text=True)
+        section = html.split('id="activity"', 1)[1]
+        # The IP column, and the line under the event on phones.
+        self.assertIn('<td class="small activity-ip hide-sm">' + link, section)
+        self.assertIn('&middot; <span class="muted">' + link, section)
+        self.assertEqual(section.count(link), 2)
+        self.assertIn('<td class="small activity-ip hide-sm">10.0.0.5</td>', section)
+        self.assertNotIn("ipinfo.io/10.0.0.5", section)
+        # The account page's recent activity (its Details hold only 127.0.0.1, never linked).
+        page = self.admin.get(f"/admin/users/{uid}").get_data(as_text=True)
+        self.assertEqual(page.count(link), 2)
 
 
 if __name__ == "__main__":
