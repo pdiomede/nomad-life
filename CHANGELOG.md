@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.8.0] - 2026-10-02
+
+### Added
+
+- **Where an IP address is, from the admin account page.** In the Details card, the Sign up IP and Last sign in IP now open their page on ipinfo.io (free, no account) in a new tab: city, region, country, a map and the network owner, such as a home ISP or a hosting company. Local, private and documentation addresses have no location and stay plain text. The search for other accounts from the same address moved to the small **Same IP** link next to it.
+
 ## [1.7.0] - 2026-10-02
 
 ### Added

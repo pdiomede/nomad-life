@@ -44,7 +44,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.8.0"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -151,6 +151,9 @@ DOCS_TOC = [
 PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin",
                  "/account", "/settings", "/plan", "/support"]
 ADMIN_USERS_PER_PAGE = 10
+# Free page that shows where an IP address is (city, country, network owner), opened from the
+# admin account page.
+IP_LOOKUP_URL = "https://ipinfo.io/"
 MAX_QUOTA_MB = 1024 * 1024  # 1 TB, a sanity cap for quotas typed on the admin page
 RESET_TOKEN_MAX_AGE = 3600
 # A new account must be confirmed from its email within this time, or it is deleted.
@@ -650,6 +653,7 @@ def create_app(overrides=None):
     app.add_template_filter(utc_datetime, "utcdatetime")
     app.add_template_filter(ticket_ref, "ticket_ref")
     app.add_template_global(chat_rows, "chat_rows")
+    app.add_template_global(ip_lookup_url, "ip_lookup_url")
     app.add_template_filter(country_flag, "flag")
 
     @app.errorhandler(413)
@@ -998,6 +1002,18 @@ def email_allowed(user_id):
                            "(email_sent_at IS NULL OR email_sent_at <= datetime('now', ?))",
                            (user_id, f"-{EMAIL_COOLDOWN_SECONDS} seconds"))
         return cur.rowcount == 1
+
+
+def ip_lookup_url(ip):
+    """The ipinfo.io page of a public address, or None for text that is not an IP or for an
+    address with no location (local, private and documentation ranges)."""
+    try:
+        addr = ipaddress.ip_address((ip or "").strip())
+    except ValueError:
+        return None
+    if not addr.is_global:
+        return None
+    return IP_LOOKUP_URL + quote(str(addr), safe=":.")
 
 
 def client_ip():

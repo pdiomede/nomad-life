@@ -45,9 +45,11 @@ class AdminIpTests(AppTestCase):
         self.assertIn('2001:db8::42<br><span class="muted">at last sign in</span>', row)
         self.assertNotIn("at sign up", row)
         page = self.admin.get(f"/admin/users/{self.user('a@example.com')['id']}").get_data(as_text=True)
-        self.assertIn('>203.0.113.7</a>', page)
-        self.assertIn('>2001:db8::42</a>', page)
-        self.assertIn('href="/admin?search=203.0.113.7#accounts"', page)
+        # Documentation addresses have no location: plain text, with the Same IP search.
+        self.assertIn('<dd>203.0.113.7 <a class="small" href="/admin?search=203.0.113.7#accounts">'
+                      'Same IP</a></dd>', page)
+        self.assertIn('<dd>2001:db8::42 <a class="small"', page)
+        self.assertNotIn("ipinfo.io", page)
 
     def test_accounts_from_before_show_not_recorded(self):
         with self.db() as conn:

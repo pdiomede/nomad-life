@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui with context %}
 {% block title %}{{ u.email }} | Admin | Nomad Life{% endblock %}
+{# An IP opens its location on ipinfo.io in a new tab (public addresses only); "Same IP" lists
+   the accounts from that address. #}
+{% macro ip_detail(ip) %}{% set url = ip_lookup_url(ip) %}{% if url %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer" title="Location on ipinfo.io (opens in a new tab)">{{ ip }}<span class="visually-hidden"> (location on ipinfo.io, opens in a new tab)</span></a>{% else %}{{ ip }}{% endif %} <a class="small" href="{{ admin_url(search=ip) }}#accounts">Same IP</a>{% endmacro %}
 {% macro list_state() %}{% for k, v in admin_hidden(state) %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endmacro %}
 {% block content %}
 <a class="back" href="{{ back }}#accounts">&larr; Back to accounts</a>
@@ -28,8 +31,8 @@
     <dt>Joined</dt><dd>{{ u.created_at | localdate }}</dd>
     <dt>Email confirmed</dt><dd>{{ (u.verified_at | localdate) if u.verified_at else 'Not yet' }}</dd>
     <dt>Last sign in</dt><dd>{{ (u.last_login_at | localdate) if u.last_login_at else 'Never' }}</dd>
-    <dt>Sign up IP</dt><dd>{% if u.signup_ip %}<a href="{{ admin_url(search=u.signup_ip) }}#accounts">{{ u.signup_ip }}</a>{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
-    <dt>Last sign in IP</dt><dd>{% if u.last_login_ip %}<a href="{{ admin_url(search=u.last_login_ip) }}#accounts">{{ u.last_login_ip }}</a>{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
+    <dt>Sign up IP</dt><dd>{% if u.signup_ip %}{{ ip_detail(u.signup_ip) }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
+    <dt>Last sign in IP</dt><dd>{% if u.last_login_ip %}{{ ip_detail(u.last_login_ip) }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
     <dt>Two-factor sign in</dt><dd>{{ 'On' if u.has_2fa else 'Off' }}</dd>
     <dt>Signed in devices</dt><dd>{{ counts.devices }}</dd>
     <dt>Years</dt><dd>{{ u.years }}</dd>
