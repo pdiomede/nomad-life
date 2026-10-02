@@ -280,6 +280,109 @@ sudo ufw status
 
 Port 5050 stays closed to the outside: gunicorn only listens on 127.0.0.1. Outgoing traffic (ports 443 and 587) is allowed by default.
 
+### Only Cloudflare may reach the site (with the Cloudflare proxy on)
+
+Behind Cloudflare, anyone who knows the server's IP can still talk to nginx directly and skip Cloudflare's firewall, rate limits and bot checks. The server's firewall is shared with the other sites on this nginx, so the rule goes in nginx, for this site only: the Nomad Life server block closes the connection (444) unless it came from Cloudflare's ranges. `$realip_remote_addr` is the address that connected, before the real IP module (section 8) replaces it with the visitor's.
+
+Replace the weekly script of section 8 with this one, which writes both files from the same lists (the second, in `conf.d`, only defines a variable: other sites are not touched):
+
+```bash
+sudo tee /usr/local/sbin/cloudflare-real-ip >/dev/null <<'EOF'
+#!/bin/sh
+# Cloudflare's address ranges, for this site only: the real IP snippet that the Nomad Life
+# server block includes, and $from_cloudflare (1 when the connection came from Cloudflare),
+# which it uses to refuse everything else. Run weekly by cron.
+set -e
+real=/etc/nginx/snippets/cloudflare-real-ip.conf
+geo=/etc/nginx/conf.d/cloudflare-geo.conf
+ranges=$(mktemp); tmp_real=$(mktemp); tmp_geo=$(mktemp)
+for list in ips-v4 ips-v6; do
+    curl -fsS "https://www.cloudflare.com/$list" | sed '/^$/d' >> "$ranges"
+done
+[ "$(wc -l < "$ranges")" -ge 10 ]              # never install an empty or cut list
+sed 's/.*/set_real_ip_from &;/' "$ranges" > "$tmp_real"
+echo "real_ip_header CF-Connecting-IP;" >> "$tmp_real"
+{ echo 'geo $realip_remote_addr $from_cloudflare {'; echo '    default 0;'
+  sed 's/.*/    & 1;/' "$ranges"; echo '}'; } > "$tmp_geo"
+for f in "$real" "$geo"; do [ -f "$f" ] && cp "$f" "$f.bak"; done
+install -m 644 "$tmp_real" "$real"; install -m 644 "$tmp_geo" "$geo"
+rm -f "$ranges" "$tmp_real" "$tmp_geo"
+if nginx -t -q; then
+    systemctl reload nginx
+else
+    # Never leave a config nginx refuses: put the previous files back.
+    for f in "$real" "$geo"; do
+        if [ -f "$f.bak" ]; then mv "$f.bak" "$f"; else rm -f "$f"; fi
+    done
+    echo "nginx refused the new ranges; nothing changed" >&2
+    exit 1
+fi
+EOF
+sudo /usr/local/sbin/cloudflare-real-ip
+```
+
+The cron line of section 8 stays as it is. Then, in the Nomad Life `server { listen 443 ssl ... }` block, under the `include` of the real IP snippet, add:
+
+```nginx
+if ($from_cloudflare = 0) { return 444; }  # direct visits to the server's IP skip Cloudflare
+```
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Check it: through Cloudflare the site answers, straight to the server it does not (replace `SERVER_IP` with the server's address; `000` means the connection was closed):
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://nomadlife.pro/
+curl -sk -o /dev/null -w "%{http_code}\n" --resolve nomadlife.pro:443:SERVER_IP https://nomadlife.pro/
+```
+
+The first prints `200`, the second `000`. Certificate renewals keep working: Let's Encrypt reaches port 80, whose block only redirects and is not limited. To turn the Cloudflare proxy off later, remove the `if` line first, or the site goes dark.
+
+### SSH: keys only, fail2ban
+
+Do this from a terminal that stays signed in until the end, and first check that your key works (a new terminal must sign in without asking for the account password):
+
+```bash
+ssh paolo@SERVER_IP
+```
+
+Then turn off passwords and root sign in. sshd takes the first value it reads, and Ubuntu's `50-cloud-init.conf` may set `PasswordAuthentication yes`, so the file's name starts with `01`:
+
+```bash
+sudo tee /etc/ssh/sshd_config.d/01-hardening.conf >/dev/null <<'EOF'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+EOF
+sudo sshd -t && sudo systemctl reload ssh
+sudo sshd -T | grep -E "^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin) "
+```
+
+All three must print `no`. Open a **new** terminal and sign in again before closing the old one; if it fails, delete the file from the old terminal and reload ssh.
+
+fail2ban blocks an address for an hour after 5 failed SSH sign ins within 10 minutes:
+
+```bash
+sudo apt install -y fail2ban
+sudo tee /etc/fail2ban/jail.local >/dev/null <<'EOF'
+[DEFAULT]
+bantime = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+backend = systemd
+EOF
+sudo systemctl enable --now fail2ban
+sudo systemctl restart fail2ban
+sudo fail2ban-client status sshd
+```
+
+To let a banned address back in: `sudo fail2ban-client set sshd unbanip ADDRESS`.
+
 ## 10. Accurate time (needed for two-factor sign in)
 
 Codes from authenticator apps are only accepted within about 30 seconds of the server's clock.
