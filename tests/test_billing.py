@@ -31,13 +31,17 @@ class BillingCase(AppTestCase):
         with self.db() as conn:
             return conn.execute("SELECT * FROM users WHERE id = ?", (self.uid,)).fetchone()
 
-    def event(self, kind, obj, created=None, event_id=None):
+    def event(self, kind, obj, created=None, event_id=None, latest=None):
+        """Post a signed event. For subscription events the webhook reads the subscription
+        from Stripe first: `latest` is what Stripe answers (by default the event's own copy)."""
         self.n += 1
         body = json.dumps({"id": event_id or f"evt_{self.n}", "type": kind,
                            "created": created or 1_800_000_000 + self.n,
                            "data": {"object": obj}}).encode()
-        return self.app.test_client().post("/billing/webhook", data=body, headers={
-            "Stripe-Signature": sign(body), "Content-Type": "application/json"})
+        answer = latest if latest is not None else obj
+        with mock.patch.object(appmod, "stripe_api", return_value=answer) as self.fetched:
+            return self.app.test_client().post("/billing/webhook", data=body, headers={
+                "Stripe-Signature": sign(body), "Content-Type": "application/json"})
 
     def sub(self, status="active", price="price_pro", user_id=None, sub_id="sub_1",
             customer="cus_1", **extra):
@@ -193,7 +197,7 @@ class CheckoutTests(BillingCase):
             self.set_plan("free")
             html = self.client.post("/billing/checkout", data={"plan": "plus"},
                                     follow_redirects=True).get_data(as_text=True)
-            self.assertIn("You already pay for a plan", html)
+            self.assertIn("You already have a plan with us", html)
             self.assertEqual(self.client.post("/billing/checkout",
                                               data={"plan": "free"}).status_code, 400)
         self.assertEqual(calls, [])

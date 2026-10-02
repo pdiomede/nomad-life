@@ -40,11 +40,19 @@ You can do steps 2 to 10 in test mode while the activation is being reviewed.
 - **Terms of service:** `https://nomadlife.pro/terms`
 - **Refund policy** (if asked): `https://nomadlife.pro/refunds`
 
-Customers see these on the checkout page, receipts and the billing portal.
+Customers see these on the checkout page, receipts and the billing portal. The **Terms of service** URL also turns on the checkout's "I agree to the Terms" checkbox: until it is set, the app falls back to a line of text under the Pay button (and logs an error saying so).
+
+Also in **Settings -> Payments -> Checkout**: turn on **Limit customers to one subscription**, a second guard (the app already sends anyone with a plan to Manage billing).
 
 ## 3. The two products (test mode)
 
-Turn on **Test mode** (switch in the top right), then **Product catalog -> Add product**, twice:
+**Done in the Nemax Tech test account** (created through the Stripe connection on 2026-10-02):
+
+- Nomad Life Pro, `prod_VMr8x3HPt8sbbd`: yearly $9.99, tax exclusive -> `STRIPE_PRICE_PRO=price_1UM7PpRKOf8syB1PdlM1ccpi`
+- Nomad Life Nomad+, `prod_VMr8hlGKpT7hoy`: yearly $19.99, tax exclusive -> `STRIPE_PRICE_PLUS=price_1UM7PpRKOf8syB1POd4AcacE`
+- Both with tax code `txcd_10103000` (Software as a Service, personal use): confirm it with your accountant before going live.
+
+For live mode (or to redo them), turn on **Test mode** off/on as needed, then **Product catalog -> Add product**, twice:
 
 | Product name | Price | Billing period | Currency |
 | --- | --- | --- | --- |
@@ -105,6 +113,8 @@ While Stripe retries, the account keeps its plan (status `past_due`).
 
 ## 7. Customer portal
 
+**Done in the test account:** configuration `bpc_1UM7QARKOf8syB1PngMk3gcJ` (the default), with the settings below. Live mode needs the same once (Stripe keeps test and live settings apart).
+
 **Settings -> Billing -> Customer portal** -> activate it, then:
 
 - **Invoices:** show invoice history, on.
@@ -131,7 +141,7 @@ The app learns about payments only from this webhook; without it nobody gets the
   - `customer.subscription.deleted`
   - `invoice.paid`
   - `invoice.payment_failed`
-- **API version:** the latest offered.
+- **API version:** `2026-08-26.dahlia`, the version the app sends with every request (`STRIPE_API_VERSION` in `app.py`), so events and API answers have the same shape.
 
 Open the new endpoint and **reveal the signing secret** (`whsec_...`) -> `STRIPE_WEBHOOK_SECRET`.
 
@@ -142,10 +152,11 @@ Open the new endpoint and **reveal the signing secret** (`whsec_...`) -> `STRIPE
 **Developers -> API keys:**
 
 - Simplest: the **Secret key** (`sk_test_...`) -> `STRIPE_SECRET_KEY`.
-- Safer: **Create restricted key**, named "Nomad Life server", with only these permissions set to **Write** (everything else None):
-  - **Customers**
-  - **Checkout Sessions**
-  - **Customer portal**
+- Safer, and what Stripe recommends: **Create restricted key**, named "Nomad Life server", with only these permissions (everything else None):
+  - **Customers:** Write
+  - **Checkout Sessions:** Write
+  - **Customer portal:** Write
+  - **Subscriptions:** Read (the webhook reads each subscription as it is now, since Stripe may deliver events out of order)
   
   Its value (`rk_test_...`) works as `STRIPE_SECRET_KEY`. A leaked restricted key cannot refund, pay out or read other data.
 

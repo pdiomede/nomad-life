@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.3"
+APP_VERSION = "1.12.4"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -115,10 +115,16 @@ PLAN_CURRENCY, PLAN_SYMBOL = "USD", "$"
 # read, and the subscription states that still pay for a plan (past_due: Stripe is retrying
 # the card, so the plan stays meanwhile).
 STRIPE_API_URL = "https://api.stripe.com/v1/"
+# Every request names this API version, so what Stripe sends back never changes under the app
+# when the account's default version moves on; create the webhook endpoint with the same one.
+STRIPE_API_VERSION = "2026-08-26.dahlia"
 STRIPE_TIMEOUT_SECONDS = 10
 STRIPE_TOLERANCE_SECONDS = 300
 BILLING_WEBHOOK_MAX = 256 * 1024
 PAID_STATUSES = ("active", "trialing", "past_due")
+# States in which a subscription still exists and Stripe may charge it again: no second
+# checkout, no account deletion, "Manage billing" instead (Stripe counts these as active).
+OPEN_STATUSES = PAID_STATUSES + ("unpaid", "paused")
 # The company that runs Nomad Life and sells its plans (legal pages, footer, structured data).
 COMPANY = {"name": "Nemax Tech LLC", "short": "Nemax Tech", "url": "https://nemax.tech",
            "city": "Sofia", "country": "Bulgaria", "country_code": "BG", "uic": "207405380",
@@ -2915,7 +2921,9 @@ def stripe_api(method, path, data=None, idempotency_key=None):
     cfg = current_app.config
     body = urlencode(stripe_form(data)).encode() if data is not None else None
     headers = {"Authorization": f"Bearer {cfg['STRIPE_SECRET_KEY']}",
-               "User-Agent": "Nomad-Life"}
+               "Stripe-Version": STRIPE_API_VERSION, "User-Agent": "Nomad-Life"}
+    if has_request_context():
+        g.stripe_error = ""
     if idempotency_key:  # a retried request never makes two customers or sessions
         headers["Idempotency-Key"] = idempotency_key
     req = urllib.request.Request(STRIPE_API_URL + path, data=body, method=method, headers=headers)
@@ -2928,6 +2936,8 @@ def stripe_api(method, path, data=None, idempotency_key=None):
         except (ValueError, KeyError, TypeError):
             detail = ""
         exc.close()
+        if has_request_context():
+            g.stripe_error = detail  # the caller may react to a known refusal
         current_app.logger.error("Stripe %s %s refused with HTTP %s: %s", method, path,
                                  exc.code, detail)
     except Exception as exc:  # noqa: BLE001 - offline, slow or changed service
@@ -2960,14 +2970,21 @@ def plan_rank(key):
     return keys.index(key) if key in keys else 0
 
 
-def active_subscription(user_id, conn=None):
-    """The account's subscription that still pays for a plan, or None."""
-    marks = ", ".join("?" * len(PAID_STATUSES))
+def active_subscription(user_id, conn=None, statuses=PAID_STATUSES):
+    """The account's subscription that still pays for a plan, or None. With
+    statuses=OPEN_STATUSES (open_subscription), also one that is unpaid or paused."""
+    marks = ", ".join("?" * len(statuses))
     sql = (f"SELECT * FROM subscriptions WHERE user_id = ? AND status IN ({marks}) "
            "ORDER BY id DESC LIMIT 1")
     if conn is not None:
-        return conn.execute(sql, (user_id, *PAID_STATUSES)).fetchone()
-    return db.query(sql, (user_id, *PAID_STATUSES), one=True)
+        return conn.execute(sql, (user_id, *statuses)).fetchone()
+    return db.query(sql, (user_id, *statuses), one=True)
+
+
+def open_subscription(user_id):
+    """A subscription Stripe may still charge (OPEN_STATUSES): blocks a second checkout and
+    deleting the account."""
+    return active_subscription(user_id, statuses=OPEN_STATUSES)
 
 
 def stripe_period_end(sub):
@@ -3830,7 +3847,7 @@ def register_routes(app):
         sub = db.query("SELECT * FROM subscriptions WHERE user_id = ? ORDER BY id DESC LIMIT 1",
                        (current_user.id,), one=True)
         return render_template("plan.html", plan=mine, upgrade=next_plan(mine["key"]),
-                               subscription=sub, paying=active_subscription(current_user.id),
+                               subscription=sub, paying=open_subscription(current_user.id),
                                has_customer=bool(row and row["stripe_customer_id"]),
                                paid=request.args.get("paid") == "1")
 
@@ -3852,8 +3869,9 @@ def register_routes(app):
         if plan_rank(row["plan"]) >= plan_rank(key):
             flash(f"You are already on {plan_named(row['plan'])['name']}.", "info")
             return redirect(url_for("plan"))
-        if active_subscription(row["id"]):
-            flash("You already pay for a plan. Switch it with Manage billing.", "info")
+        if open_subscription(row["id"]):
+            flash("You already have a plan with us. Switch or renew it with Manage billing.",
+                  "info")
             return redirect(url_for("plan"))
         customer = row["stripe_customer_id"]
         if not customer:
@@ -3870,7 +3888,8 @@ def register_routes(app):
                                 (row["id"],), one=True)["stripe_customer_id"]
         base = site_base()
         price = {v: k for k, v in price_plans().items()}[key]
-        session_obj = stripe_api("POST", "checkout/sessions", {
+        terms, refunds_url = base + url_for("terms"), base + url_for("refunds")
+        session_args = {
             "mode": "subscription", "customer": customer,
             "line_items": [{"price": price, "quantity": 1}],
             "client_reference_id": row["id"],
@@ -3880,13 +3899,32 @@ def register_routes(app):
             "tax_id_collection": {"enabled": True},
             "customer_update": {"address": "auto", "name": "auto"},
             "billing_address_collection": "required",
-            "custom_text": {"submit": {"message": (
-                "Your plan starts at once and renews every year until you cancel. By paying you "
-                "agree to the Terms and Refund Policy at " + base + url_for("terms") + " and "
-                + base + url_for("refunds") + ".")}},
+            # A checkbox the customer must tick, recorded on the session (consent), rather than
+            # a line of text: the terms, the refund policy and the plan starting at once (EU
+            # buyers give up the withdrawal period of a service already started).
+            "consent_collection": {"terms_of_service": "required"},
+            "custom_text": {
+                "terms_of_service_acceptance": {"message": (
+                    f"I agree to the [Terms]({terms}) and the [Refund Policy]({refunds_url}), "
+                    "and want my plan to start at once.")},
+                "submit": {"message": "Your plan renews every year until you cancel it with "
+                                      "Manage billing on your plan page."}},
             "success_url": base + url_for("plan") + "?paid=1",
             "cancel_url": base + url_for("plan"),
-        }, idempotency_key=f"nl-checkout-{row['id']}-{uuid.uuid4().hex}")
+        }
+        session_obj = stripe_api("POST", "checkout/sessions", session_args,
+                                 idempotency_key=f"nl-checkout-{row['id']}-{uuid.uuid4().hex}")
+        if session_obj is None and "terms of service" in g.get("stripe_error", "").lower():
+            # Stripe asks for the agreement only once the account's public details name a
+            # terms of service URL: until someone sets it, take the payment with the text alone.
+            current_app.logger.error("Stripe checkout without the terms checkbox: set the Terms "
+                                     "of service URL in Stripe's public details")
+            session_args.pop("consent_collection")
+            session_args["custom_text"] = {"submit": {"message": (
+                "Your plan starts at once and renews every year until you cancel. By paying you "
+                f"agree to the Terms and Refund Policy at {terms} and {refunds_url}.")}}
+            session_obj = stripe_api("POST", "checkout/sessions", session_args,
+                                     idempotency_key=f"nl-checkout-{row['id']}-{uuid.uuid4().hex}")
         if not session_obj or not str(session_obj.get("url", "")).startswith("https://"):
             flash("The payment page could not be opened. Please try again in a few minutes.",
                   "error")
@@ -3937,6 +3975,17 @@ def register_routes(app):
             obj, created = event["data"]["object"], int(event.get("created") or 0)
         except (ValueError, KeyError, TypeError):
             return Response("bad event", 400)
+        if kind.startswith("customer.subscription."):
+            # Stripe does not promise the order of events (a created and an updated of the same
+            # second can arrive swapped): apply the subscription as it is now, read from Stripe
+            # before taking the write lock. Unreachable: 500, and Stripe sends the event again.
+            sub_id = obj.get("id") if isinstance(obj, dict) else None
+            if not isinstance(sub_id, str) or not re.fullmatch(r"sub_[A-Za-z0-9]+", sub_id):
+                return Response("bad event", 400)
+            latest = stripe_api("GET", f"subscriptions/{sub_id}")
+            if not isinstance(latest, dict) or latest.get("id") != sub_id:
+                return Response("try again", 500)
+            obj = latest
         notices = []
         with db.transaction() as conn:
             if not conn.execute("INSERT OR IGNORE INTO billing_events (event_id, type) "
@@ -4626,7 +4675,7 @@ def register_routes(app):
                     flash("Type your email address to confirm the deletion.", "error")
                 elif err:
                     flash(err, "error")
-                elif active_subscription(row["id"]):
+                elif open_subscription(row["id"]):
                     # Stripe would keep charging a deleted account every year.
                     flash("Your plan is still paid for: cancel it with Manage billing on your "
                           "plan page first, then delete the account.", "error")
@@ -5051,10 +5100,10 @@ def register_routes(app):
                                 "LIMIT 1", (user_id,), one=True)
         return render_template("admin_account.html", u=u, counts=counts, state=state,
                                subscription=subscription,
-                               paying=bool(active_subscription(user_id)),
+                               paying=bool(open_subscription(user_id)),
                                stripe_dashboard="https://dashboard.stripe.com/" + (
-                                   "test/" if app.config["STRIPE_SECRET_KEY"].startswith(
-                                       "sk_test") else ""),
+                                   "test/" if "_test_" in app.config["STRIPE_SECRET_KEY"]
+                                   else ""),  # sk_test_ and restricted rk_test_ keys
                                admin_url=admin_url, admin_hidden=admin_hidden,
                                back=admin_url(**state), plans=plan_catalog(),
                                activity=account_activity(u["email"], ADMIN_ACCOUNT_AUDIT_ROWS),
@@ -5349,7 +5398,7 @@ def register_routes(app):
                 pass
             elif request.form.get("confirm_email", "").strip().lower() != email:
                 flash("Type the email address to confirm the deletion.", "error")
-            elif active_subscription(user_id):
+            elif open_subscription(user_id):
                 flash(f"{email} still pays for a plan: cancel the subscription in Stripe first, "
                       "or Stripe keeps charging it.", "error")
             elif not delete_account(user_id):  # another admin was quicker: report it once

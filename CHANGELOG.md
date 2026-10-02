@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.4] - 2026-10-02
+
+### Fixed
+
+From a review of the Stripe integration against Stripe's own guidance (checked with Stripe's tools on the Nemax Tech test account):
+
+- **Medium.** The webhook applied each subscription event as it arrived. Stripe does not promise the order of events: a "created" and an "updated" of the same second could arrive swapped, leaving an account that had paid on Free. The webhook now reads the subscription as it is now from Stripe before applying it. If Stripe cannot be reached, it answers with an error, so Stripe sends the event again.
+- **Low.** Requests did not name an API version, so what Stripe sends back could change when the account's default version moves on. Every request now sends `2026-08-26.dahlia`, the version to choose for the webhook endpoint too.
+- **Low.** A subscription that Stripe had marked unpaid or paused did not count as existing. Its owner could start a second checkout and pay twice, or delete the account while Stripe kept trying to charge it. Both are refused now, as for a paid one. The plan page says what to do ("The last payment did not go through" or "Paused").
+- **Low.** On an account's admin page, the "Stripe" link opened the live dashboard with a restricted test key (`rk_test_...`), the key type Stripe recommends. Any test key now opens the test dashboard.
+- **Low.** Agreeing to the Terms and the Refund Policy was a line of text under the Pay button. It is now a checkbox the customer ticks, recorded by Stripe with the payment, which also says the plan starts at once. Until Stripe's public details hold the Terms URL, checkout falls back to the text and logs that the URL is missing.
+- "Contact Us" is now the last link of the footer, also on the "Page not found" page.
+
+### Changed
+
+- **Stripe test account:** set up through the Stripe connection.
+  - Products "Nomad Life Pro" and "Nomad Life Nomad+", with yearly prices of $9.99 and $19.99, tax added on top, tax code for software as a service.
+  - The customer portal: cancel at the end of the year; switch between the two plans, charging the difference when moving up and moving down at renewal; card; invoices; name, address and VAT number.
+  - The ids are in `stripe.md`.
+- `stripe.md` and `config.env.example` recommend a restricted API key, which now also needs read access to Subscriptions.
+
 ## [1.12.3] - 2026-10-02
 
 ### Added

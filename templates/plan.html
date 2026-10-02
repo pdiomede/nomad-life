@@ -19,7 +19,7 @@
   {% call ui.plan_card(plan, current=True, heading="h2") %}
     <p class="muted small">{{ storage.used | filesize('down') }} used of {{ storage.quota | filesize('down') }}.</p>
     {% if paying %}
-      <p class="muted small">{% if paying.cancel_at_period_end %}Cancelled: ends on {{ paying.current_period_end | localdate }}.{% elif paying.status == 'past_due' %}<strong>The last payment did not go through.</strong> Update your card with Manage billing.{% elif paying.current_period_end %}Renews on {{ paying.current_period_end | localdate }}.{% endif %}</p>
+      <p class="muted small">{% if paying.cancel_at_period_end %}Cancelled: ends on {{ paying.current_period_end | localdate }}.{% elif paying.status in ('past_due', 'unpaid') %}<strong>The last payment did not go through.</strong> Update your card with Manage billing.{% elif paying.status == 'paused' %}Paused. Resume it with Manage billing.{% elif paying.current_period_end %}Renews on {{ paying.current_period_end | localdate }}.{% endif %}</p>
     {% endif %}
     {% if has_customer and billing_on %}
       <form method="post" action="{{ url_for('billing_portal') }}">

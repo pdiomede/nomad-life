@@ -1,5 +1,6 @@
 """Regression tests for the bugs found in the 1.3.1 review of database calls and support pages."""
 import os
+import re
 import sqlite3
 import time
 
@@ -350,3 +351,13 @@ class LandingFooterTests(AppTestCase):
         self.assertNotIn('href="/settings"', landing)
         self.assertNotIn('href="/admin"', landing)
         self.assertIn('href="/settings"', self.footer("/plan"))  # the app pages keep them
+
+    def test_contact_us_is_the_last_link(self):
+        self.app.config["ADMIN_EMAILS"] = frozenset({"a@example.com"})
+        self.signup("a@example.com")
+        for path in ("/", "/plan", "/docs"):
+            links = re.findall(r'<a [^>]*>([^<]+)</a>', self.footer(path).split("&copy;")[0])
+            self.assertEqual(links[-1], "Contact Us", path)
+        html = self.app.test_client().get("/no-such-page").get_data(as_text=True)
+        footer = html[html.index("<footer"):html.index("</footer>")].split("&copy;")[0]
+        self.assertEqual(re.findall(r'<a [^>]*>([^<]+)</a>', footer)[-1], "Contact Us")
