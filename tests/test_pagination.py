@@ -127,7 +127,7 @@ class DashboardPaginationTests(AppTestCase):
     def test_stats_are_the_same_on_every_page(self):
         self.add_many(23)
         def stats(html):
-            return (re.search(r'<section class="stats">.*?</section>', html, re.S).group(0),
+            return (re.search(r'<section class="stats year-stats">.*?</section>', html, re.S).group(0),
                     re.search(r'<ul class="bars">.*?</ul>', html, re.S).group(0))
         first = stats(self.get("/year/2025"))
         for query in ["?page=2", "?page=3", "?per_page=50"]:

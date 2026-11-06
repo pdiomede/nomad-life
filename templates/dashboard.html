@@ -18,7 +18,7 @@
   </div>
 </div>
 
-<section class="stats">
+<section class="stats year-stats">
   <div class="card stat stat-base">
     <p class="stat-label">Base</p>
     <p class="stat-value">{{ y.base_city }}</p>
@@ -27,20 +27,20 @@
   </div>
   <div class="card stat">
     <div class="stat-head">
-      <p class="stat-label">Days in Base Country</p>
       {# Shown by theme.js; the choice is kept in this browser (theme-init.js applies it before
          the page is drawn). Without JavaScript the marker always shows. #}
       <button type="button" class="switch" role="switch" aria-checked="true" data-marker-switch hidden><span class="switch-label">Show {{ stats.threshold }} marker</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
+      <p class="stat-label">Days in Base Country</p>
     </div>
     <p class="stat-value">{{ stats.base_days }} <span class="muted stat-of">/ {{ stats.total }}</span></p>
     <div class="meter" aria-hidden="true">
       <span style="width: {{ (stats.base_days * 100 / stats.total) | round(1) }}%"></span>
-      <i class="base-marker" style="left: {{ (stats.threshold * 100 / stats.total) | round(1) }}%"></i>
+      <i class="day-marker" style="left: {{ (stats.threshold * 100 / stats.total) | round(1) }}%"></i>
     </div>
     {% if stats.base_ok %}
-      <p class="pill pill-ok base-marker">At least {{ stats.threshold }} days</p>
+      <p class="pill pill-ok day-marker">At least {{ stats.threshold }} days</p>
     {% else %}
-      <p class="pill pill-warn base-marker">{{ stats.threshold - stats.base_days }} day{{ '' if stats.threshold - stats.base_days == 1 else 's' }} short of {{ stats.threshold }}</p>
+      <p class="pill pill-warn day-marker">{{ stats.threshold - stats.base_days }} day{{ '' if stats.threshold - stats.base_days == 1 else 's' }} short of {{ stats.threshold }}</p>
     {% endif %}
   </div>
   <div class="card stat">
@@ -215,8 +215,10 @@
   <section class="card days-card">
     <div class="card-head">
       <h2>Days per Country</h2>
+      {# The same setting as the switch of Days in Base Country: both move together. #}
+      <button type="button" class="switch" role="switch" aria-checked="true" data-marker-switch hidden><span class="switch-label">Show {{ stats.threshold }} marker</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
     </div>
-    <p class="muted small">A day shared by two stays, such as a travel day, counts toward the stay that started later. The marker shows the {{ stats.threshold }} day line.</p>
+    <p class="muted small">A day shared by two stays, such as a travel day, counts toward the stay that started later.</p>
     <ul class="bars">
       {% for r in stats.rows %}
       <li>
@@ -226,7 +228,7 @@
         </div>
         <div class="meter {% if r.over_threshold and not r.is_base %}meter-hot{% endif %}">
           <span style="width: {{ r.pct }}%"></span>
-          <i style="left: {{ (stats.threshold * 100 / stats.total) | round(1) }}%"></i>
+          <i class="day-marker" style="left: {{ (stats.threshold * 100 / stats.total) | round(1) }}%"></i>
         </div>
       </li>
       {% endfor %}

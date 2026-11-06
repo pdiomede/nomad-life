@@ -17,20 +17,36 @@
     });
   }
 
-  // The "Show 183 marker" switch of the Days in Base Country card: off hides the marker and its
-  // message (.base-marker) through data-marker on <html>, which theme-init.js sets again on the
-  // next page before it is drawn. Kept in this browser, for every year.
-  document.querySelectorAll("[data-marker-switch]").forEach(function (sw) {
-    var sync = function () { sw.setAttribute("aria-checked", root.getAttribute("data-marker") === "off" ? "false" : "true"); };
-    sync();
+  // The "Show 183 marker" switches of the Days in Base Country and Days per Country cards, one
+  // setting for both: off hides the marker and its message (.day-marker) through data-marker on
+  // <html>, which theme-init.js sets again on the next page before it is drawn. Kept in this
+  // browser, for every year; flipping one moves the other too.
+  var markerSwitches = document.querySelectorAll("[data-marker-switch]");
+  var syncMarkerSwitches = function () {
+    var on = root.getAttribute("data-marker") === "off" ? "false" : "true";
+    markerSwitches.forEach(function (sw) { sw.setAttribute("aria-checked", on); });
+  };
+  // A page brought back by the Back button (back/forward cache) keeps the theme and marker it
+  // had then, although they may have been changed on another page since: apply the saved ones
+  // again, as theme-init.js does on a fresh load.
+  window.addEventListener("pageshow", function (e) {
+    if (!e.persisted) return;
+    var theme = null, off = false;
+    try { theme = localStorage.getItem("theme"); off = localStorage.getItem("nl_marker") === "off"; } catch (x) {}
+    if (theme === "light" || theme === "dark") root.setAttribute("data-theme", theme); else root.removeAttribute("data-theme");
+    if (off) root.setAttribute("data-marker", "off"); else root.removeAttribute("data-marker");
+    syncMarkerSwitches();
+  });
+  markerSwitches.forEach(function (sw) {
     sw.hidden = false;
     sw.addEventListener("click", function () {
       var off = root.getAttribute("data-marker") !== "off";
       if (off) root.setAttribute("data-marker", "off"); else root.removeAttribute("data-marker");
       try { if (off) localStorage.setItem("nl_marker", "off"); else localStorage.removeItem("nl_marker"); } catch (e) {}
-      sync();
+      syncMarkerSwitches();
     });
   });
+  syncMarkerSwitches();
 
   // The support button in the header glows slowly until this browser has opened the support
   // pages once, so people notice it is new. A new reply makes it glow again (set by the server).

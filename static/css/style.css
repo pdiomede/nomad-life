@@ -306,14 +306,17 @@ main:focus { outline: none; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 4px; }
 .stat { display: flex; flex-direction: column; gap: 6px; }
 .stat-label { font-size: 13px; color: var(--muted); font-weight: 500; }
+.year-stats .stat-label { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }  /* the dashboard's four cards: the same as the card titles below (h2) */
 .stat-value { font-size: 26px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
 .stat-of { font-size: 15px; font-weight: 500; }
 .stat-base { position: relative; overflow: hidden; }
 .stat-base::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--gradient); }
-.stat-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 10px; }
+.stat-head { display: flex; flex-direction: column; gap: 6px; }
+.stat-head .switch { align-self: flex-end; }  /* above the title, at the top right */
 
 /* iOS style switch (role="switch", aria-checked), here for the 183 day marker of the Days in
-   Base Country card. Off hides everything marked .base-marker; theme-init.js sets data-marker
+   Base Country and Days per Country cards, one setting for both. Off hides everything marked
+   .day-marker; theme-init.js sets data-marker
    on <html> before the page is drawn, so the saved choice never flashes. */
 .switch {
   display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 2px 0; border: 0;
@@ -328,7 +331,7 @@ main:focus { outline: none; }
 .switch[aria-checked="true"] .switch-thumb { transform: translateX(14px); }
 @media (prefers-reduced-motion: reduce) { .switch-track, .switch-thumb { transition: none; } }
 @media (forced-colors: active) { .switch-track { border: 1px solid CanvasText; } .switch-thumb { forced-color-adjust: none; background: CanvasText; } }
-[data-marker="off"] .base-marker { display: none !important; }
+[data-marker="off"] .day-marker { display: none !important; }
 
 .meter { position: relative; height: 8px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); overflow: visible; }
 .meter span { display: block; height: 100%; border-radius: 4px; background: var(--gradient); }

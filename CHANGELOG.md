@@ -7,14 +7,21 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - **Calendar** on the year dashboard, before the Map, with a calendar icon and its year in the title, such as **Calendar (2027)**. It starts folded and opens with a click on its head. It shows the selected year's 12 months (four a row on wide screens, then three, two and one), each day in the color of the country it counts for, with the same rules as Days per Country: a shared day goes to the stay that started later, past days without a stay are the base, and days still to come without a stay are grey ("Not planned yet"). A legend lists each country with its flag and days; pointing at a day shows its date, country and city, and today has an outline. The colors are set for the light and dark themes, with every day number readable. The documentation has a section on it.
-- **Show 183 marker** switch, iOS style, in the top right of the Days in Base Country card: off hides the 183 day tick and its message ("N days short of 183", "At least 183 days"). This browser remembers the choice for every year, applied before the page is drawn so it never flashes.
+- **Show 183 marker** switch, iOS style, in the top right of the Days in Base Country and Days per Country cards, one setting for both: off hides the 183 day tick and its message ("N days short of 183", "At least 183 days") and the tick on every country bar. This browser remembers the choice for every year, applied before the page is drawn so it never flashes.
 
 ### Changed
 
 - The cards **Days in base country** and **Days abroad** are now **Days in Base Country** and **Days outside the Base Country**. The accountant package keeps its wording.
+- The titles of the four top cards (Base, Days in Base Country, Days outside the Base Country, Year elapsed) have the style of the card titles below them, such as Days per Country; on Days in Base Country the switch sits above the title.
 - The lines in the Calendar and Map heads read **Your 2027 day-by-day plan** and **Your 2027 locations on the map**, with the year of the open tab.
+- The Days per Country help text is shorter: "A day shared by two stays, such as a travel day, counts toward the stay that started later."
 
 ### Fixed
+
+Found in a review of the interface, including the new switch and calendar (2 bugs):
+
+- **Low.** After switching the 183 marker on another page, the Back button showed the old setting (the browser restores the page as it was) until a reload, with both switches saying the wrong state. The saved setting is applied again when a page comes back.
+- **Low.** The same with the light and dark theme: Back could show a page in the theme you had just left. It now shows the saved theme.
 
 Found in a review of the new calendar (2 bugs):
 
