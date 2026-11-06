@@ -6,7 +6,21 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- **Dashboard layout.** Movements and the Map now span the full width under the four summary cards, and Days per country, Receipt storage and Accountant package sit side by side in one row below them. On narrow screens the three cards stack, in the same order as before.
+- **Dashboard layout.** Movements and the Map now span the full width under the four summary cards, and Days per Country, Receipt Storage and Accountant Package sit side by side in one row below them. On narrow screens the three cards stack, in the same order as before.
+- **Equal card heights.** On a year with only the base, the three cards are the same height. Receipt Storage and Accountant Package always match each other; only Days per Country grows as more countries are added.
+- The three card titles are in title case: **Days per Country**, **Receipt Storage**, **Accountant Package**.
+
+### Fixed
+
+From a review of how data is stored and of the interface (7 bugs):
+
+- **Medium.** An account could be deleted while Stripe still charged it: the check read only the app's own records, so with a late webhook (or one arriving during the delete) Stripe kept renewing a plan every year for an account that no longer existed, with nothing left to cancel it from. Deleting (in Settings and on the admin page) now asks Stripe first, refuses when it cannot answer, and the delete itself repeats the rule.
+- **Low.** Receipt names lost their zero width joiners on upload and rename, misspelling Persian names and splitting emoji families. They are kept, as in names and places.
+- **Low.** Renaming a receipt to 146 to 150 characters without its extension saved up to 155 characters, and saving the form again with only the type changed then cut the name. The limit now counts the extension.
+- **Low.** After a failed sign in, **Remember me** was unticked, so fixing the password gave a session that ended with the browser.
+- **Low.** The browser refused a receipt larger than the space left, although receipts are stored compressed and many PDFs would fit. Only the server decides now, as it already did for photos.
+- **Low.** In the dark theme, **Purge last 30 days** and **Purge all** in the Security Activity menu were too faint to read (2.5:1). They use the readable red of error messages.
+- **Low.** Cancelling a Purge left the keyboard focus nowhere, since the menu holding the button had closed. It returns to the menu.
 
 ## [1.12.9] - 2026-11-06
 

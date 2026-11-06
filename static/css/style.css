@@ -314,7 +314,11 @@ main:focus { outline: none; }
 .stats > .card, .grid-main > .card, .side > .card { margin-bottom: 0; min-width: 0; }
 .empty-state { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 
-.side { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; min-width: 0; }
+.side { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto 1fr; column-gap: 20px; row-gap: 0; align-items: stretch; min-width: 0; }
+/* Receipt Storage and Accountant Package share row 1 and so always match; Days per Country spans both rows, so it matches them until it has more to show and then alone grows into row 2. */
+.side > .days-card { grid-column: 1; grid-row: 1 / span 2; }
+.side > .storage-card { grid-column: 2; grid-row: 1; }
+.side > .package-card { grid-column: 3; grid-row: 1; }
 .main-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .main-col > .card { margin-bottom: 0; min-width: 0; }
 
@@ -623,7 +627,8 @@ main:focus { outline: none; }
 /* Responsive */
 @media (max-width: 960px) {
   .stats { grid-template-columns: repeat(2, 1fr); }
-  .side { grid-template-columns: minmax(0, 1fr); }
+  .side { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; row-gap: 20px; align-items: start; }
+  .side > .days-card, .side > .storage-card, .side > .package-card { grid-column: auto; grid-row: auto; }
   .hero { grid-template-columns: minmax(0, 1fr); gap: 36px; padding-bottom: 40px; }
   .hero h1 { font-size: 40px; }
   .hero-preview { max-width: 520px; }
@@ -877,7 +882,7 @@ main:focus { outline: none; }
 }
 @media (forced-colors: active) { .menu-export::before, .menu-purge::before { forced-color-adjust: none; opacity: 1; } }
 .menu-export { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3v12'/><path d='M7 10l5 5 5-5'/><path d='M5 21h14'/></svg>"); }
-.menu-purge { color: var(--danger); --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6h18'/><path d='M8 6V4h8v2'/><path d='M19 6l-1 14H6L5 6'/><path d='M10 11v6M14 11v6'/></svg>"); }
+.menu-purge { color: var(--error-text); --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6h18'/><path d='M8 6V4h8v2'/><path d='M19 6l-1 14H6L5 6'/><path d='M10 11v6M14 11v6'/></svg>"); }
 .gear-panel a.menu-export + form { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
 #activity .gear-panel form { margin-bottom: 0; }  /* not the spacing of the card's search form */
 @media (prefers-reduced-motion: reduce) { .icon-btn[data-tip]::after { transition: none; } }

@@ -254,9 +254,12 @@ class DeleteGuardTests(BillingCase):
         self.assertIn("cancel it with Manage billing", html)
         self.assertIsNotNone(self.user())
         self.event("customer.subscription.deleted", self.sub(status="canceled"))
-        self.client.post("/settings", data={
-            "action": "delete", "confirm_email": "a@example.com",
-            "current_password": "password1", "confirm_delete": "2"})
+        # Deleting asks Stripe too (a late webhook): it lists the ended subscription.
+        with mock.patch.object(appmod, "stripe_api",
+                               return_value={"data": [self.sub(status="canceled")]}):
+            self.client.post("/settings", data={
+                "action": "delete", "confirm_email": "a@example.com",
+                "current_password": "password1", "confirm_delete": "2"})
         self.assertIsNone(self.user())
         with self.db() as conn:  # the company's billing record stays, without the account
             self.assertIsNone(conn.execute("SELECT user_id FROM subscriptions").fetchone()[0])

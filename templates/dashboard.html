@@ -175,9 +175,9 @@
   </div>
 
   <div class="side">
-  <section class="card">
+  <section class="card days-card">
     <div class="card-head">
-      <h2>Days per country</h2>
+      <h2>Days per Country</h2>
     </div>
     <p class="muted small">A day shared by two stays, such as a travel day, counts toward the stay that started later. The marker shows the {{ stats.threshold }} day line.</p>
     <ul class="bars">
@@ -198,7 +198,7 @@
 
   <section class="card storage-card">
     <div class="card-head">
-      <h2>Receipt storage</h2>
+      <h2>Receipt Storage</h2>
       <div class="row gap-sm">
         {% if storage.over %}
           <span class="pill pill-error">Over quota</span>
@@ -220,7 +220,7 @@
 
   <section class="card package-card" aria-labelledby="package-title">
     <div class="card-head">
-      <h2 id="package-title">Accountant package</h2>
+      <h2 id="package-title">Accountant Package</h2>
       {% if not current_plan.package %}<a class="btn btn-upgrade btn-sm" href="{{ url_for('plan') }}" aria-label="Upgrade to Pro for the accountant package">Upgrade</a>{% endif %}
     </div>
     <p class="muted small">One ZIP for {{ y.year }}: a PDF summary, your timeline and country totals as spreadsheets, and every receipt, ready to share with your accountant.</p>

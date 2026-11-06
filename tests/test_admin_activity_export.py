@@ -146,7 +146,7 @@ class PageTests(ActivityMenuCase):
         with open(os.path.join(ROOT, "static", "css", "style.css"), encoding="utf-8") as fh:
             css = fh.read()
         self.assertIn(".admin-section-title { font-family: \"Outfit\"", css)
-        self.assertIn(".menu-purge { color: var(--danger);", css)
+        self.assertIn(".menu-purge { color: var(--error-text);", css)
         with open(os.path.join(ROOT, "static", "js", "theme.js"), encoding="utf-8") as fh:
             js = fh.read()
         self.assertIn('querySelectorAll("[data-user-menu], [data-menu]")', js)

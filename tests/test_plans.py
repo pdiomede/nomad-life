@@ -370,5 +370,5 @@ class DashboardOrderTests(AppTestCase):
         self.new_year(2026)
         html = self.client.get("/year/2026").get_data(as_text=True)
         side = html[html.index('<div class="side">'):]
-        self.assertLess(side.index("<h2>Days per country</h2>"), side.index("<h2>Receipt storage</h2>"))
-        self.assertLess(side.index("<h2>Receipt storage</h2>"), side.index('id="package-title"'))
+        self.assertLess(side.index("<h2>Days per Country</h2>"), side.index("<h2>Receipt Storage</h2>"))
+        self.assertLess(side.index("<h2>Receipt Storage</h2>"), side.index('id="package-title"'))

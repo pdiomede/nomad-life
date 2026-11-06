@@ -179,7 +179,7 @@ class PackageContentsTests(AppTestCase):
 
     def test_dashboard_shows_package_card(self):
         html = self.client.get("/year/2026").data.decode()
-        self.assertIn("Accountant package", html)
+        self.assertIn("Accountant Package", html)
         self.assertIn('action="/year/2026/package"', html)
         self.assertIn('name="notes"', html)
 

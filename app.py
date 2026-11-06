@@ -2192,9 +2192,10 @@ def file_ext(name):
 
 def display_name(filename, limit=150):
     """Human readable file name. Keeps non ASCII letters (the file is stored under a random
-    name), drops any client side folder path and invisible control characters."""
+    name), drops any client side folder path and invisible control characters (the zero width
+    joiners stay, as in names and places: Persian, Sinhala and emoji need them)."""
     name = filename.replace("\\", "/").rsplit("/", 1)[-1]
-    name = "".join(ch for ch in name if unicodedata.category(ch)[0] != "C")
+    name = "".join(ch for ch in name if unicodedata.category(ch)[0] != "C" or ch in JOINERS)
     name = " ".join(name.split())
     if len(name) > limit:
         # Keep a real extension; text after a dot in "Booking No. ..." is not one.
@@ -2614,12 +2615,17 @@ class QuotaExceeded(Exception):
 
 def delete_account(user_id, password_hash=None):
     """Delete an account with all its years, movements and documents, then its files.
-    Returns False when there was no such account any more (deleted meanwhile), or, with
-    password_hash, when its password is no longer that one (reset by email meanwhile)."""
+    Returns False when there was no such account any more (deleted meanwhile), when a
+    subscription Stripe still charges was stored meanwhile (its webhook arrived after the
+    check), or, with password_hash, when its password is no longer that one (reset by email
+    meanwhile)."""
     from flask import current_app
-    sql, args = "DELETE FROM users WHERE id = ?", (user_id,)
+    where, charging = charging_where("s")
+    sql = ("DELETE FROM users WHERE id = ? AND NOT EXISTS (SELECT 1 FROM subscriptions s "
+           f"WHERE s.user_id = users.id AND {where})")
+    args = (user_id, *charging)
     if password_hash is not None:
-        sql, args = sql + " AND password_hash = ?", (user_id, password_hash)
+        sql, args = sql + " AND password_hash = ?", (*args, password_hash)
     with db.transaction() as conn:  # list and delete together, see the year delete
         docs = conn.execute("SELECT * FROM documents WHERE user_id = ?", (user_id,)).fetchall()
         deleted = conn.execute(sql, args).rowcount
@@ -3102,14 +3108,40 @@ def open_subscription(user_id):
     return active_subscription(user_id, statuses=OPEN_STATUSES)
 
 
+def charging_where(alias="subscriptions"):
+    """SQL for a subscription Stripe will still charge (see charging_subscription), with its
+    parameters: shared by the check and the account DELETE that repeats it."""
+    marks = ", ".join("?" * len(OPEN_STATUSES))
+    return (f"{alias}.status IN ({marks}) AND NOT ({alias}.cancel_at_period_end = 1 "
+            f"AND {alias}.status IN ('active', 'trialing'))", OPEN_STATUSES)
+
+
 def charging_subscription(user_id):
     """A subscription Stripe will still charge: open (OPEN_STATUSES) and not cancelled at the
     end of its paid year. Blocks deleting the account; a cancelled plan that runs to its end
     does not, since nothing is charged any more (it ends on its own, user_id kept NULL)."""
-    marks = ", ".join("?" * len(OPEN_STATUSES))
-    return db.query(f"SELECT * FROM subscriptions WHERE user_id = ? AND status IN ({marks}) "
-                    "AND NOT (cancel_at_period_end = 1 AND status IN ('active', 'trialing')) "
-                    "ORDER BY id DESC LIMIT 1", (user_id, *OPEN_STATUSES), one=True)
+    where, args = charging_where()
+    return db.query(f"SELECT * FROM subscriptions WHERE user_id = ? AND {where} "
+                    "ORDER BY id DESC LIMIT 1", (user_id, *args), one=True)
+
+
+def stripe_charging(row):
+    """Asked of Stripe before deleting an account: True when a subscription of its customer
+    will still be charged, False when none will (or there is no customer), None when Stripe
+    could not answer. The subscriptions table alone is not enough: a payment whose webhook is
+    late is not stored yet, and once the account is gone Stripe would charge it every year
+    with nothing left to cancel it from."""
+    customer = row["stripe_customer_id"] if "stripe_customer_id" in row.keys() else None
+    if not billing_on() or not customer:
+        return False
+    listed = stripe_api("GET", "subscriptions?" + urlencode(
+        {"customer": customer, "status": "all", "limit": 20}))
+    if listed is None:
+        return False if stripe_customer_gone(row["id"], customer) else None
+    return any(isinstance(s, dict) and s.get("status") in OPEN_STATUSES
+               and not ((s.get("cancel_at_period_end") or s.get("cancel_at"))
+                        and s.get("status") in ("active", "trialing"))
+               for s in listed.get("data") or [])
 
 
 def stripe_period_end(sub):
@@ -4852,17 +4884,24 @@ def register_routes(app):
                     flash("Type your email address to confirm the deletion.", "error")
                 elif err:
                     flash(err, "error")
-                elif charging_subscription(row["id"]):
+                elif charging := charging_subscription(row["id"]) or stripe_charging(row):
                     # Stripe would keep charging a deleted account every year.
                     flash("Your plan is still paid for: cancel it with Manage billing on your "
                           "plan page first, then delete the account.", "error")
+                elif charging is None:
+                    flash("We could not check your plan with our payment provider, so the "
+                          "account was not deleted. Please try again in a few minutes.", "error")
                 # Only over the password checked above, as for a password change: a reset by
                 # email that finished meanwhile (the owner taking the account back) wins.
                 elif not delete_account(row["id"], row["password_hash"]):
                     if not db.query("SELECT 1 FROM users WHERE id = ?", (row["id"],), one=True):
                         return account_gone()  # deleted meanwhile (an admin): nothing to record
-                    flash("The password of this account was changed elsewhere in the meantime, "
-                          "so the account was not deleted.", "error")
+                    if charging_subscription(row["id"]):  # its webhook arrived meanwhile
+                        flash("Your plan is still paid for: cancel it with Manage billing on "
+                              "your plan page first, then delete the account.", "error")
+                    else:
+                        flash("The password of this account was changed elsewhere in the "
+                              "meantime, so the account was not deleted.", "error")
                 else:
                     audit("account_deleted", row["id"], row["email"])
                     logout_user()
@@ -5579,12 +5618,19 @@ def register_routes(app):
                 pass
             elif request.form.get("confirm_email", "").strip().lower() != email:
                 flash("Type the email address to confirm the deletion.", "error")
-            elif charging_subscription(user_id):
+            elif charging := charging_subscription(user_id) or stripe_charging(row):
                 flash(f"{email} still pays for a plan: cancel the subscription in Stripe first, "
                       "or Stripe keeps charging it.", "error")
-            elif not delete_account(user_id):  # another admin was quicker: report it once
-                flash(f"The account {email} was already deleted.", "info")
-                back = admin_url(**state)
+            elif charging is None:
+                flash(f"Stripe could not be asked whether {email} still pays for a plan, so the "
+                      "account was not deleted. Please try again in a few minutes.", "error")
+            elif not delete_account(user_id):
+                if charging_subscription(user_id):  # its webhook arrived meanwhile
+                    flash(f"{email} still pays for a plan: cancel the subscription in Stripe "
+                          "first, or Stripe keeps charging it.", "error")
+                else:  # another admin was quicker: report it once
+                    flash(f"The account {email} was already deleted.", "info")
+                    back = admin_url(**state)
             else:
                 audit("admin_delete", user_id, email, "", who)
                 flash(f"The account {email} and all its data were deleted.", "info")
@@ -6100,6 +6146,9 @@ def register_routes(app):
                 name = f"{stem(name)}.{ext}"  # the same type: no "photo.jpg.jpeg"
             elif file_ext(name) != ext:
                 name = f"{name}.{ext}"  # keep the real extension so downloads still open
+            # The limit holds for the whole name, extension included, so saving the form again
+            # unchanged never cuts it.
+            name = display_name(name)
             # The file inside the ZIP carries the name too. It is rewritten into a temporary file
             # outside the database write lock (a big receipt takes seconds and would stall every
             # other request), then moved into place under the lock only if nobody changed the

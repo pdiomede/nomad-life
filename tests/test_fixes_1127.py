@@ -18,7 +18,9 @@ class CancelledPlanDeleteTests(BillingCase):
         self.event("customer.subscription.updated", self.sub(cancel_at_period_end=True))
         html = self.client.get("/settings").get_data(as_text=True)
         self.assertNotIn("still open in Stripe", html)
-        self.client.post("/settings", data=DELETE)
+        with mock.patch.object(appmod, "stripe_api",  # deleting asks Stripe too
+                               return_value={"data": [self.sub(cancel_at_period_end=True)]}):
+            self.client.post("/settings", data=DELETE)
         self.assertIsNone(self.user())
         # Its end later is no surprise (no account, nothing logged as an error).
         with mock.patch.object(self.app.logger, "error") as logged:
@@ -37,8 +39,11 @@ class CancelledPlanDeleteTests(BillingCase):
         self.event("customer.subscription.updated", self.sub(cancel_at_period_end=True))
         admin = self.app.test_client()
         self.signup("admin@example.com", client=admin)
-        admin.post("/admin/users/1", data={"action": "delete", "confirm_email": "a@example.com",
-                                           "confirm_delete": "2"})
+        with mock.patch.object(appmod, "stripe_api",
+                               return_value={"data": [self.sub(cancel_at_period_end=True)]}):
+            admin.post("/admin/users/1", data={"action": "delete",
+                                               "confirm_email": "a@example.com",
+                                               "confirm_delete": "2"})
         self.assertIsNone(self.user())
 
 

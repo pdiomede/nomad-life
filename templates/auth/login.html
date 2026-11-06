@@ -14,7 +14,7 @@
     <input id="password" name="password" type="password" autocomplete="current-password" required>
   </div>
   <div class="row between">
-    <label class="check"><input type="checkbox" name="remember" value="1"> Remember me</label>
+    <label class="check"><input type="checkbox" name="remember" value="1"{% if request.form.remember %} checked{% endif %}> Remember me</label>
     <a class="small" href="{{ url_for('forgot') }}">Forgot password?</a>
   </div>
   <button class="btn btn-primary btn-block" type="submit">Sign in</button>
