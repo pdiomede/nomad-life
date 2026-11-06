@@ -59,8 +59,8 @@ class OutlinedButtonTests(unittest.TestCase):
         dark = text[text.index(':root[data-theme="dark"] {'):text.index("@media (prefers-color-scheme: dark)")]
         system = text[text.index("@media (prefers-color-scheme: dark)"):]
         self.assertIn("--btn-border: #80869A;", light)
-        self.assertIn("--btn-border: #767D98;", dark)
-        self.assertIn("--btn-border: #767D98;", system[:system.index("\n}\n")])
+        self.assertIn("--btn-border: #8088A3;", dark)
+        self.assertIn("--btn-border: #8088A3;", system[:system.index("\n}\n")])
 
 
 if __name__ == "__main__":

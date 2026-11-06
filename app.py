@@ -4375,7 +4375,11 @@ def register_routes(app):
             back = (url_for("index"), "Back to your dashboard")
         else:
             back = None
-        return render_template("year_new.html", default_year=date.today().year, back=back)
+        # The year offered: this one, or the first after it the account does not have yet.
+        default_year = date.today().year
+        while default_year in owned:
+            default_year += 1
+        return render_template("year_new.html", default_year=default_year, back=back)
 
     @app.route("/year/<int:year>")
     @login_required

@@ -104,7 +104,7 @@
 
       <section id="movements" class="doc-section" data-doc-title="Movements">
         <h2>Movements</h2>
-        <p>A <strong>movement</strong> is a stay away from your base: a trip, a month in another city, a flight day. Log each one with its country, city and dates.</p>
+        <p>A <strong>movement</strong> is a stay in one country: a trip, a month in another city, or your time at the base (only logged days count). Log each one with its country, dates and, if you like, the city.</p>
         <section id="add-movement" class="doc-sub" data-doc-title="Add a movement">
           <h3>Add a movement</h3>
           {{ shot('movement-new', 'The New movement form: after typing "ita" in Country, the list offers Italy; numbered markers point at Country, the To date and the Add movement button', '1 Pick the country, 2 set the dates, 3 press Add movement. A receipt can be attached right away.') }}
@@ -196,7 +196,7 @@
 
       <section id="dashboard" class="doc-section" data-doc-title="Your dashboard">
         <h2>Your dashboard</h2>
-        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in Base country 290 of 365, At least 183 days; Days outside Base country 34; Year elapsed. Numbered markers point at + Year, + Add movement and Manage Base country', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
+        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in Base country 290 of 365, with the 183 marker switch off; Days outside Base country 34; Year elapsed. Numbered markers point at + Year, + Add movement and Manage Base country', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
         <section id="cards" class="doc-sub" data-doc-title="The four cards">
           <h3>The four cards</h3>
           <ul>
@@ -222,7 +222,7 @@
             <li>The calendar starts folded: click <strong>Calendar</strong> to open it, and again to fold it. It shows the year of the tab you are on.</li>
             <li>Each day has the color of the country it counts for, the same days as in Days per Country: a day shared by two stays has the color of the stay that started later.</li>
             <li>Grey days have no movement: they count for no country until you add one, at your base too.</li>
-            <li>Point at a day to see its date, country and city; screen readers read them with each day. Today has an outline.</li>
+            <li>Point at a day to see its date and country; screen readers read them with each day. Today has an outline.</li>
           </ul>
         </section>
 
@@ -244,7 +244,7 @@
         <p>Keep the proof of where you were: rental contracts, hotel bills, flight tickets.</p>
         <section id="upload" class="doc-sub" data-doc-title="Upload a receipt">
           <h3>Upload a receipt</h3>
-          {{ shot('receipts', 'The Receipts card of a movement: a type menu set to Flight ticket, a chosen file named flight-lis-bcn.pdf and the Upload button, above two saved receipts', 'Choose the type and the file, then press Upload.') }}
+          {{ shot('receipts', 'The Receipts card of a movement: a type menu set to Flight ticket, a chosen file named flight-lis-bcn.pdf and the Upload button, below two saved receipts', 'Choose the type and the file, then press Upload.') }}
           <ul>
             <li>Upload on a movement's page, or on the base page for your rental contract.</li>
             <li>Types: {{ kinds() }}, chosen from a list with an icon for each.</li>
@@ -388,7 +388,7 @@
         </section>
         <section id="numbers" class="doc-sub" data-doc-title="The day count looks wrong">
           <h3>The day count looks wrong</h3>
-          <p>Look for "counted" under a movement in the table: it shares days with another one. Remember that empty future days count nowhere yet, and that both the first and the last day of a movement count. See <a href="#counting">How days are counted</a>.</p>
+          <p>Look for "counted" under a movement in the table: it shares days with another one. Remember that a day without a movement counts for no country, past or future (your base too: log your time there as a movement), and that both the first and the last day of a movement count. See <a href="#counting">How days are counted</a>.</p>
         </section>
         <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>

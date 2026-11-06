@@ -345,6 +345,7 @@
     // The year's base country comes first in the list, with a home icon.
     var base = exact[fold(input.getAttribute("data-base-country") || "")] || null;
     var mode = "all", shown = [], active = -1;
+    var filtered = false;  // filtered by the typed text, or the whole list (opened on a chosen country)
     var syncTabs = function () {
       tabFav.textContent = "Favorites (" + favCount() + ")";
       tabAll.setAttribute("aria-pressed", mode === "all" ? "true" : "false");
@@ -458,6 +459,7 @@
     };
     var open = function (filter) {
       var current = exact[fold(input.value)];
+      filtered = !!filter && !current;
       if (!filter || current) {
         // Opening on a chosen country shows the whole list with that country highlighted;
         // otherwise nothing is, so Enter still submits a free text place as typed.
@@ -469,8 +471,8 @@
     };
     var refresh = function () {  // the same view again (tab, star), keeping the highlight
       var keep = active >= 0 ? shown[active] : null;
-      var items = listFor(true);
-      render(items, keep ? items.indexOf(keep) : (fold(input.value) ? 0 : -1));
+      var items = listFor(filtered);  // a star or a tab keeps the whole list when it showed it
+      render(items, keep ? items.indexOf(keep) : (filtered && fold(input.value) ? 0 : -1));
     };
     var setMode = function (m) {
       mode = m;
@@ -515,6 +517,7 @@
 
     input.addEventListener("input", function () {
       updateFlag();
+      filtered = true;
       // An emptied field lists every country with none highlighted: Enter then submits.
       render(listFor(true), fold(input.value) ? 0 : -1);
     });
@@ -657,6 +660,8 @@
       }
     });
     btn.addEventListener("blur", close);
+    // Safari and Firefox do not focus a clicked button, so no blur comes: a click outside closes.
+    document.addEventListener("mousedown", function (e) { if (!list.hidden && !wrap.contains(e.target)) close(); });
     select.addEventListener("change", sync);  // set from elsewhere (a reset, a script)
     sync();
   });
@@ -766,8 +771,9 @@
     var render = function () {
       var y = focusDay.getFullYear(), m = focusDay.getMonth();
       title.textContent = MONTHS[m] + " " + y;
-      prev.disabled = !!min && new Date(y, m, 0) < min;
-      next.disabled = !!max && new Date(y, m + 1, 1) > max;
+      // aria-disabled, not disabled: a disabled button would drop the focus to the page.
+      prev.setAttribute("aria-disabled", !!min && new Date(y, m, 0) < min ? "true" : "false");
+      next.setAttribute("aria-disabled", !!max && new Date(y, m + 1, 1) > max ? "true" : "false");
       var chosen = input.value, today = isoOf(new Date());
       tbody.textContent = "";
       var first = new Date(y, m, 1), row = document.createElement("tr");
@@ -825,8 +831,16 @@
     btn.addEventListener("keydown", function (e) {
       if (e.key === "ArrowDown" && pop.hidden) { e.preventDefault(); open(); }
     });
-    prev.addEventListener("click", function () { focusDay = clamp(addMonths(focusDay, -1)); render(); });
-    next.addEventListener("click", function () { focusDay = clamp(addMonths(focusDay, 1)); render(); });
+    prev.addEventListener("click", function () {
+      if (prev.getAttribute("aria-disabled") === "true") return;
+      focusDay = clamp(addMonths(focusDay, -1)); render();
+    });
+    next.addEventListener("click", function () {
+      if (next.getAttribute("aria-disabled") === "true") return;
+      focusDay = clamp(addMonths(focusDay, 1)); render();
+    });
+    // A click on the title, the weekdays or the padding keeps the focus where it is.
+    pop.addEventListener("mousedown", function (e) { if (!e.target.closest("button")) e.preventDefault(); });
     todayBtn.addEventListener("click", function () { choose(new Date(new Date().setHours(0, 0, 0, 0))); });
     tbody.addEventListener("click", function (e) {
       var day = e.target.closest(".date-day");
@@ -840,8 +854,8 @@
       else if (e.key === "End") { e.preventDefault(); focusOn(addDays(focusDay, 6 - weekday(focusDay))); }
       else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(focusDay); }
     });
-    pop.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); }
+    wrap.addEventListener("keydown", function (e) {  // also from the date button
+      if (e.key === "Escape" && !pop.hidden) { e.preventDefault(); e.stopPropagation(); close(true); }
     });
     // Closes on a click outside, or when the focus leaves the field and its calendar.
     document.addEventListener("mousedown", function (e) { if (!wrap.contains(e.target)) close(false); });
@@ -869,6 +883,7 @@
   document.querySelectorAll("form[data-download]").forEach(function (form) {
     var btn = form.querySelector("[type=submit]");
     var label = btn ? btn.innerHTML : "";  // with its icon, put back after "Preparing package..."
+    var name = btn ? btn.getAttribute("aria-label") : null;  // its spoken name, put back too
     var timer = null;
     var readCookie = function () {
       var m = document.cookie.match(/(?:^|; )nl_download=([^;]*)/);
@@ -877,7 +892,7 @@
     var done = function () {
       clearInterval(timer);
       document.cookie = "nl_download=; Max-Age=0; path=/; SameSite=Lax";
-      if (btn) { btn.removeAttribute("aria-disabled"); btn.innerHTML = label; btn.removeAttribute("aria-busy"); }
+      if (btn) { btn.removeAttribute("aria-disabled"); btn.innerHTML = label; btn.removeAttribute("aria-busy"); if (name) btn.setAttribute("aria-label", name); }
     };
     form.addEventListener("submit", function (e) {
       if (btn && btn.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
@@ -889,6 +904,7 @@
         // keeps keyboard focus on the button.
         setTimeout(function () {
           btn.setAttribute("aria-disabled", "true"); btn.textContent = "Preparing package..."; btn.setAttribute("aria-busy", "true");
+          if (name) btn.setAttribute("aria-label", "Preparing package...");  // the label would hide the text
         }, 0);
       }
       var started = Date.now();

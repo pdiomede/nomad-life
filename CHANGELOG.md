@@ -33,6 +33,19 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+Found in a review of the whole app and its interface (10 bugs):
+
+- **Low.** The accountant package's Days per country table gave the elapsed days as the "So far" total, which no longer added up to the rows now that days without a stay count nowhere. It adds up the rows, and the So far block says how many past days have no stay.
+- **Low.** Texts still described the old counting or a required city: the documentation (a movement as "a stay away from your base", the troubleshooting tip, the calendar's hover text, two screenshot descriptions) and the package README's folder names. They say what the app does.
+- **Low.** Starring a country, or switching tabs, in a country list opened on a chosen country shrank the list to that country alone (the Favorites tab then said nothing matched). The list keeps the view it was opened with.
+- **Low.** In the date calendar, paging to January or December, or a click on its title or padding, sent the keyboard focus to the page, after which Escape and the arrow keys did nothing. The focus stays in the calendar.
+- **Low.** Escape did not close the date calendar while the focus was on its date button. It does.
+- **Low.** "+ Year" offered a year the account already had (the current one), which could only fail. It offers the first year not taken yet.
+- **Low.** The year setup screenshot in the documentation showed the country list open over the buttons (the screenshot browser had no focus, so the list never closed). It is taken with focus now.
+- **Low.** While the package was being prepared, screen readers still heard "Download Accountant Package" instead of "Preparing package...". They hear the busy state.
+- **Low.** In the dark theme the border of outlined buttons fell to 2.7:1 on the highlighted row of today's stay. It is above 3:1 everywhere.
+- **Low.** In Safari and Firefox, which do not focus a clicked button, a receipt type list could stay open after a click outside it. A click outside closes it.
+
 Found in a review of the new pickers (3 bugs):
 
 - **Low.** The favorite star was an 18 px target inside a clickable row, so a near miss chose the country instead of starring it. It is now a 30 px target.

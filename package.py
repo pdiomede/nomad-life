@@ -310,7 +310,9 @@ def summary_blocks(data):
                 ("Days elapsed", f"{data.elapsed} of {data.total_days}"),
                 (f"Days in base country, {base_name}", str(data.base_so_far)),
                 ("Days abroad", str(data.abroad_so_far)),
-            ]),
+            ] + ([("Days without a stay so far (not counted)",
+                   str(data.elapsed - data.base_so_far - data.abroad_so_far))]
+                 if data.elapsed > data.base_so_far + data.abroad_so_far else [])),
             ("heading", "Full year with planned trips"),
             ("kv", full_year),
             ("note", "These numbers add the trips you have already planned. Days without a "
@@ -335,8 +337,9 @@ def summary_blocks(data):
             row.append(str(c.so_far))
         rows.append(row)
     counted = sum(c.days for c in data.countries)
+    # "So far" adds up the rows: past days without a stay count nowhere, so not the elapsed days.
     rows.append(["Total", "", str(counted), f"{counted * 100 / data.total_days:.1f}%"]
-                + ([str(data.elapsed)] if so_far else []))
+                + ([str(sum(c.so_far for c in data.countries))] if so_far else []))
     blocks.append(("table", {"columns": columns, "rows": rows,
                              "widths": [44, 10, 12, 14] + ([14] if so_far else []),
                              "align": ["LEFT", "CENTER", "RIGHT", "RIGHT"] + (["RIGHT"] if so_far else [])}))
@@ -564,7 +567,7 @@ def readme_text(data):
         "  country-totals.csv  One row per country with days and share of the year.",
         "  receipts/           The receipts as stored (large photos are resized when uploaded).",
         "                      receipts/base holds base documents,",
-        "                      the other folders are numbered stays: 01_<start date>_<city>_<country>.",
+        "                      the other folders are numbered stays: 01_<start date>_[<city>_]<country> (the city when there is one).",
         "  manifest.csv        Every other file in this package with its size and SHA-256 checksum.",
         "",
         "CSV files are comma separated UTF-8 with a byte order mark. If Excel shows everything in one",

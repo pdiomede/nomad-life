@@ -176,6 +176,8 @@ async function shoot(page, shot, theme) {
 const { page, close } = await launch();
 try {
   await page.send("Page.enable");
+  // Headless Chrome has no window focus, so focus and blur never fire (a country list stayed open).
+  await page.send("Emulation.setFocusEmulationEnabled", { enabled: true });
   await page.send("Runtime.enable");
   await page.send("DOM.enable");
   await page.send("Emulation.setDeviceMetricsOverride", { width: 1120, height: 900, deviceScaleFactor: 2, mobile: false });

@@ -60,7 +60,7 @@
   --border: #383D51;
   --input-bg: #1B2030;
   --input-border: #444A62;
-  --btn-border: #767D98;
+  --btn-border: #8088A3;
   --topbar: #1B2030;
   --topbar-text: #F1F1F3;
   --primary: #F1F1F3;
@@ -99,7 +99,7 @@
     --border: #383D51;
     --input-bg: #1B2030;
     --input-border: #444A62;
-    --btn-border: #767D98;
+    --btn-border: #8088A3;
     --topbar: #1B2030;
     --topbar-text: #F1F1F3;
     --primary: #F1F1F3;
@@ -618,7 +618,7 @@ main:focus { outline: none; }
 .date-title { font-weight: 600; }
 .date-nav { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--text); font-size: 22px; line-height: 1; cursor: pointer; }
 .date-nav:hover { background: var(--surface-2); }
-.date-nav:disabled { color: var(--muted); opacity: 0.4; cursor: default; background: none; }
+.date-nav[aria-disabled="true"] { color: var(--muted); opacity: 0.4; cursor: default; background: none; }
 .date-grid { width: 100%; border-collapse: separate; border-spacing: 2px; table-layout: fixed; }
 .date-grid th { padding: 2px 0 4px; font-size: 11px; font-weight: 500; color: var(--muted); }
 .date-grid abbr { text-decoration: none; }
