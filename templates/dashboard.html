@@ -137,7 +137,7 @@
   <details class="card fold-card cal-card">
     <summary class="card-head fold-summary">
       <h2 id="calendar-title" class="title-icon icon-calendar">Calendar ({{ y.year }})</h2>
-      <span class="muted small">Where each day of {{ y.year }} counts</span>
+      <span class="muted small">Your {{ y.year }} day-by-day plan</span>
     </summary>
     <ul class="cal-legend small" aria-label="Colors">
       {% for c in calendar.legend %}
@@ -166,7 +166,7 @@
   <details class="card fold-card map-card">
     <summary class="card-head fold-summary map-summary">
       <h2 id="map-title" class="title-icon icon-globe">Map</h2>
-      <span class="muted small">Your base and stays in {{ y.year }}</span>
+      <span class="muted small">Your {{ y.year }} locations on the map</span>
     </summary>
     {# Zoom controls sit above the map, so they never cover a pin, and outside the summary,
        where a click would fold the card. Shown by theme.js, which does the zooming (no

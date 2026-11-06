@@ -32,6 +32,16 @@ class CalendarTests(AppTestCase):
         self.assertLess(html.index('id="movements"'), html.index('id="calendar-title"'))
         self.assertLess(html.index('id="calendar-title"'), html.index('id="map-title"'))
 
+    def test_the_card_heads_name_the_year_of_the_tab(self):
+        self.new_year(2027)
+        self.new_year(2028)
+        for year, other in ((2027, 2028), (2028, 2027)):
+            html = self.page(year)
+            self.assertIn(f'<span class="muted small">Your {year} day-by-day plan</span>', html)
+            self.assertIn(f'<span class="muted small">Your {year} locations on the map</span>', html)
+            self.assertNotIn(f"Your {other} day-by-day plan", html)
+            self.assertNotIn(f"Your {other} locations on the map", html)
+
     def test_only_the_selected_year_with_its_weekdays(self):
         self.new_year(2027)
         self.new_year(2028)

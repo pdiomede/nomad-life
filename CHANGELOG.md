@@ -12,6 +12,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - The cards **Days in base country** and **Days abroad** are now **Days in Base Country** and **Days outside the Base Country**. The accountant package keeps its wording.
+- The lines in the Calendar and Map heads read **Your 2027 day-by-day plan** and **Your 2027 locations on the map**, with the year of the open tab.
 
 ### Fixed
 
