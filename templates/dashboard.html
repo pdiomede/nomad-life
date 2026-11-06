@@ -23,13 +23,13 @@
     <p class="stat-label">Base</p>
     <p class="stat-value">{{ y.base_city }}</p>
     <p class="muted">{{ ui.flag(y.base_country) }}{{ y.base_country }}</p>
-    <a class="small" href="{{ url_for('base', year=y.year) }}">Manage base and contract ({{ base_docs|length }})</a>
+    <a class="small" href="{{ url_for('base', year=y.year) }}">Manage Base country</a>
   </div>
   <div class="card stat">
     <div class="stat-head">
       {# Shown by theme.js; the choice is kept in this browser (theme-init.js applies it before
          the page is drawn). Without JavaScript the marker always shows. #}
-      <button type="button" class="switch" role="switch" aria-checked="true" data-marker-switch hidden><span class="switch-label">Show {{ stats.threshold }} marker</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
+      <button type="button" class="switch" role="switch" aria-checked="false" data-marker-switch hidden><span class="switch-label">Show {{ stats.threshold }} marker</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
       <p class="stat-label">Days in Base country</p>
     </div>
     <p class="stat-value">{{ stats.base_days }} <span class="muted stat-of">/ {{ stats.total }}</span></p>
@@ -216,7 +216,7 @@
     <div class="card-head">
       <h2>Days per Country</h2>
       {# The same setting as the switch of Days in Base country: both move together. #}
-      <button type="button" class="switch" role="switch" aria-checked="true" data-marker-switch hidden><span class="switch-label">Show {{ stats.threshold }} marker</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
+      <button type="button" class="switch" role="switch" aria-checked="false" data-marker-switch hidden><span class="switch-label">Show {{ stats.threshold }} marker</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
     </div>
     <p class="muted small">A day shared by two stays, such as a travel day, counts toward the stay that started later.</p>
     <ul class="bars">
@@ -267,7 +267,7 @@
     <form method="get" action="{{ url_for('year_package', year=y.year) }}" class="package-form" data-download>
       <label class="check"><input type="checkbox" name="notes" value="1"> Include my notes</label>
       <input type="hidden" name="dl" value="">
-      <button class="btn btn-primary" type="submit" data-tip="Download Accountant Package" aria-label="Download Accountant Package">Download</button>
+      <button class="btn btn-primary" type="submit" data-tip="Download Accountant Package" aria-label="Download Accountant Package"><span class="btn-icon icon-download" aria-hidden="true"></span>Download</button>
     </form>
     {% else %}
     <p class="small">Available from the Pro plan.</p>

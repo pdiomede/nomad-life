@@ -97,7 +97,7 @@
         </section>
         <section id="base" class="doc-sub" data-doc-title="Change your base or delete a year">
           <h3>Change your base or delete a year</h3>
-          <p>On the dashboard, <strong>Manage base and contract</strong> (on the Base card) lets you change the base city and country, upload your rental contract, or delete the year. Deleting a year removes its movements and receipts and asks you to type the year to confirm.</p>
+          <p>On the dashboard, <strong>Manage Base country</strong> (on the Base card) lets you change the base city and country, upload your rental contract, or delete the year. Deleting a year removes its movements and receipts and asks you to type the year to confirm.</p>
         </section>
         <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
@@ -111,7 +111,7 @@
           <ul>
             <li>Press <strong>+ Add movement</strong> on the dashboard.</li>
             <li><strong>The country is what counts</strong>; the city is optional. Without one, the movement shows as its country, such as <strong>Italy</strong>.</li>
-            <li><strong>Both dates count.</strong> From 1 March to 3 March is 3 days.</li>
+            <li>Pick <strong>From</strong> and <strong>To</strong> in the calendar that opens on each date (an empty To opens on the month of From). <strong>Both dates count.</strong> From 1 March to 3 March is 3 days.</li>
             <li>The dates must fall inside the year. A trip over New Year is two movements: 28 to 31 December in one year, 1 to 5 January in the next.</li>
             <li>Notes are optional, up to {{ '{:,}'.format(notes_max) }} characters, and only you see them (the accountant package leaves them out unless you ask).</li>
           </ul>
@@ -196,12 +196,12 @@
 
       <section id="dashboard" class="doc-section" data-doc-title="Your dashboard">
         <h2>Your dashboard</h2>
-        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in Base country 290 of 365, At least 183 days; Days outside Base country 34; Year elapsed. Numbered markers point at + Year, + Add movement and Manage base and contract', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
+        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in Base country 290 of 365, At least 183 days; Days outside Base country 34; Year elapsed. Numbered markers point at + Year, + Add movement and Manage Base country', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
         <section id="cards" class="doc-sub" data-doc-title="The four cards">
           <h3>The four cards</h3>
           <ul>
             <li><strong>Base</strong>: your base city and country, and the link to manage them.</li>
-            <li><strong>Days in Base country</strong>: days counted for your base, out of the days in the year, with the {{ threshold }} day marker. The <strong>Show {{ threshold }} marker</strong> switch, here and on Days per Country, hides the marker and its message on both cards; this browser remembers it.</li>
+            <li><strong>Days in Base country</strong>: days counted for your base, out of the days in the year, with the {{ threshold }} day marker. The marker and its message start hidden: turn on the <strong>Show {{ threshold }} marker</strong> switch, here or on Days per Country, to show them on both cards; this browser remembers it.</li>
             <li><strong>Days outside Base country</strong>: days counted for every other country.</li>
             <li><strong>Year elapsed</strong>: how far into the year today is.</li>
           </ul>
@@ -405,6 +405,10 @@
               <tr><td><kbd>+</kbd> <kbd>-</kbd> <kbd>0</kbd></td><td>Map</td><td>Zoom in, zoom out, whole world</td></tr>
               <tr><td><kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>&rarr;</kbd> <kbd>&darr;</kbd></td><td>Map, zoomed</td><td>Move around</td></tr>
               <tr><td><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>Enter</kbd></td><td>Country picker</td><td>Choose a country</td></tr>
+              <tr><td><kbd>&larr;</kbd> <kbd>&rarr;</kbd> <kbd>&uarr;</kbd> <kbd>&darr;</kbd></td><td>Date calendar</td><td>Previous or next day, previous or next week</td></tr>
+              <tr><td><kbd>Page Up</kbd> <kbd>Page Down</kbd></td><td>Date calendar</td><td>Previous or next month</td></tr>
+              <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Date calendar</td><td>Monday or Sunday of the week</td></tr>
+              <tr><td><kbd>Enter</kbd> <kbd>Esc</kbd></td><td>Date calendar</td><td>Choose the day, close without choosing</td></tr>
               <tr><td><kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>Country picker</td><td>Add the highlighted country to your favorites, or remove it</td></tr>
               <tr><td><kbd>Alt</kbd>+<kbd>&rarr;</kbd> <kbd>Alt</kbd>+<kbd>&larr;</kbd></td><td>Country picker</td><td>Favorites, all countries</td></tr>
             </tbody>

@@ -27,11 +27,11 @@
         </div>
         <div class="field">
           <label for="start_date">From</label>
-          <input id="start_date" name="start_date" type="date" min="{{ y.year }}-01-01" max="{{ y.year }}-12-31" value="{{ form.start_date or '' }}" required>
+          <input id="start_date" name="start_date" type="date" data-date-picker min="{{ y.year }}-01-01" max="{{ y.year }}-12-31" value="{{ form.start_date or '' }}" required>
         </div>
         <div class="field">
           <label for="end_date">To</label>
-          <input id="end_date" name="end_date" type="date" min="{{ y.year }}-01-01" max="{{ y.year }}-12-31" value="{{ form.end_date or '' }}" required>
+          <input id="end_date" name="end_date" type="date" data-date-picker min="{{ y.year }}-01-01" max="{{ y.year }}-12-31" value="{{ form.end_date or '' }}" required>
         </div>
       </div>
       <div class="field">

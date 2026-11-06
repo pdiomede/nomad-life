@@ -26,7 +26,7 @@ class MarkerSwitchTests(AppTestCase):
         self.new_year(2030)  # a future year: short of the line
         html, card = self.card(2030)
         threshold = appmod.RESIDENCE_THRESHOLD
-        self.assertIn('<button type="button" class="switch" role="switch" aria-checked="true" '
+        self.assertIn('<button type="button" class="switch" role="switch" aria-checked="false" '
                       f'data-marker-switch hidden><span class="switch-label">Show {threshold} marker</span>',
                       card)
         self.assertIn('<i class="day-marker" style="left:', card)
@@ -76,7 +76,8 @@ class MarkerSwitchAssetTests(AppTestCase):
         self.assertIn('.switch[aria-checked="true"] .switch-thumb { transform: translateX(14px); }', css)
         self.assertIn('.switch[aria-checked="true"] .switch-track { background: var(--success); }', css)
         init = read("static", "js", "theme-init.js")
-        self.assertIn('localStorage.getItem("nl_marker") === "off"', init)
+        # Hidden until switched on in this browser.
+        self.assertIn('localStorage.getItem("nl_marker") !== "on"', init)
         self.assertIn('setAttribute("data-marker", "off")', init)
 
     def test_back_shows_the_saved_theme_and_marker(self):
@@ -85,7 +86,7 @@ class MarkerSwitchAssetTests(AppTestCase):
         js = read("static", "js", "theme.js")
         block = js[js.index('window.addEventListener("pageshow", function (e) {\n    if (!e.persisted) return;\n    var theme'):][:700]
         self.assertIn('localStorage.getItem("theme")', block)
-        self.assertIn('localStorage.getItem("nl_marker") === "off"', block)
+        self.assertIn('localStorage.getItem("nl_marker") !== "on"', block)
         self.assertIn('root.setAttribute("data-theme", theme); else root.removeAttribute("data-theme");', block)
         self.assertIn('root.setAttribute("data-marker", "off"); else root.removeAttribute("data-marker");', block)
         self.assertIn("syncMarkerSwitches();", block)
@@ -96,6 +97,5 @@ class MarkerSwitchAssetTests(AppTestCase):
         self.assertIn("sw.hidden = false;", block)
         # Flipping one switch moves every switch on the page.
         self.assertIn('markerSwitches.forEach(function (sw) { sw.setAttribute("aria-checked", on); });', block)
-        self.assertIn('localStorage.setItem("nl_marker", "off")', block)
-        self.assertIn('localStorage.removeItem("nl_marker")', block)
+        self.assertIn('localStorage.setItem("nl_marker", off ? "off" : "on");', block)
         self.assertIn("syncMarkerSwitches();", block)

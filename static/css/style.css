@@ -589,6 +589,41 @@ main:focus { outline: none; }
 .combo-star:hover { opacity: 1; color: var(--star); }
 .combo-star[aria-pressed="true"] { opacity: 1; color: var(--star);
   --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black' stroke='black' stroke-width='1.8' stroke-linejoin='round'><path d='M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z'/></svg>"); }
+/* Date fields (input[data-date-picker]): a button in the inputs' look and a month calendar. */
+.date-picker { position: relative; }
+.date-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; font: inherit; text-align: left; cursor: pointer;
+  color: var(--text); background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; }
+.date-btn.is-empty .date-text { color: var(--muted); }
+.date-btn:focus-visible { outline: 2px solid var(--link); outline-offset: -1px; border-color: transparent; }
+.date-btn[aria-invalid="true"] { border-color: var(--error-text); }
+.date-icon { flex: none; width: 18px; height: 18px; background-color: var(--link);
+  -webkit-mask: var(--date-icon) center / contain no-repeat; mask: var(--date-icon) center / contain no-repeat;
+  --date-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='4.5' width='18' height='16.5' rx='2.5'/><path d='M3 9.5h18M8 2.5v4M16 2.5v4'/></svg>"); }
+.date-error { margin: 6px 0 0; font-size: 13px; color: var(--error-text); }
+.date-pop { position: absolute; z-index: 30; left: 0; top: calc(100% + 4px); width: 296px; max-width: calc(100vw - 32px); padding: 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18); }
+.date-pop[hidden] { display: none; }
+.date-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.date-title { font-weight: 600; }
+.date-nav { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--text); font-size: 22px; line-height: 1; cursor: pointer; }
+.date-nav:hover { background: var(--surface-2); }
+.date-nav:disabled { color: var(--muted); opacity: 0.4; cursor: default; background: none; }
+.date-grid { width: 100%; border-collapse: separate; border-spacing: 2px; table-layout: fixed; }
+.date-grid th { padding: 2px 0 4px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.date-grid abbr { text-decoration: none; }
+.date-grid td { padding: 0; text-align: center; }
+.date-day { width: 100%; height: 36px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--text); font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.date-day:hover { background: var(--surface-2); }
+.date-day:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+.date-day.is-today { box-shadow: inset 0 0 0 1.5px var(--link); font-weight: 700; }
+.date-day.is-chosen { background: var(--primary); color: var(--primary-text); font-weight: 700; }
+.date-day.is-off { color: var(--muted); opacity: 0.45; cursor: default; background: none; }
+.date-foot { display: flex; justify-content: flex-end; margin-top: 6px; }
+.date-foot [hidden] { display: none; }
+.date-today-btn { padding: 5px 10px; border: 1px solid var(--input-border); border-radius: 6px; background: none; color: var(--link); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.date-today-btn:hover { background: var(--surface-2); }
+@media (pointer: coarse) { .date-day { height: 40px; } }
+@media (forced-colors: active) { .date-icon { forced-color-adjust: none; background-color: CanvasText; } .date-day.is-chosen { border: 2px solid CanvasText; } }
 /* Receipt type list (select[data-select-menu]): a button in the inputs' look and the combo list. */
 .select-menu { position: relative; }
 .select-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; font: inherit; text-align: left; cursor: pointer;
@@ -986,6 +1021,11 @@ main:focus { outline: none; }
 
 /* Header icon buttons (Documentation, Contact support) name themselves in a small tooltip under
    the button, on mouse hover and on keyboard focus; screen readers use the aria-label. */
+/* An icon inside a button, before its label (Download). */
+.btn-icon { flex: none; width: 16px; height: 16px; background-color: currentColor;
+  -webkit-mask: var(--btn-icon) center / contain no-repeat; mask: var(--btn-icon) center / contain no-repeat; }
+.icon-download { --btn-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3v12M7 10l5 5 5-5'/><path d='M4 17v2.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V17'/></svg>"); }
+@media (forced-colors: active) { .btn-icon { forced-color-adjust: none; background-color: ButtonText; } }
 /* CSS tooltips: header icon buttons and buttons with a short label ("Download"). */
 .icon-btn[data-tip], .btn[data-tip] { position: relative; text-decoration: none; }
 .icon-btn[data-tip]::after, .btn[data-tip]::after {

@@ -38,7 +38,13 @@ class PackageButtonTests(unittest.TestCase):
         with open(os.path.join(ROOT, "templates", "dashboard.html"), encoding="utf-8") as f:
             html = f.read()
         self.assertIn('<button class="btn btn-primary" type="submit" data-tip="Download Accountant Package" '
-                      'aria-label="Download Accountant Package">Download</button>', html)
+                      'aria-label="Download Accountant Package"><span class="btn-icon icon-download" '
+                      'aria-hidden="true"></span>Download</button>', html)
+        with open(os.path.join(ROOT, "static", "js", "theme.js"), encoding="utf-8") as f:
+            js = f.read()
+        # The icon comes back after "Preparing package...".
+        self.assertIn('var label = btn ? btn.innerHTML : "";', js)
+        self.assertIn("btn.innerHTML = label;", js)
         self.assertIn(".icon-btn[data-tip]::after, .btn[data-tip]::after {", css())
         self.assertIn(".btn[data-tip]::after { left: 0; transform: translate(0, -2px); }", css())
 

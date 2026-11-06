@@ -48,7 +48,7 @@ const SHOTS = [
   { name: "movement-new", path: "/year/2026/movements/new", wait: 400,
     select: ["main section.card", "[role=listbox]:not([hidden])"], prep: `
       __type("#city", "Rome"); __type("#start_date", "2026-03-06"); __type("#end_date", "2026-03-08");
-      __callout("#end_date", 2); __callout("main form button[type=submit]", 3);
+      __callout("#end_date-picker", 2); __callout("main form button[type=submit]", 3);
       __callout("#country", 1); __type("#country", "ita");` },
   { name: "dashboard", path: "/year/2026", select: [".page-head", ".stats"], prep: `
       __callout(".year-tab.add", 1); __callout(".page-head .btn-primary", 2);

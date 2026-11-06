@@ -32,7 +32,7 @@
   window.addEventListener("pageshow", function (e) {
     if (!e.persisted) return;
     var theme = null, off = false;
-    try { theme = localStorage.getItem("theme"); off = localStorage.getItem("nl_marker") === "off"; } catch (x) {}
+    try { theme = localStorage.getItem("theme"); off = localStorage.getItem("nl_marker") !== "on"; } catch (x) {}
     if (theme === "light" || theme === "dark") root.setAttribute("data-theme", theme); else root.removeAttribute("data-theme");
     if (off) root.setAttribute("data-marker", "off"); else root.removeAttribute("data-marker");
     syncMarkerSwitches();
@@ -42,7 +42,7 @@
     sw.addEventListener("click", function () {
       var off = root.getAttribute("data-marker") !== "off";
       if (off) root.setAttribute("data-marker", "off"); else root.removeAttribute("data-marker");
-      try { if (off) localStorage.setItem("nl_marker", "off"); else localStorage.removeItem("nl_marker"); } catch (e) {}
+      try { localStorage.setItem("nl_marker", off ? "off" : "on"); } catch (e) {}
       syncMarkerSwitches();
     });
   });
@@ -661,11 +661,214 @@
     sync();
   });
 
+  // Date fields (input[data-date-picker], From and To of a movement): a button that opens a
+  // month calendar in the app's look instead of the browser's own. The real input stays in the
+  // form, hidden and kept in step, so the posted value (YYYY-MM-DD) is the same, and without
+  // JavaScript the native date field works.
+  var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
+                "September", "October", "November", "December"];
+  var DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  var pad2 = function (n) { return (n < 10 ? "0" : "") + n; };
+  var isoOf = function (d) { return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); };
+  var dateOf = function (s) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(s || "") ? new Date(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) : null;
+  };
+  var weekday = function (d) { return (d.getDay() + 6) % 7; };  // Monday 0 ... Sunday 6
+  var labelOf = function (d) {  // "Thu 11 Jun 2026"
+    return DAYS[weekday(d)].slice(0, 3) + " " + d.getDate() + " " + MONTHS[d.getMonth()].slice(0, 3) + " " + d.getFullYear();
+  };
+  var addDays = function (d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); };
+  var addMonths = function (d, n) {  // the same day, or the month's last when it has fewer
+    var last = new Date(d.getFullYear(), d.getMonth() + n + 1, 0).getDate();
+    return new Date(d.getFullYear(), d.getMonth() + n, Math.min(d.getDate(), last));
+  };
+  document.querySelectorAll("input[data-date-picker]").forEach(function (input) {
+    var min = dateOf(input.min), max = dateOf(input.max);
+    var inRange = function (d) { return (!min || d >= min) && (!max || d <= max); };
+    var clamp = function (d) { return min && d < min ? min : max && d > max ? max : d; };
+    var wrap = document.createElement("div");
+    wrap.className = "date-picker";
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "date-btn";
+    btn.id = input.id + "-picker";
+    btn.setAttribute("aria-haspopup", "dialog");
+    btn.setAttribute("aria-expanded", "false");
+    var icon = document.createElement("span"), text = document.createElement("span");
+    icon.className = "date-icon"; icon.setAttribute("aria-hidden", "true");
+    text.className = "date-text"; text.id = btn.id + "-text";
+    btn.appendChild(icon); btn.appendChild(text);
+    var label = document.querySelector('label[for="' + input.id + '"]');
+    if (label) {  // the button is named by the label and its date: "To, Thu 11 Jun 2026"
+      label.htmlFor = btn.id;
+      if (!label.id) label.id = btn.id + "-label";
+      btn.setAttribute("aria-labelledby", label.id + " " + text.id);
+    }
+    var error = document.createElement("p");
+    error.className = "date-error";
+    error.id = btn.id + "-error";
+    error.hidden = true;
+    var pop = document.createElement("div");
+    pop.className = "date-pop";
+    pop.hidden = true;
+    pop.setAttribute("role", "dialog");
+    pop.setAttribute("aria-label", "Choose a date");
+    var head = document.createElement("div");
+    head.className = "date-head";
+    var prev = document.createElement("button"), next = document.createElement("button");
+    var title = document.createElement("span");
+    prev.type = next.type = "button";
+    prev.className = next.className = "date-nav";
+    prev.setAttribute("aria-label", "Previous month");
+    next.setAttribute("aria-label", "Next month");
+    prev.innerHTML = '<span aria-hidden="true">&lsaquo;</span>';
+    next.innerHTML = '<span aria-hidden="true">&rsaquo;</span>';
+    title.className = "date-title"; title.id = btn.id + "-title";
+    title.setAttribute("aria-live", "polite");
+    head.appendChild(prev); head.appendChild(title); head.appendChild(next);
+    var grid = document.createElement("table");
+    grid.className = "date-grid";
+    grid.setAttribute("role", "grid");
+    grid.setAttribute("aria-labelledby", title.id);
+    var thead = document.createElement("thead"), hrow = document.createElement("tr");
+    DAYS.forEach(function (name) {
+      var th = document.createElement("th");
+      th.scope = "col";
+      th.innerHTML = '<abbr title="' + name + '">' + name.slice(0, 2) + "</abbr>";
+      hrow.appendChild(th);
+    });
+    thead.appendChild(hrow); grid.appendChild(thead);
+    var tbody = document.createElement("tbody");
+    grid.appendChild(tbody);
+    var foot = document.createElement("div");
+    foot.className = "date-foot";
+    var todayBtn = document.createElement("button");
+    todayBtn.type = "button"; todayBtn.className = "date-today-btn"; todayBtn.textContent = "Today";
+    foot.appendChild(todayBtn);
+    pop.appendChild(head); pop.appendChild(grid); pop.appendChild(foot);
+    // The field's own "required": a hidden required input would stop the form with no message.
+    var required = input.required;
+    input.required = false;
+    input.hidden = true;
+    wrap.insertBefore(btn, input);
+    wrap.appendChild(pop);
+    wrap.appendChild(error);
+
+    var focusDay = null;  // the day the keyboard is on, and so the month shown
+    var sync = function () {
+      var d = dateOf(input.value);
+      text.textContent = d ? labelOf(d) : "Choose a date";
+      btn.classList.toggle("is-empty", !d);
+      if (d) { error.hidden = true; btn.removeAttribute("aria-invalid"); btn.removeAttribute("aria-describedby"); }
+    };
+    var render = function () {
+      var y = focusDay.getFullYear(), m = focusDay.getMonth();
+      title.textContent = MONTHS[m] + " " + y;
+      prev.disabled = !!min && new Date(y, m, 0) < min;
+      next.disabled = !!max && new Date(y, m + 1, 1) > max;
+      var chosen = input.value, today = isoOf(new Date());
+      tbody.textContent = "";
+      var first = new Date(y, m, 1), row = document.createElement("tr");
+      for (var b = 0; b < weekday(first); b++) row.appendChild(document.createElement("td"));
+      for (var d = first; d.getMonth() === m; d = addDays(d, 1)) {
+        if (row.children.length === 7) { tbody.appendChild(row); row = document.createElement("tr"); }
+        var td = document.createElement("td"), day = document.createElement("button");
+        var iso = isoOf(d);
+        td.setAttribute("role", "gridcell");
+        day.type = "button";
+        day.className = "date-day";
+        day.textContent = d.getDate();
+        day.setAttribute("data-date", iso);
+        day.setAttribute("aria-label", DAYS[weekday(d)] + " " + d.getDate() + " " + MONTHS[m] + " " + y);
+        day.tabIndex = iso === isoOf(focusDay) ? 0 : -1;
+        if (iso === chosen) { td.setAttribute("aria-selected", "true"); day.classList.add("is-chosen"); }
+        if (iso === today) { day.setAttribute("aria-current", "date"); day.classList.add("is-today"); }
+        if (!inRange(d)) { day.setAttribute("aria-disabled", "true"); day.classList.add("is-off"); }
+        td.appendChild(day);
+        row.appendChild(td);
+      }
+      tbody.appendChild(row);
+      todayBtn.hidden = !inRange(dateOf(today));
+    };
+    var focusOn = function (d) {
+      focusDay = clamp(d);
+      render();
+      var day = tbody.querySelector('[data-date="' + isoOf(focusDay) + '"]');
+      if (day) day.focus();
+    };
+    var open = function () {
+      var start = null;
+      if (!input.value && input.id === "end_date") start = dateOf((document.getElementById("start_date") || {}).value);
+      var today = new Date(); today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      pop.hidden = false;
+      btn.setAttribute("aria-expanded", "true");
+      // The chosen day, or From's day for an empty To, or today in this year, or its first day.
+      focusOn(dateOf(input.value) || start || (inRange(today) ? today : min || today));
+    };
+    var close = function (back) {
+      if (pop.hidden) return;
+      pop.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+      if (back) btn.focus();
+    };
+    var choose = function (d) {
+      if (!inRange(d)) return;
+      input.value = isoOf(d);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      sync();
+      close(true);
+    };
+    btn.addEventListener("click", function () { if (pop.hidden) open(); else close(false); });
+    btn.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowDown" && pop.hidden) { e.preventDefault(); open(); }
+    });
+    prev.addEventListener("click", function () { focusDay = clamp(addMonths(focusDay, -1)); render(); });
+    next.addEventListener("click", function () { focusDay = clamp(addMonths(focusDay, 1)); render(); });
+    todayBtn.addEventListener("click", function () { choose(new Date(new Date().setHours(0, 0, 0, 0))); });
+    tbody.addEventListener("click", function (e) {
+      var day = e.target.closest(".date-day");
+      if (day) choose(dateOf(day.getAttribute("data-date")));
+    });
+    tbody.addEventListener("keydown", function (e) {
+      var keys = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+      if (e.key in keys) { e.preventDefault(); focusOn(addDays(focusDay, keys[e.key])); }
+      else if (e.key === "PageUp" || e.key === "PageDown") { e.preventDefault(); focusOn(addMonths(focusDay, e.key === "PageUp" ? -1 : 1)); }
+      else if (e.key === "Home") { e.preventDefault(); focusOn(addDays(focusDay, -weekday(focusDay))); }
+      else if (e.key === "End") { e.preventDefault(); focusOn(addDays(focusDay, 6 - weekday(focusDay))); }
+      else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(focusDay); }
+    });
+    pop.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); }
+    });
+    // Closes on a click outside, or when the focus leaves the field and its calendar.
+    document.addEventListener("mousedown", function (e) { if (!wrap.contains(e.target)) close(false); });
+    wrap.addEventListener("focusout", function (e) {
+      if (e.relatedTarget && !wrap.contains(e.relatedTarget)) close(false);
+    });
+    input.addEventListener("change", sync);  // set from elsewhere (a script)
+    if (required && input.form) {
+      input.form.addEventListener("submit", function (e) {
+        if (input.value) return;
+        e.preventDefault();
+        error.textContent = "Please choose a date.";
+        error.hidden = false;
+        btn.setAttribute("aria-invalid", "true");
+        btn.setAttribute("aria-describedby", error.id);
+        // Both dates empty: the focus goes to the first one (From), not the last checked.
+        if (input.form.querySelector('.date-btn[aria-invalid="true"]') === btn) btn.focus();
+      });
+    }
+    sync();
+  });
+
   // Downloads (accountant package): show a busy state and block double clicks until the
   // server answers. The response sets a cookie with the token we sent, which ends the wait.
   document.querySelectorAll("form[data-download]").forEach(function (form) {
     var btn = form.querySelector("[type=submit]");
-    var label = btn ? btn.textContent : "";
+    var label = btn ? btn.innerHTML : "";  // with its icon, put back after "Preparing package..."
     var timer = null;
     var readCookie = function () {
       var m = document.cookie.match(/(?:^|; )nl_download=([^;]*)/);
@@ -674,7 +877,7 @@
     var done = function () {
       clearInterval(timer);
       document.cookie = "nl_download=; Max-Age=0; path=/; SameSite=Lax";
-      if (btn) { btn.removeAttribute("aria-disabled"); btn.textContent = label; btn.removeAttribute("aria-busy"); }
+      if (btn) { btn.removeAttribute("aria-disabled"); btn.innerHTML = label; btn.removeAttribute("aria-busy"); }
     };
     form.addEventListener("submit", function (e) {
       if (btn && btn.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
