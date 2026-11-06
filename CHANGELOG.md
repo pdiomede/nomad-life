@@ -19,6 +19,10 @@ All notable changes to this project are documented in this file.
 - The year tabs and **+ Add movement** have the same height, and every year tab (and **+ Year**) the same width.
 - **Date calendar.** From and To of a movement open a month calendar in the app's look instead of the browser's: Monday first, today ringed, the chosen day filled, days outside the year greyed, a Today button, and keys (arrows, Page Up / Page Down, Home / End, Enter, Escape). An empty To opens on the month of From; an empty date says "Please choose a date." The form posts the same dates.
 - The "Show 183 marker" switches start off; this browser remembers once they are turned on. The Base card's link reads **Manage Base country**.
+- The year tabs run from the earliest year forward (2026 before 2027).
+- On Days in Base country the 183 marker switch sits on the title's line with only a tooltip ("Show 183 marker", also its name for screen readers), so the four top cards' titles line up.
+- **Set up your year:** the Year field is as wide as Base country, **Create year** is as wide as its label and on the left, and **Back** and **Cancel** return to the year the "+ Year" tab was pressed on (or the dashboard; a first year has none).
+- Outlined buttons (such as **Choose file**, **Cancel** and **Download ZIP**) have a border that is easy to see in both themes (3:1 against the card; it was 1.2:1).
 - The Accountant Package button says **Download** with a download icon, and the tooltip "Download Accountant Package" (also its name for screen readers).
 - The Accountant Package card reads "Everything for 2026 in one ZIP: a PDF summary, spreadsheets with your timeline and country totals, and all your receipts, ready to share with your accountant."
 - The cards **Days in base country** and **Days abroad** are now **Days in Base country** and **Days outside Base country**. The accountant package keeps its wording.

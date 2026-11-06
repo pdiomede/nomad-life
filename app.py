@@ -4364,7 +4364,18 @@ def register_routes(app):
                 else:
                     flash(f"Year {year} created with base in {city}, {country}.", "success")
                     return redirect(url_for("dashboard", year=year))
-        return render_template("year_new.html", default_year=date.today().year)
+        # Back to the year the "+ Year" tab was pressed on (?back=2026), or to the dashboard;
+        # a first year has nowhere to go back to.
+        back_year = request.args.get("back", type=int)
+        owned = {r["year"] for r in db.query("SELECT year FROM years WHERE user_id = ?",
+                                             (current_user.id,))}
+        if back_year in owned:
+            back = (url_for("dashboard", year=back_year), f"Back to {back_year}")
+        elif owned:
+            back = (url_for("index"), "Back to your dashboard")
+        else:
+            back = None
+        return render_template("year_new.html", default_year=date.today().year, back=back)
 
     @app.route("/year/<int:year>")
     @login_required
@@ -4374,7 +4385,8 @@ def register_routes(app):
             "SELECT m.*, (SELECT COUNT(*) FROM documents d WHERE d.movement_id = m.id) AS doc_count "
             "FROM movements m WHERE m.year_id = ? ORDER BY m.start_date, m.end_date DESC, m.id",
             (year_row["id"],))
-        years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year DESC",
+        # The year tabs run from the earliest year forward.
+        years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year",
                          (current_user.id,))
         base_docs = documents_for(year_row["id"])
         # Stats always use every movement; only the table is paginated.

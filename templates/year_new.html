@@ -2,6 +2,7 @@
 {% block title %}New year | Nomad Life{% endblock %}
 {% block content %}
 <div class="narrow">
+  {% if back %}<a class="back" href="{{ back[0] }}">&larr; {{ back[1] }}</a>{% endif %}
   <div class="page-head">
     <div>
       <p class="eyebrow">Solar year setup</p>
@@ -12,9 +13,11 @@
   <div class="card">
     <form method="post" class="stack" data-submit-once>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="field">
-        <label for="year">Year</label>
-        <input id="year" name="year" type="number" min="1970" max="2100" value="{{ request.form.year or default_year }}" required>
+      <div class="grid-2">{# the Year field as wide as Base country #}
+        <div class="field">
+          <label for="year">Year</label>
+          <input id="year" name="year" type="number" min="1970" max="2100" value="{{ request.form.year or default_year }}" required>
+        </div>
       </div>
       <div class="grid-2">
         <div class="field">
@@ -26,7 +29,10 @@
           <input id="base_city" name="base_city" maxlength="100" value="{{ request.form.base_city }}" placeholder="Lisbon" required>
         </div>
       </div>
-      <button class="btn btn-primary" type="submit">Create year</button>
+      <div class="row gap-sm form-buttons">
+        <button class="btn btn-primary" type="submit">Create year</button>
+        {% if back %}<a class="btn btn-ghost" href="{{ back[0] }}">Cancel</a>{% endif %}
+      </div>
     </form>
   </div>
 </div>

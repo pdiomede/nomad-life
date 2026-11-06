@@ -12,7 +12,7 @@
       {% for r in years %}
         <a class="year-tab {% if r.year == y.year %}active{% endif %}" href="{{ url_for('dashboard', year=r.year) }}"{% if r.year == y.year %} aria-current="page"{% endif %}>{{ r.year }}</a>
       {% endfor %}
-      <a class="year-tab add" href="{{ url_for('new_year') }}" title="Add a year">+ Year</a>
+      <a class="year-tab add" href="{{ url_for('new_year', back=y.year) }}" title="Add a year">+ Year</a>
     </nav>
     <a class="btn btn-primary" href="{{ url_for('movement_new', year=y.year) }}">+ Add movement</a>
   </div>
@@ -27,10 +27,11 @@
   </div>
   <div class="card stat">
     <div class="stat-head">
-      {# Shown by theme.js; the choice is kept in this browser (theme-init.js applies it before
-         the page is drawn). Without JavaScript the marker always shows. #}
-      <button type="button" class="switch" role="switch" aria-checked="false" data-marker-switch hidden><span class="switch-label">Show {{ stats.threshold }} marker</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
       <p class="stat-label">Days in Base country</p>
+      {# Shown by theme.js; the choice is kept in this browser (theme-init.js applies it before
+         the page is drawn). Without JavaScript the marker always shows. No visible label, so the
+         title stays on the line of the other cards' titles: the tooltip and the name say it. #}
+      <button type="button" class="switch switch-tip" role="switch" aria-checked="false" aria-label="Show {{ stats.threshold }} marker" data-tip="Show {{ stats.threshold }} marker" data-marker-switch hidden><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
     </div>
     <p class="stat-value">{{ stats.base_days }} <span class="muted stat-of">/ {{ stats.total }}</span></p>
     <div class="meter" aria-hidden="true">

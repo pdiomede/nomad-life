@@ -26,22 +26,26 @@ class MarkerSwitchTests(AppTestCase):
         self.new_year(2030)  # a future year: short of the line
         html, card = self.card(2030)
         threshold = appmod.RESIDENCE_THRESHOLD
-        self.assertIn('<button type="button" class="switch" role="switch" aria-checked="false" '
-                      f'data-marker-switch hidden><span class="switch-label">Show {threshold} marker</span>',
-                      card)
+        # On the title line, with a tooltip and no visible label.
+        self.assertIn('<button type="button" class="switch switch-tip" role="switch" aria-checked="false" '
+                      f'aria-label="Show {threshold} marker" data-tip="Show {threshold} marker" '
+                      'data-marker-switch hidden>', card)
         self.assertIn('<i class="day-marker" style="left:', card)
         self.assertIn('<p class="pill pill-warn day-marker">', card)
         self.assertIn('<p class="stat-label">Days outside Base country</p>', html)
         # The same switch on Days per Country, one setting for both.
-        self.assertEqual(html.count(f'data-marker-switch hidden><span class="switch-label">Show {threshold} marker</span>'), 2)
+        self.assertEqual(html.count(f'data-marker-switch hidden><span class="switch-label">Show {threshold} marker</span>'), 1)
+        self.assertEqual(html.count("data-marker-switch hidden"), 2)
         self.assertNotIn("Days abroad", html)
 
-    def test_the_switch_sits_above_the_title(self):
+    def test_the_switch_sits_on_the_title_line(self):
+        # So the four top cards' titles line up.
         self.new_year(2030)
         _, card = self.card(2030)
-        self.assertLess(card.index("data-marker-switch"), card.index('<p class="stat-label">Days in Base country</p>'))
+        self.assertLess(card.index('<p class="stat-label">Days in Base country</p>'), card.index("data-marker-switch"))
         css = read("static", "css", "style.css")
-        self.assertIn(".stat-head .switch { align-self: flex-end; }", css)
+        self.assertIn(".stat-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }", css)
+        self.assertIn(".switch-tip[data-tip]::after {", css)
         # The four top cards' titles look like the card titles below them (h2).
         self.assertIn(".year-stats .stat-label { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }", css)
         self.assertIn(".stat-label { font-size: 13px; color: var(--muted); font-weight: 500; }", css)  # admin keeps its own

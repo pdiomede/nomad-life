@@ -49,5 +49,19 @@ class PackageButtonTests(unittest.TestCase):
         self.assertIn(".btn[data-tip]::after { left: 0; transform: translate(0, -2px); }", css())
 
 
+class OutlinedButtonTests(unittest.TestCase):
+    def test_outlined_buttons_have_a_visible_border(self):
+        # --border was 1.2:1 on a card: Choose file and Cancel had almost no edge.
+        text = css()
+        self.assertIn(".btn-ghost { background: transparent; color: var(--text); "
+                      "border-color: var(--btn-border); }", text)
+        light = text[:text.index('[data-theme="dark"] {')]
+        dark = text[text.index(':root[data-theme="dark"] {'):text.index("@media (prefers-color-scheme: dark)")]
+        system = text[text.index("@media (prefers-color-scheme: dark)"):]
+        self.assertIn("--btn-border: #80869A;", light)
+        self.assertIn("--btn-border: #767D98;", dark)
+        self.assertIn("--btn-border: #767D98;", system[:system.index("\n}\n")])
+
+
 if __name__ == "__main__":
     unittest.main()
