@@ -183,7 +183,7 @@
 
         <section id="threshold" class="doc-sub" data-doc-title="The 183 day line">
           <h3>The {{ threshold }} day line</h3>
-          <p>Many countries treat you as a tax resident once you spend {{ threshold }} days or more there in a year. The <strong>Days in base country</strong> card marks that line: it says <strong>At least {{ threshold }} days</strong>, or how many days you are short. In <strong>Days per country</strong> a bar turns red when another country reaches {{ threshold }} days.</p>
+          <p>Many countries treat you as a tax resident once you spend {{ threshold }} days or more there in a year. The <strong>Days in Base Country</strong> card marks that line: it says <strong>At least {{ threshold }} days</strong>, or how many days you are short. In <strong>Days per country</strong> a bar turns red when another country reaches {{ threshold }} days.</p>
           <p class="doc-note">Nomad Life counts days; it does not give tax advice. Rules differ by country (some count partial days or look at other ties), so check yours with an accountant. The guides on <a href="{{ url_for('guide', slug='183-day-rule') }}">the {{ threshold }} day rule</a> and <a href="{{ url_for('guide', slug='count-days-in-a-country') }}">counting your days</a> explain more.</p>
         </section>
         <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
@@ -191,13 +191,13 @@
 
       <section id="dashboard" class="doc-section" data-doc-title="Your dashboard">
         <h2>Your dashboard</h2>
-        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in base country 248 of 365, At least 183 days; Days abroad 34; Year elapsed 274 of 365. Numbered markers point at + Year, + Add movement and Manage base and contract', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
+        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in Base Country 248 of 365, At least 183 days; Days outside the Base Country 34; Year elapsed 274 of 365. Numbered markers point at + Year, + Add movement and Manage base and contract', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
         <section id="cards" class="doc-sub" data-doc-title="The four cards">
           <h3>The four cards</h3>
           <ul>
             <li><strong>Base</strong>: your base city and country, and the link to manage them.</li>
-            <li><strong>Days in base country</strong>: days counted for your base, out of the days in the year, with the {{ threshold }} day marker.</li>
-            <li><strong>Days abroad</strong>: days counted for every other country.</li>
+            <li><strong>Days in Base Country</strong>: days counted for your base, out of the days in the year, with the {{ threshold }} day marker. The <strong>Show {{ threshold }} marker</strong> switch hides the marker and its message; this browser remembers it.</li>
+            <li><strong>Days outside the Base Country</strong>: days counted for every other country.</li>
             <li><strong>Year elapsed</strong>: how far into the year today is.</li>
           </ul>
         </section>

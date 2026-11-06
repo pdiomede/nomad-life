@@ -28,7 +28,7 @@ class CalendarTests(AppTestCase):
         self.new_year(2027)
         html = self.page(2027)
         self.assertIn('<details class="card fold-card cal-card">', html)  # no "open"
-        self.assertIn('<h2 id="calendar-title" class="title-icon icon-calendar">Calendar</h2>', html)
+        self.assertIn('<h2 id="calendar-title" class="title-icon icon-calendar">Calendar (2027)</h2>', html)
         self.assertLess(html.index('id="movements"'), html.index('id="calendar-title"'))
         self.assertLess(html.index('id="calendar-title"'), html.index('id="map-title"'))
 

@@ -5,5 +5,7 @@
   try {
     var t = localStorage.getItem("theme");
     if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    // The dashboard's 183 day marker, switched off in this browser (theme.js keeps it).
+    if (localStorage.getItem("nl_marker") === "off") document.documentElement.setAttribute("data-marker", "off");
   } catch (e) {}
 })();

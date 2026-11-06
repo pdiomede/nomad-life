@@ -310,6 +310,25 @@ main:focus { outline: none; }
 .stat-of { font-size: 15px; font-weight: 500; }
 .stat-base { position: relative; overflow: hidden; }
 .stat-base::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--gradient); }
+.stat-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 10px; }
+
+/* iOS style switch (role="switch", aria-checked), here for the 183 day marker of the Days in
+   Base Country card. Off hides everything marked .base-marker; theme-init.js sets data-marker
+   on <html> before the page is drawn, so the saved choice never flashes. */
+.switch {
+  display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 2px 0; border: 0;
+  background: none; color: var(--muted); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; border-radius: 999px;
+}
+.switch[hidden] { display: none; }
+.switch:hover { color: var(--text); }
+.switch:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
+.switch-track { position: relative; flex: none; width: 34px; height: 20px; border-radius: 999px; background: var(--input-border); transition: background-color 0.2s ease; }
+.switch-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); transition: transform 0.2s ease; }
+.switch[aria-checked="true"] .switch-track { background: var(--success); }
+.switch[aria-checked="true"] .switch-thumb { transform: translateX(14px); }
+@media (prefers-reduced-motion: reduce) { .switch-track, .switch-thumb { transition: none; } }
+@media (forced-colors: active) { .switch-track { border: 1px solid CanvasText; } .switch-thumb { forced-color-adjust: none; background: CanvasText; } }
+[data-marker="off"] .base-marker { display: none !important; }
 
 .meter { position: relative; height: 8px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); overflow: visible; }
 .meter span { display: block; height: 100%; border-radius: 4px; background: var(--gradient); }

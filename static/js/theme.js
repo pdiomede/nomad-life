@@ -17,6 +17,21 @@
     });
   }
 
+  // The "Show 183 marker" switch of the Days in Base Country card: off hides the marker and its
+  // message (.base-marker) through data-marker on <html>, which theme-init.js sets again on the
+  // next page before it is drawn. Kept in this browser, for every year.
+  document.querySelectorAll("[data-marker-switch]").forEach(function (sw) {
+    var sync = function () { sw.setAttribute("aria-checked", root.getAttribute("data-marker") === "off" ? "false" : "true"); };
+    sync();
+    sw.hidden = false;
+    sw.addEventListener("click", function () {
+      var off = root.getAttribute("data-marker") !== "off";
+      if (off) root.setAttribute("data-marker", "off"); else root.removeAttribute("data-marker");
+      try { if (off) localStorage.setItem("nl_marker", "off"); else localStorage.removeItem("nl_marker"); } catch (e) {}
+      sync();
+    });
+  });
+
   // The support button in the header glows slowly until this browser has opened the support
   // pages once, so people notice it is new. A new reply makes it glow again (set by the server).
   var support = document.querySelector(".support-btn");

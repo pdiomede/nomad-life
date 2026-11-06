@@ -6,7 +6,12 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- **Calendar** on the year dashboard, before the Map, with a calendar icon. It starts folded and opens with a click on its head. It shows the selected year's 12 months (four a row on wide screens, then three, two and one), each day in the color of the country it counts for, with the same rules as Days per Country: a shared day goes to the stay that started later, past days without a stay are the base, and days still to come without a stay are grey ("Not planned yet"). A legend lists each country with its flag and days; pointing at a day shows its date, country and city, and today has an outline. The colors are set for the light and dark themes, with every day number readable. The documentation has a section on it.
+- **Calendar** on the year dashboard, before the Map, with a calendar icon and its year in the title, such as **Calendar (2027)**. It starts folded and opens with a click on its head. It shows the selected year's 12 months (four a row on wide screens, then three, two and one), each day in the color of the country it counts for, with the same rules as Days per Country: a shared day goes to the stay that started later, past days without a stay are the base, and days still to come without a stay are grey ("Not planned yet"). A legend lists each country with its flag and days; pointing at a day shows its date, country and city, and today has an outline. The colors are set for the light and dark themes, with every day number readable. The documentation has a section on it.
+- **Show 183 marker** switch, iOS style, in the top right of the Days in Base Country card: off hides the 183 day tick and its message ("N days short of 183", "At least 183 days"). This browser remembers the choice for every year, applied before the page is drawn so it never flashes.
+
+### Changed
+
+- The cards **Days in base country** and **Days abroad** are now **Days in Base Country** and **Days outside the Base Country**. The accountant package keeps its wording.
 
 ### Fixed
 
