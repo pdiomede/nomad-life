@@ -17,6 +17,10 @@
   --topbar-text: #F1F1F3;
   --primary: #383D51;
   --primary-text: #FFFFFF;
+  /* Calendar day colors */
+  --cal-text: #1B2030; --cal-none: #ECEDF1; --cal-base: #F6C7DC;
+  --cal-1: #CDE8DC; --cal-2: #FFE1A3; --cal-3: #DDD3F5; --cal-4: #CFE0F7;
+  --cal-5: #F8CFCB; --cal-6: #D7EDB4; --cal-7: #C6ECEF; --cal-8: #F3D9B8;
   --accent-1: #B6509E;
   --accent-2: #2EBAC6;
   --gradient: linear-gradient(248.86deg, #B6509E 10.51%, #2EBAC6 93.41%);
@@ -58,6 +62,10 @@
   --topbar-text: #F1F1F3;
   --primary: #F1F1F3;
   --primary-text: #1B2030;
+  /* Calendar day colors */
+  --cal-text: #F1F3F8; --cal-none: #343A4F; --cal-base: #7A3A5E;
+  --cal-1: #2F5E4D; --cal-2: #6B5520; --cal-3: #4E4378; --cal-4: #2F4A72;
+  --cal-5: #6E3A37; --cal-6: #4A5E2A; --cal-7: #24585E; --cal-8: #66503A;
   --success-bg: rgba(70, 188, 75, 0.14);
   --warning-bg: rgba(242, 164, 58, 0.14);
   --warning: #F2A43A;
@@ -91,6 +99,10 @@
     --topbar-text: #F1F1F3;
     --primary: #F1F1F3;
     --primary-text: #1B2030;
+    /* Calendar day colors */
+    --cal-text: #F1F3F8; --cal-none: #343A4F; --cal-base: #7A3A5E;
+    --cal-1: #2F5E4D; --cal-2: #6B5520; --cal-3: #4E4378; --cal-4: #2F4A72;
+    --cal-5: #6E3A37; --cal-6: #4A5E2A; --cal-7: #24585E; --cal-8: #66503A;
     --success-bg: rgba(70, 188, 75, 0.14);
     --warning-bg: rgba(242, 164, 58, 0.14);
     --warning: #F2A43A;
@@ -370,21 +382,42 @@ main:focus { outline: none; }
 .tip-below .map-tip { bottom: auto; top: calc(100% + 10px); }
 .tip-below .map-tip::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--surface); }
 .map-pin.is-off { opacity: 0; pointer-events: none; }  /* outside the zoomed view */
-/* The Map card folds (a <details>): the whole head opens it, with a chevron at its end. */
-.map-summary { cursor: pointer; list-style: none; align-items: center; border-radius: 6px; }
-.map-summary::-webkit-details-marker { display: none; }
-.map-summary:focus-visible { outline: 2px solid var(--link); outline-offset: 4px; }
-.map-summary .muted { margin-left: auto; }
-.map-summary::after {
+/* Cards that fold (a <details>: Calendar, Map): the whole head opens them, with a chevron at its end. */
+.fold-summary { cursor: pointer; list-style: none; align-items: center; border-radius: 6px; }
+.fold-summary::-webkit-details-marker { display: none; }
+.fold-summary:focus-visible { outline: 2px solid var(--link); outline-offset: 4px; }
+.fold-summary .muted { margin-left: auto; }
+.fold-summary::after {
   content: ""; flex: none; width: 18px; height: 18px; background-color: var(--muted); transition: transform 0.2s ease;
   -webkit-mask: var(--chevron) center / contain no-repeat; mask: var(--chevron) center / contain no-repeat;
   --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
 }
-.map-summary:hover::after { background-color: var(--text); }
-.map-card[open] > .map-summary::after { transform: rotate(180deg); }
-.map-card:not([open]) > .map-summary { margin-bottom: 0; }
+.fold-summary:hover::after { background-color: var(--text); }
+.fold-card[open] > .fold-summary::after { transform: rotate(180deg); }
+.fold-card:not([open]) > .fold-summary { margin-bottom: 0; }
 .map-tools { display: flex; justify-content: flex-end; margin: -4px 0 8px; }
-@media (prefers-reduced-motion: reduce) { .map-summary::after { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .fold-summary::after { transition: none; } }
+
+/* Dashboard calendar: the year's months, each day in the color of the country it counts for
+   (--cal-* tokens, set in the three theme blocks). Four months a row, fewer on narrow screens. */
+.cal-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 16px; padding: 0; list-style: none; }
+.cal-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.cal-swatch { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+.cal-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px 24px; align-items: start; }  /* a 5 week month keeps the row height of a 6 week one */
+.cal-month { width: 100%; border-collapse: separate; border-spacing: 3px; table-layout: fixed; font-size: 13px; }
+.cal-month caption { text-align: left; font-weight: 600; padding: 0 3px 4px; color: var(--link); }
+.cal-month th { font-weight: 500; font-size: 11px; color: var(--muted); padding: 0 0 2px; }
+.cal-month abbr { text-decoration: none; }
+.cal-day { position: relative; height: 28px; text-align: center; border-radius: 5px; color: var(--cal-text); font-variant-numeric: tabular-nums; cursor: default; }
+.cal-today { box-shadow: inset 0 0 0 2px var(--text); font-weight: 700; }
+.cal-base { background: var(--cal-base); }
+.cal-none { background: var(--cal-none); color: var(--muted); }
+.cal-1 { background: var(--cal-1); } .cal-2 { background: var(--cal-2); } .cal-3 { background: var(--cal-3); } .cal-4 { background: var(--cal-4); }
+.cal-5 { background: var(--cal-5); } .cal-6 { background: var(--cal-6); } .cal-7 { background: var(--cal-7); } .cal-8 { background: var(--cal-8); }
+@media (max-width: 1000px) { .cal-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .cal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; } .cal-month { border-spacing: 2px; } }
+@media (max-width: 400px) { .cal-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (forced-colors: active) { .cal-day { border: 1px solid CanvasText; } .cal-today { border-width: 3px; } }
 
 /* Line icons before card titles, drawn as a CSS mask so they take the text color in both themes. */
 .title-icon { display: inline-flex; align-items: center; gap: 9px; }
@@ -392,8 +425,9 @@ main:focus { outline: none; }
   content: ""; flex: none; width: 20px; height: 20px; background-color: currentColor; opacity: 0.85;
   -webkit-mask: var(--title-icon) center / contain no-repeat; mask: var(--title-icon) center / contain no-repeat;
 }
-@media (forced-colors: active) { .title-icon::before, .map-summary::after { forced-color-adjust: none; background-color: CanvasText; opacity: 1; } }
+@media (forced-colors: active) { .title-icon::before, .fold-summary::after { forced-color-adjust: none; background-color: CanvasText; opacity: 1; } }
 .icon-globe { --title-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M3 12h18M4.6 7.5h14.8M4.6 16.5h14.8'/><ellipse cx='12' cy='12' rx='4' ry='9'/></svg>"); }
+.icon-calendar { --title-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='4.5' width='18' height='16.5' rx='2.5'/><path d='M3 9.5h18M8 2.5v4M16 2.5v4'/><path d='M7.5 13.5h1M11.5 13.5h1M15.5 13.5h1M7.5 17h1M11.5 17h1'/></svg>"); }
 .icon-plane { --title-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 21h18'/><path d='M4.2 15.8 2.5 12.2l2-.9 2.6 1.8 4-2-4.6-5.7 2.2-1 6.9 4 3.4-1.7a1.9 1.9 0 0 1 1.7 3.4l-12 6.1a3.4 3.4 0 0 1-2.6.1z'/></svg>"); }
 .map-zoom { display: flex; gap: 4px; }
 .map-zoom[hidden] { display: none; }

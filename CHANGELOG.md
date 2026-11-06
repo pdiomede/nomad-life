@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.11] - 2026-11-06
+
+### Added
+
+- **Calendar** on the year dashboard, before the Map, with a calendar icon. It starts folded and opens with a click on its head. It shows the selected year's 12 months (four a row on wide screens, then three, two and one), each day in the color of the country it counts for, with the same rules as Days per Country: a shared day goes to the stay that started later, past days without a stay are the base, and days still to come without a stay are grey ("Not planned yet"). A legend lists each country with its flag and days; pointing at a day shows its date, country and city, and today has an outline. The colors are set for the light and dark themes, with every day number readable. The documentation has a section on it.
+
+### Fixed
+
+Found in a review of the new calendar (2 bugs):
+
+- **Low.** Months of five weeks had taller days than months of six in the same row, since each month was stretched to the tallest one. Every day now has the same height.
+- **Low.** Where a day counts was only in its hover text and its color, which screen readers do not reliably read and keyboard and touch users never see. Each day now also says its country and city to screen readers.
+
 ## [1.12.10] - 2026-11-06
 
 ### Changed

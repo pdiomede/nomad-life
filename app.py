@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.10"
+APP_VERSION = "1.12.11"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -208,6 +208,7 @@ DOCS_TOC = [
     ("dashboard", "Your dashboard", [("cards", "The four cards"),
                                      ("movements-table", "The Movements table"),
                                      ("days-per-country", "Days per country"),
+                                     ("calendar", "The calendar"),
                                      ("map", "The map")]),
     ("receipts", "Receipts", [("upload", "Upload a receipt"),
                               ("manage-receipts", "Download, rename or delete"),
@@ -2697,6 +2698,58 @@ def map_pins(year_row, movements, stats=None):
     return sorted(pins.values(), key=lambda p: not p["is_base"]), missing
 
 
+# Colors of the stay countries in the dashboard calendar (--cal-1 to --cal-8 in style.css);
+# after eight countries they repeat, and the legend and hover text still name every day.
+CALENDAR_COLORS = 8
+
+
+def year_calendar(year_row, movements, stats):
+    """The dashboard calendar: the year's 12 months (Monday first), each day with the color of
+    the country it counts for, from compute_stats (day_owner and the base rule), so it never
+    disagrees with "Days per country". A day without a stay is the base once it has passed and
+    "not planned yet" before. The legend follows the Days per country rows."""
+    y = year_row["year"]
+    first = date(y, 1, 1)
+    base = fold(normalize_country(year_row["base_country"]))
+    by_id = {m["id"]: m for m in movements}
+    colors, legend, n = {}, [], 0
+    for r in stats["rows"]:
+        key = fold(r["country"])
+        if r["is_base"]:
+            colors[key] = "cal-base"
+        else:
+            colors[key] = f"cal-{n % CALENDAR_COLORS + 1}"
+            n += 1
+        if r["days"]:
+            legend.append({"country": r["country"], "days": r["days"], "is_base": r["is_base"],
+                           "color": colors[key]})
+    names = {fold(r["country"]): r["country"] for r in stats["rows"]}
+    today, owner = date.today(), stats["day_owner"]
+    months, none = [], 0
+    for month in range(1, 13):
+        start = date(y, month, 1)
+        days = []
+        d = start
+        while d.month == month:
+            mid = owner.get(d)
+            if mid is not None:
+                m = by_id[mid]
+                key = fold(normalize_country(m["country"]))
+                color, where = colors[key], f"{names[key]} ({m['city']})"
+            elif (d - first).days < stats["elapsed"]:
+                color, where = "cal-base", f"{names[base]} (base)"
+            else:
+                color, where = "cal-none", "not planned yet"
+                none += 1
+            # The place is in the hover text and, for screen readers, in the cell itself: the
+            # color alone would tell them nothing.
+            days.append({"day": d.day, "iso": d.isoformat(), "color": color, "where": where,
+                         "title": f"{d:%a} {d.day} {d:%b} {y}: {where}", "today": d == today})
+            d += timedelta(days=1)
+        months.append({"name": f"{start:%B}", "blanks": start.weekday(), "days": days})
+    return {"months": months, "legend": legend, "not_planned": none}
+
+
 def delete_confirmed():
     """Deletes must come from the two step confirmation dialog, which sets confirm_delete=2."""
     if request.form.get("confirm_delete") == "2":
@@ -4319,6 +4372,7 @@ def register_routes(app):
                                per_page_options=PER_PAGE_OPTIONS,
                                years=years, stats=stats,
                                base_docs=base_docs, map=map_pins(year_row, movements, stats),
+                               calendar=year_calendar(year_row, movements, stats),
                                today=date.today().isoformat())
 
     @app.route("/year/<int:year>/base", methods=["GET", "POST"])

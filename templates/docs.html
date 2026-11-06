@@ -210,6 +210,17 @@
           <h3>Days per country</h3>
           <p>Each country with its total for the year and, in brackets, the days so far. The total includes movements you have planned.</p>
         </section>
+        <section id="calendar" class="doc-sub" data-doc-title="The calendar">
+          <h3>The calendar</h3>
+          {{ shot('calendar', 'The calendar of 2026, four months a row, with Lisbon days in pink, the stays in Spain, Italy, Japan, France and Thailand each in its own color, and a legend with their days', 'Each day in the color of the country it counts for.') }}
+          <ul>
+            <li>The calendar starts folded: click <strong>Calendar</strong> to open it, and again to fold it. It shows the year of the tab you are on.</li>
+            <li>Each day has the color of the country it counts for, the same days as in Days per Country: a day shared by two stays has the color of the stay that started later.</li>
+            <li>Past days without a stay have your base's color. Grey days are still to come and have no stay yet: they count nowhere until you add one.</li>
+            <li>Point at a day to see its date, country and city; screen readers read them with each day. Today has an outline.</li>
+          </ul>
+        </section>
+
         <section id="map" class="doc-sub" data-doc-title="The map">
           <h3>The map</h3>
           {{ shot('map', 'The world map with a base pin of 248 days in Portugal and stay pins in Spain, France, Italy, Japan and Thailand; the Italy tooltip shows its flag, Rome and 3 days', 'Point at a pin, tap it or reach it with Tab to see the country, its cities and its days.') }}

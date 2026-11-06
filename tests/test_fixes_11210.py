@@ -180,10 +180,10 @@ class FoldingMapTests(AppTestCase):
         self.html = self.client.get("/year/2026").get_data(as_text=True)
 
     def test_the_map_starts_folded_and_opens_from_its_head(self):
-        self.assertIn('<details class="card map-card">', self.html)  # no "open": folded
-        card = self.html[self.html.index('<details class="card map-card">'):]
+        self.assertIn('<details class="card fold-card map-card">', self.html)  # no "open": folded
+        card = self.html[self.html.index('<details class="card fold-card map-card">'):]
         card = card[:card.index("</details>")]
-        summary = card[card.index('<summary class="card-head map-summary">'):card.index("</summary>")]
+        summary = card[card.index('<summary class="card-head fold-summary map-summary">'):card.index("</summary>")]
         self.assertIn('<h2 id="map-title" class="title-icon icon-globe">Map</h2>', summary)
         # The zoom buttons are outside the summary, where a click would fold the card.
         self.assertNotIn("map-zoom", summary)
@@ -203,7 +203,7 @@ class FoldingMapTests(AppTestCase):
                       or text[text.index(".title-icon::before {"):][:400])
         self.assertIn("<circle cx='12' cy='12' r='9'/>", rule(text, ".icon-globe"))
         self.assertIn("<path d='M3 21h18'/>", rule(text, ".icon-plane"))  # the runway
-        self.assertIn("transform: rotate(180deg);", rule(text, ".map-card[open] > .map-summary::after"))
+        self.assertIn("transform: rotate(180deg);", rule(text, ".fold-card[open] > .fold-summary::after"))
 
 
 class InterfaceTests(unittest.TestCase):
