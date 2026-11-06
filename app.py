@@ -151,7 +151,7 @@ GUIDES = [
                      "why staying under it "
                      "everywhere does not make you tax free, and how to keep a record that holds "
                      "up.")},
-    {"slug": "count-days-in-a-country", "updated": "2026-10-02",
+    {"slug": "count-days-in-a-country", "updated": "2026-11-06",
      "title": "How to count the days you spend in each country",
      "seo_title": "How to count your days in each country | Nomad Life",
      "description": ("Arrival and departure days, overlapping stays, short trips and leap years: "
@@ -788,8 +788,10 @@ def create_app(overrides=None):
     app.add_template_filter(utc_datetime, "utcdatetime")
     app.add_template_filter(ticket_ref, "ticket_ref")
     app.add_template_global(chat_rows, "chat_rows")
+    app.add_template_global(favorite_countries, "favorite_countries")
     app.add_template_global(ip_lookup_url, "ip_lookup_url")
     app.add_template_filter(country_flag, "flag")
+    app.add_template_filter(lambda m: place_label(m["city"], m["country"]), "place")
 
     @app.errorhandler(413)
     def too_large(_e):
@@ -2687,7 +2689,7 @@ def map_pins(year_row, movements, stats=None):
                                      "days": days.get(fold(name), 0),
                                      "is_base": False, "left": point[0], "top": point[1]})
         pin["is_base"] = pin["is_base"] or is_base
-        if (code, fold(city)) not in seen:  # "Lisbon" and "lisbon" are one
+        if city and (code, fold(city)) not in seen:  # "Lisbon" and "lisbon" are one; no city: none
             seen.add((code, fold(city)))
             pin["cities"].append(city)
     for pin in pins.values():
@@ -2705,12 +2707,10 @@ CALENDAR_COLORS = 8
 
 def year_calendar(year_row, movements, stats):
     """The dashboard calendar: the year's 12 months (Monday first), each day with the color of
-    the country it counts for, from compute_stats (day_owner and the base rule), so it never
-    disagrees with "Days per country". A day without a stay is the base once it has passed and
-    "not planned yet" before. The legend follows the Days per country rows."""
+    the country it counts for, from compute_stats (day_owner), so it never disagrees with
+    "Days per country". A day without a stay counts nowhere and is grey ("not logged"). The
+    legend follows the Days per country rows."""
     y = year_row["year"]
-    first = date(y, 1, 1)
-    base = fold(normalize_country(year_row["base_country"]))
     by_id = {m["id"]: m for m in movements}
     colors, legend, n = {}, [], 0
     for r in stats["rows"]:
@@ -2735,11 +2735,9 @@ def year_calendar(year_row, movements, stats):
             if mid is not None:
                 m = by_id[mid]
                 key = fold(normalize_country(m["country"]))
-                color, where = colors[key], f"{names[key]} ({m['city']})"
-            elif (d - first).days < stats["elapsed"]:
-                color, where = "cal-base", f"{names[base]} (base)"
+                color, where = colors[key], names[key]  # the country: a city is optional
             else:
-                color, where = "cal-none", "not planned yet"
+                color, where = "cal-none", "not logged"
                 none += 1
             # The place is in the hover text and, for screen readers, in the cell itself: the
             # color alone would tell them nothing.
@@ -2747,7 +2745,7 @@ def year_calendar(year_row, movements, stats):
                          "title": f"{d:%a} {d.day} {d:%b} {y}: {where}", "today": d == today})
             d += timedelta(days=1)
         months.append({"name": f"{start:%B}", "blanks": start.weekday(), "days": days})
-    return {"months": months, "legend": legend, "not_planned": none}
+    return {"months": months, "legend": legend, "not_logged": none}
 
 
 def delete_confirmed():
@@ -2758,13 +2756,33 @@ def delete_confirmed():
     return False
 
 
+# Favorite countries of the country picker (the star), per account.
+FAVORITES_MAX = 50
+
+
+def favorite_countries():
+    """The signed in account's favorite countries, in the order of the country list (a Jinja
+    global for _countries.html); [] for visitors."""
+    if not current_user.is_authenticated:
+        return []
+    names = {r["country"] for r in db.query("SELECT country FROM favorite_countries WHERE "
+                                            "user_id = ?", (current_user.id,))}
+    return [c for c in COUNTRIES if c in names]
+
+
+def place_label(city, country):
+    """A movement's place for people: its city, or its country when no city was given (the
+    city is optional; the country is what counts). Also the Jinja filter `place`."""
+    return city or country
+
+
 def validate_movement(form, year, current_notes=None):
-    city = clean_place(form.get("city", ""))
+    city = clean_place(form.get("city", ""))  # optional
     country = normalize_country(clean_place(form.get("country", "")))
     start = parse_date(form.get("start_date"))
     end = parse_date(form.get("end_date"))
-    if not city or not country:
-        return None, "Country and city are required."
+    if not country:
+        return None, "Country is required."
     if len(city) > PLACE_MAX or len(country) > PLACE_MAX:
         return None, f"Country and city can be at most {PLACE_MAX} characters."
     if not start or not end:
@@ -2863,8 +2881,8 @@ def overlap_report(year, pairs, movements, counted, total=None):
     total = len(pairs) if total is None else total
     by_id = {m["id"]: m for m in movements}
 
-    def place(m):
-        return f"{m['city']}, {m['country']}"
+    def place(m):  # the full place in the report: "Sidney, Australia", or the country alone
+        return f"{m['city']}, {m['country']}" if m["city"] else m["country"]
 
     def span(m):
         return f"{m['start_date']} to {m['end_date']}"
@@ -2913,7 +2931,7 @@ def overlap_notes(year_id, data, exclude_id=None):
         shared = shares_days(parse_date(r["start_date"]), parse_date(r["end_date"]),
                              parse_date(data["start_date"]), parse_date(data["end_date"]))
         if shared:
-            notes.append(f"{r['city']} ({plural(shared, 'day')})")
+            notes.append(f"{place_label(r['city'], r['country'])} ({plural(shared, 'day')})")
             same_start = same_start or r["start_date"] == data["start_date"]
     if len(notes) > OVERLAP_NOTES_MAX:
         notes = notes[:OVERLAP_NOTES_MAX] + [f"{len(notes) - OVERLAP_NOTES_MAX} more"]
@@ -3336,9 +3354,10 @@ def build_package_data(year_row, include_notes):
         base_iso=iso(base_name), generated_at=datetime.now(), app_version=APP_VERSION,
         status=status, as_of=today, total_days=stats["total"], elapsed=stats["elapsed"],
         base_days=stats["base_days"], abroad_days=stats["abroad_days"], base_so_far=base_so_far,
-        abroad_so_far=stats["elapsed"] - base_so_far, threshold=stats["threshold"],
+        abroad_so_far=sum(r["so_far"] for r in stats["rows"] if not r["is_base"]),
+        threshold=stats["threshold"],
         base_ok=stats["base_ok"], countries=countries, stays=stays, receipts=receipts,
-        include_notes=include_notes, upcoming_days=stats["upcoming"],
+        include_notes=include_notes, not_logged_days=stats["not_logged"],
         holder=package_holder(year_row["user_id"]))
 
 
@@ -3352,7 +3371,8 @@ def package_holder(user_id):
 
 
 def compute_stats(year_row, movements):
-    """Count days per country. Past days not covered by a movement count as base."""
+    """Count days per country. Only logged days count: a day without a movement counts for no
+    country, past or future (days at the base count through a movement there)."""
     y = year_row["year"]
     first, last = date(y, 1, 1), date(y, 12, 31)
     total = (last - first).days + 1
@@ -3376,13 +3396,13 @@ def compute_stats(year_row, movements):
     for mid in assigned_mv.values():
         counted[mid] = counted.get(mid, 0) + 1
 
-    # Logged stays count in full, also future ones. A day without a stay counts toward the
-    # base country only once it has passed: nobody knows yet where the rest of the year goes.
+    # Logged stays count in full, also future ones. A day without a stay counts nowhere: the
+    # app does not assume where you were (log the days at your base as a movement there too).
     per_country = {base: 0}
     per_country_so_far = {}
     d = first
     while d <= last:
-        c = assigned.get(d, base if d <= elapsed_end else None)
+        c = assigned.get(d)
         if c is not None:
             per_country[c] = per_country.get(c, 0) + 1
             if d <= elapsed_end:
@@ -3399,7 +3419,8 @@ def compute_stats(year_row, movements):
     return {"total": total, "rows": rows, "base_days": base_days, "counted": counted,
             # Who gets each day ({date: movement id}), for movement_overlaps: worked out once.
             "day_owner": assigned_mv,
-            "abroad_days": counted_days - base_days, "upcoming": total - counted_days,
+            # Days no movement covers, past or future: counted for no country.
+            "abroad_days": counted_days - base_days, "not_logged": total - counted_days,
             "threshold": RESIDENCE_THRESHOLD,
             "base_ok": base_days >= RESIDENCE_THRESHOLD,
             "elapsed": max((elapsed_end - first).days + 1, 0)}
@@ -3991,6 +4012,7 @@ def register_routes(app):
             docs_url=app.config["APP_BASE_URL"].rstrip("/") + url_for("docs"),
             plans=plan_catalog(), threshold=RESIDENCE_THRESHOLD,
             verify_minutes=VERIFY_MINUTES, notes_max=NOTES_MAX, place_max=PLACE_MAX,
+            favorites_max=FAVORITES_MAX,
             movements_max=MOVEMENTS_MAX, per_page_options=PER_PAGE_OPTIONS,
             fail_limit=LIMITS[("fail", "email")], limit_minutes=LIMIT_WINDOW_MINUTES,
             code_limit=LIMITS[("code", "email")],
@@ -4432,6 +4454,33 @@ def register_routes(app):
             return redirect(url_for("base", year=year))
         return render_template("base_location.html", y=year_row, docs=documents_for(year_row["id"]))
 
+    @app.route("/favorites/countries", methods=["POST"])
+    @login_required
+    def favorite_country():
+        """Star or unstar a country in the country picker (theme.js posts here); answers the
+        account's favorites as JSON."""
+        country = normalize_country(clean_place(request.form.get("country", "")))
+        action = request.form.get("action")
+        if country not in COUNTRIES or action not in ("add", "remove"):
+            return json_answer({"error": "Unknown country."}, 400)
+        if action == "remove":
+            db.execute("DELETE FROM favorite_countries WHERE user_id = ? AND country = ?",
+                       (current_user.id, country))
+        else:
+            with db.transaction() as conn:  # the cap is checked with the insert
+                count = conn.execute("SELECT count(*) FROM favorite_countries WHERE user_id = ? "
+                                     "AND country != ?", (current_user.id, country)).fetchone()[0]
+                if count >= FAVORITES_MAX:
+                    full = True
+                else:
+                    full = False
+                    conn.execute("INSERT OR IGNORE INTO favorite_countries (user_id, country) "
+                                 "VALUES (?, ?)", (current_user.id, country))
+            if full:
+                return json_answer({"error": f"You can keep up to {FAVORITES_MAX} favorite "
+                                             "countries.", "favorites": favorite_countries()}, 409)
+        return json_answer({"favorites": favorite_countries()})
+
     @app.route("/year/<int:year>/movements/new", methods=["GET", "POST"])
     @login_required
     def movement_new(year):
@@ -4477,7 +4526,8 @@ def register_routes(app):
             elif duplicate:
                 # The same place and dates are already saved (the form sent twice, or typed
                 # again): a second copy would only count 0 days and trigger the overlap alert.
-                flash(f"This movement to {data['city']} is already saved.", "info")
+                flash(f"This movement to {place_label(data['city'], data['country'])} is already "
+                      "saved.", "info")
                 # A receipt or notes sent with it are not added to the saved one (a form sent
                 # twice would store the receipt twice), so say so instead of dropping them.
                 upload = request.files.get("file")
@@ -4497,7 +4547,8 @@ def register_routes(app):
                                   year_row["id"], mid, required=False)
                 if err:
                     flash(err, "error")
-                flash(f"Movement to {data['city']} added.", "success")
+                flash(f"Movement to {place_label(data['city'], data['country'])} added.",
+                      "success")
                 flash_overlaps(year_row["id"], data, mid)
                 return redirect(url_for("movement_edit", movement_id=mid))
         return render_template("movement.html", y=year_row, m=None, form=form, docs=[])

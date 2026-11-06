@@ -280,6 +280,12 @@
     return found;
   };
 
+  // Favorite countries (the star in the list), saved with the account (POST /favorites/countries).
+  var favData = document.getElementById("country-favorites");
+  var favorites = {};
+  try { (favData ? JSON.parse(favData.textContent) : []).forEach(function (c) { favorites[c] = true; }); } catch (e) {}
+  var favCount = function () { return Object.keys(favorites).length; };
+
   document.querySelectorAll("input[data-country-combo]").forEach(function (input, n) {
     if (!entries.length) return;
     var listId = "country-list-" + n;
@@ -291,32 +297,59 @@
     flagEl.className = "combo-flag flag";
     flagEl.setAttribute("aria-hidden", "true");
     wrap.insertBefore(flagEl, input);
+    // The popup: two tabs (All countries, Favorites), the list, and a line for messages.
+    var panel = document.createElement("div");
+    panel.className = "combo-panel";
+    panel.hidden = true;
+    var tabs = document.createElement("div");
+    tabs.className = "combo-tabs";
+    var tabAll = document.createElement("button"), tabFav = document.createElement("button");
+    [tabAll, tabFav].forEach(function (b) { b.type = "button"; b.className = "combo-tab"; b.tabIndex = -1; tabs.appendChild(b); });
+    tabAll.textContent = "All countries";
     var list = document.createElement("ul");
     list.className = "combo-list";
     list.id = listId;
     list.setAttribute("role", "listbox");
     list.setAttribute("aria-label", "Countries");
-    list.hidden = true;
-    wrap.appendChild(list);
+    var note = document.createElement("p");
+    note.className = "combo-note";
+    note.setAttribute("role", "status");
+    panel.appendChild(tabs); panel.appendChild(list); panel.appendChild(note);
+    wrap.appendChild(panel);
     // Live region, always in the DOM so screen readers announce the text when it appears.
     var empty = document.createElement("div");
     empty.className = "combo-empty";
     empty.setAttribute("role", "status");
     var noMatch = "No matching country. You can keep what you typed.";
     wrap.appendChild(empty);
-    // Pressing on the list (its scrollbar, padding or the empty message) must not move focus
-    // away from the input, or the blur handler would close the list mid scroll.
-    [list, empty].forEach(function (el) {
+    // Pressing on the popup (its scrollbar, tabs, padding or the empty message) must not move
+    // focus away from the input, or the blur handler would close the list mid scroll.
+    [panel, empty].forEach(function (el) {
       el.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
     });
 
     input.removeAttribute("list");
     input.setAttribute("role", "combobox");
     input.setAttribute("aria-autocomplete", "list");
+    if (favData) {  // the keyboard ways to the favorites, read with the field
+      var keysHelp = document.createElement("span");
+      keysHelp.id = listId + "-keys";
+      keysHelp.className = "visually-hidden";
+      keysHelp.textContent = "In the list, Shift+Enter adds the highlighted country to your favorites or removes it; Alt+Right shows your favorites, Alt+Left all countries.";
+      wrap.appendChild(keysHelp);
+      input.setAttribute("aria-describedby", ((input.getAttribute("aria-describedby") || "") + " " + keysHelp.id).trim());
+    }
     input.setAttribute("aria-expanded", "false");
     input.setAttribute("aria-controls", listId);
 
-    var shown = [], active = -1;
+    // The year's base country comes first in the list, with a home icon.
+    var base = exact[fold(input.getAttribute("data-base-country") || "")] || null;
+    var mode = "all", shown = [], active = -1;
+    var syncTabs = function () {
+      tabFav.textContent = "Favorites (" + favCount() + ")";
+      tabAll.setAttribute("aria-pressed", mode === "all" ? "true" : "false");
+      tabFav.setAttribute("aria-pressed", mode === "fav" ? "true" : "false");
+    };
     var updateFlag = function () {
       var e = exact[fold(input.value)];
       flagEl.textContent = e ? e.flag : "";
@@ -335,13 +368,32 @@
       }
     };
     var close = function () {
-      list.hidden = true; empty.textContent = ""; active = -1;
+      panel.hidden = true; empty.textContent = ""; note.textContent = ""; active = -1;
       input.setAttribute("aria-expanded", "false");
       input.removeAttribute("aria-activedescendant");
+    };
+    // What the list shows: every country or the favorites, filtered by the typed text, with
+    // the base first.
+    var listFor = function (filter) {
+      var found = filter && fold(input.value) ? search(input.value) : entries.slice();
+      var hints = found.hints || [];
+      var items = [], itemHints = [];
+      found.forEach(function (e, i) {
+        if (mode === "fav" && !favorites[e.name]) return;
+        items.push(e); itemHints.push(hints[i] || "");
+      });
+      var b = base ? items.indexOf(base) : -1;
+      if (b > 0) {
+        items.unshift(items.splice(b, 1)[0]);
+        itemHints.unshift(itemHints.splice(b, 1)[0]);
+      }
+      items.hints = itemHints;
+      return items;
     };
     var render = function (items, highlight) {
       list.textContent = "";
       shown = items;
+      syncTabs();
       items.forEach(function (e, i) {
         var li = document.createElement("li");
         li.id = listId + "-" + i;
@@ -350,8 +402,18 @@
         var f = document.createElement("span");
         f.className = "flag"; f.setAttribute("aria-hidden", "true"); f.textContent = e.flag;
         var label = document.createElement("span");
+        label.className = "combo-name";
         label.textContent = e.name;
         li.appendChild(f); li.appendChild(label);
+        if (e === base) {  // the year's base: a home icon, and "base" for screen readers
+          var home = document.createElement("span");
+          home.className = "combo-home";
+          home.title = "Your base country";
+          li.appendChild(home);
+          var baseText = document.createElement("span");
+          baseText.className = "visually-hidden"; baseText.textContent = ", your base country";
+          li.appendChild(baseText);
+        }
         var hint = items.hints && items.hints[i];
         if (hint) {  // what the typed text matched: "United Kingdom (England)"
           var via = document.createElement("span");
@@ -359,27 +421,89 @@
           via.textContent = "(" + hint + ")";
           li.appendChild(via);
         }
+        if (favData) {
+          // The star: mouse and touch; Shift+Enter does the same for the highlighted country.
+          var on = !!favorites[e.name];
+          var star = document.createElement("button");
+          star.type = "button"; star.tabIndex = -1;
+          star.className = "combo-star";
+          star.setAttribute("aria-hidden", "true");
+          star.setAttribute("aria-pressed", on ? "true" : "false");
+          star.title = on ? "Remove from favorites" : "Add to favorites";
+          star.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
+          star.addEventListener("click", function (ev) { ev.stopPropagation(); toggleFavorite(e); });
+          li.appendChild(star);
+          if (on) {
+            var favText = document.createElement("span");
+            favText.className = "visually-hidden"; favText.textContent = ", favorite";
+            li.appendChild(favText);
+          }
+        }
         li.addEventListener("mousedown", function (ev) { ev.preventDefault(); });  // keep focus in the input
         li.addEventListener("click", function () { choose(e); });
         list.appendChild(li);
       });
+      var favEmpty = mode === "fav" && !items.length;
+      panel.hidden = items.length === 0 && !favEmpty;
       list.hidden = items.length === 0;
-      empty.textContent = items.length ? "" : noMatch;
-      input.setAttribute("aria-expanded", items.length ? "true" : "false");
+      note.textContent = favEmpty ? (favCount() ? "No favorite matches what you typed."
+                                                : "No favorite countries yet: press the star next to a country.") : "";
+      empty.textContent = panel.hidden ? noMatch : "";
+      input.setAttribute("aria-expanded", panel.hidden ? "false" : "true");
       active = -1;
       // The old options are gone: never leave the input pointing at one of them.
       input.removeAttribute("aria-activedescendant");
-      if (items.length && highlight >= 0) setActive(highlight);
+      if (items.length && highlight >= 0) setActive(Math.min(highlight, items.length - 1));
     };
     var open = function (filter) {
       var current = exact[fold(input.value)];
       if (!filter || current) {
         // Opening on a chosen country shows the whole list with that country highlighted;
         // otherwise nothing is, so Enter still submits a free text place as typed.
-        render(entries, current ? entries.indexOf(current) : -1);
+        var items = listFor(false);
+        render(items, current ? items.indexOf(current) : -1);
       } else {
-        render(search(input.value), 0);
+        render(listFor(true), 0);
       }
+    };
+    var refresh = function () {  // the same view again (tab, star), keeping the highlight
+      var keep = active >= 0 ? shown[active] : null;
+      var items = listFor(true);
+      render(items, keep ? items.indexOf(keep) : (fold(input.value) ? 0 : -1));
+    };
+    var setMode = function (m) {
+      mode = m;
+      refresh();
+      if (!list.hidden) list.scrollTop = 0;
+    };
+    tabAll.addEventListener("click", function () { setMode("all"); });
+    tabFav.addEventListener("click", function () { setMode("fav"); });
+    var saving = 0;  // the newest save: an older answer arriving late must not undo it
+    var toggleFavorite = function (e) {
+      if (!favData) return;
+      var adding = !favorites[e.name], mine = ++saving;
+      if (adding) favorites[e.name] = true; else delete favorites[e.name];
+      refresh();
+      var body = new FormData();
+      body.append("csrf_token", favData.getAttribute("data-csrf"));
+      body.append("action", adding ? "add" : "remove");
+      body.append("country", e.name);
+      var undo = function (text) {
+        if (mine !== saving) return;
+        if (adding) delete favorites[e.name]; else favorites[e.name] = true;
+        if (!panel.hidden) refresh();
+        note.textContent = text;
+      };
+      fetch(favData.getAttribute("data-url"), { method: "POST", body: body, credentials: "same-origin" })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          if (!res.ok) { undo(res.d.error || "The favorite could not be saved."); return; }
+          if (mine !== saving) return;
+          favorites = {};
+          (res.d.favorites || []).forEach(function (c) { favorites[c] = true; });
+          if (!panel.hidden) refresh();
+        })
+        .catch(function () { undo("The favorite could not be saved. Please try again."); });
     };
     var choose = function (e) {
       input.value = e.name;
@@ -391,18 +515,25 @@
     input.addEventListener("input", function () {
       updateFlag();
       // An emptied field lists every country with none highlighted: Enter then submits.
-      render(search(input.value), fold(input.value) ? 0 : -1);
+      render(listFor(true), fold(input.value) ? 0 : -1);
     });
-    input.addEventListener("click", function () { if (list.hidden) open(false); });
+    input.addEventListener("click", function () { if (panel.hidden) open(false); });
     input.addEventListener("keydown", function (e) {
-      var isOpen = !list.hidden;
+      var isOpen = !panel.hidden;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         if (!isOpen) { open(true); return; }
+        if (!shown.length) return;
         var step = e.key === "ArrowDown" ? 1 : -1;
         setActive((active + step + shown.length) % shown.length);
+      } else if (e.key === "Enter" && e.shiftKey) {
+        // Shift+Enter stars or unstars the highlighted country.
+        if (isOpen && active >= 0 && shown[active]) { e.preventDefault(); toggleFavorite(shown[active]); }
       } else if (e.key === "Enter") {
         if (isOpen && active >= 0 && shown[active]) { e.preventDefault(); choose(shown[active]); }
+      } else if (isOpen && e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        e.preventDefault();  // Alt+Left and Alt+Right switch between All countries and Favorites
+        setMode(e.key === "ArrowRight" ? "fav" : "all");
       } else if (e.key === "Escape") {
         if (isOpen || empty.textContent) { e.preventDefault(); close(); }
       } else if (e.key === "Tab") {
@@ -411,6 +542,119 @@
     });
     input.addEventListener("blur", function () { close(); });
     updateFlag();
+  });
+
+  // Receipt type lists (select[data-select-menu]): a button and a styled list with an icon per
+  // type, in the country picker's look. The real <select> stays in the form, hidden and kept in
+  // step, so the form posts the same value and works without JavaScript.
+  document.querySelectorAll("select[data-select-menu]").forEach(function (select, n) {
+    var wrap = document.createElement("div");
+    wrap.className = "select-menu";
+    select.parentNode.insertBefore(wrap, select);
+    wrap.appendChild(select);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "select-btn";
+    btn.id = select.id + "-menu";
+    var listId = "select-list-" + n;
+    btn.setAttribute("role", "combobox");
+    btn.setAttribute("aria-haspopup", "listbox");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-controls", listId);
+    var icon = document.createElement("span"), text = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    text.className = "select-text";
+    btn.appendChild(icon); btn.appendChild(text);
+    var list = document.createElement("ul");
+    list.className = "combo-list select-list";
+    list.id = listId;
+    list.setAttribute("role", "listbox");
+    list.hidden = true;
+    var label = select.id ? document.querySelector('label[for="' + select.id + '"]') : null;
+    if (label) {  // the label now names the button (and a click on it opens the list)
+      label.htmlFor = btn.id;
+      if (!label.id) label.id = btn.id + "-label";
+      list.setAttribute("aria-labelledby", label.id);
+    }
+    select.hidden = true;
+    wrap.insertBefore(btn, select);
+    wrap.appendChild(list);
+    var options = [].slice.call(select.options), active = -1;
+    options.forEach(function (o, i) {
+      var li = document.createElement("li");
+      li.id = listId + "-" + i;
+      li.setAttribute("role", "option");
+      var oi = document.createElement("span");
+      oi.className = "kind-icon kind-" + o.value;
+      oi.setAttribute("aria-hidden", "true");
+      var ot = document.createElement("span");
+      ot.textContent = o.textContent;
+      li.appendChild(oi); li.appendChild(ot);
+      li.addEventListener("mousedown", function (ev) { ev.preventDefault(); });  // keep focus on the button
+      li.addEventListener("click", function () { choose(i); });
+      list.appendChild(li);
+    });
+    var sync = function () {  // the button shows the select's value
+      var o = select.options[select.selectedIndex];
+      icon.className = "kind-icon kind-" + (o ? o.value : "");
+      text.textContent = o ? o.textContent : "";
+      btn.disabled = select.disabled;
+      [].forEach.call(list.children, function (li, i) { li.setAttribute("aria-selected", i === select.selectedIndex ? "true" : "false"); });
+    };
+    var setActive = function (i) {
+      var items = list.children;
+      if (active >= 0 && items[active]) items[active].classList.remove("is-active");
+      active = i;
+      if (i >= 0 && items[i]) {
+        items[i].classList.add("is-active");
+        btn.setAttribute("aria-activedescendant", items[i].id);
+        items[i].scrollIntoView({ block: "nearest" });
+      } else {
+        btn.removeAttribute("aria-activedescendant");
+      }
+    };
+    var open = function () {
+      list.hidden = false;
+      btn.setAttribute("aria-expanded", "true");
+      setActive(Math.max(select.selectedIndex, 0));
+    };
+    var close = function () {
+      list.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+      setActive(-1);
+    };
+    var choose = function (i) {
+      if (select.selectedIndex !== i) {
+        select.selectedIndex = i;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      sync();
+      close();
+      btn.focus();
+    };
+    btn.addEventListener("click", function () { if (list.hidden) open(); else close(); });
+    btn.addEventListener("keydown", function (e) {
+      var isOpen = !list.hidden, last = options.length - 1;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!isOpen) { open(); return; }
+        setActive(e.key === "ArrowDown" ? Math.min(active + 1, last) : Math.max(active - 1, 0));
+      } else if ((e.key === "Home" || e.key === "End") && isOpen) {
+        e.preventDefault();
+        setActive(e.key === "Home" ? 0 : last);
+      } else if (e.key === "Enter" || e.key === " ") {
+        if (isOpen) { e.preventDefault(); if (active >= 0) choose(active); }
+        // closed: the button's own click opens it
+      } else if (e.key === "Escape" && isOpen) {
+        e.preventDefault();
+        close();
+      } else if (e.key === "Tab" && isOpen) {
+        close();
+      }
+    });
+    btn.addEventListener("blur", close);
+    select.addEventListener("change", sync);  // set from elsewhere (a reset, a script)
+    sync();
   });
 
   // Downloads (accountant package): show a busy state and block double clicks until the

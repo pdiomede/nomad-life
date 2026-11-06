@@ -17,6 +17,7 @@
   --topbar-text: #F1F1F3;
   --primary: #383D51;
   --primary-text: #FFFFFF;
+  --star: #B98200; --home: #2F6FD6;  /* favorite star, base country icon */
   /* Calendar day colors */
   --cal-text: #1B2030; --cal-none: #ECEDF1; --cal-base: #F6C7DC;
   --cal-1: #CDE8DC; --cal-2: #FFE1A3; --cal-3: #DDD3F5; --cal-4: #CFE0F7;
@@ -62,6 +63,7 @@
   --topbar-text: #F1F1F3;
   --primary: #F1F1F3;
   --primary-text: #1B2030;
+  --star: #F5C23B; --home: #6FA8FF;
   /* Calendar day colors */
   --cal-text: #F1F3F8; --cal-none: #343A4F; --cal-base: #7A3A5E;
   --cal-1: #2F5E4D; --cal-2: #6B5520; --cal-3: #4E4378; --cal-4: #2F4A72;
@@ -99,6 +101,7 @@
     --topbar-text: #F1F1F3;
     --primary: #F1F1F3;
     --primary-text: #1B2030;
+    --star: #F5C23B; --home: #6FA8FF;
     /* Calendar day colors */
     --cal-text: #F1F3F8; --cal-none: #343A4F; --cal-base: #7A3A5E;
     --cal-1: #2F5E4D; --cal-2: #6B5520; --cal-3: #4E4378; --cal-4: #2F4A72;
@@ -562,8 +565,49 @@ main:focus { outline: none; }
 .combo input { padding-left: 42px; }
 .combo-flag { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 22px; text-align: center; font-size: 19px; pointer-events: none; }
 .combo:not(.has-flag) .combo-flag::before { content: ""; display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 2px dashed var(--input-border); vertical-align: middle; }
-.combo-list { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); max-height: 280px; overflow-y: auto; margin: 0; padding: 4px; list-style: none;
+.combo-list, .combo-panel { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18); }
+.combo-list { max-height: 280px; overflow-y: auto; }
+/* The country popup: tabs, then the list (inside the panel, not floating on its own). */
+.combo-panel .combo-list { position: static; max-height: 252px; padding: 0; border: 0; border-radius: 0; box-shadow: none; background: none; }
+.combo-panel[hidden], .combo-panel .combo-list[hidden] { display: none; }
+.combo-tabs { display: flex; gap: 4px; padding: 0 0 4px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.combo-tab { flex: 1; padding: 6px 10px; border: 0; border-radius: 6px; background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.combo-tab:hover { color: var(--text); background: var(--surface-2); }
+.combo-tab[aria-pressed="true"] { color: var(--text); background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--link); }
+.combo-note { margin: 0; padding: 8px 10px; font-size: 13px; color: var(--muted); }
+.combo-note:empty { display: none; }
+.combo-name { flex: 0 1 auto; min-width: 0; }
+.combo-home, .combo-star { flex: none; width: 18px; height: 18px; background-color: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
+.combo-home { color: var(--home); --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'><path d='M12 3.2 2.5 11h2.8v9.3h5.2v-6h3v6h5.2V11h2.8z'/></svg>"); }
+/* The star's button is 30 px (the icon 18 px), a target big enough to hit without choosing the row. */
+.combo-star { width: 30px; height: 30px; margin: -6px -6px -6px auto; -webkit-mask-size: 18px; mask-size: 18px; padding: 0; border: 0; cursor: pointer; color: var(--muted); opacity: 0.7;
+  --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'><path d='M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z'/></svg>"); }
+.combo-star:hover { opacity: 1; color: var(--star); }
+.combo-star[aria-pressed="true"] { opacity: 1; color: var(--star);
+  --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black' stroke='black' stroke-width='1.8' stroke-linejoin='round'><path d='M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z'/></svg>"); }
+/* Receipt type list (select[data-select-menu]): a button in the inputs' look and the combo list. */
+.select-menu { position: relative; }
+.select-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; font: inherit; text-align: left; cursor: pointer;
+  color: var(--text); background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; }
+.select-btn::after { content: ""; flex: none; margin-left: auto; width: 16px; height: 16px; background-color: var(--muted);
+  -webkit-mask: var(--chevron) center / contain no-repeat; mask: var(--chevron) center / contain no-repeat;
+  --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); }
+.select-btn[aria-expanded="true"]::after { transform: rotate(180deg); }
+.select-btn:focus-visible { outline: 2px solid var(--link); outline-offset: -1px; border-color: transparent; }
+.select-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.select-list li.is-active { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--link), inset 0 0 0 1px var(--input-border); }
+.select-list li[aria-selected="true"] { box-shadow: none; font-weight: 600; }
+.select-list li[aria-selected="true"].is-active { box-shadow: inset 3px 0 0 var(--link), inset 0 0 0 1px var(--input-border); }
+.kind-icon { flex: none; width: 18px; height: 18px; background-color: var(--link);
+  -webkit-mask: var(--kind-icon) center / contain no-repeat; mask: var(--kind-icon) center / contain no-repeat; }
+.kind-rental_contract { --kind-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 11 12 4l9 7'/><path d='M5.5 9.5V20h13V9.5'/><path d='M10 20v-5h4v5'/></svg>"); }
+.kind-accommodation { --kind-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6v13M3 15h18v4M21 15v-3a3 3 0 0 0-3-3h-7v6'/><circle cx='7' cy='11.5' r='2'/></svg>"); }
+.kind-flight { --kind-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 21h18'/><path d='M4.2 15.8 2.5 12.2l2-.9 2.6 1.8 4-2-4.6-5.7 2.2-1 6.9 4 3.4-1.7a1.9 1.9 0 0 1 1.7 3.4l-12 6.1a3.4 3.4 0 0 1-2.6.1z'/></svg>"); }
+.kind-other { --kind-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/><path d='M14 3v5h5M9 13h6M9 17h6'/></svg>"); }
+@media (forced-colors: active) { .kind-icon, .select-btn::after { forced-color-adjust: none; background-color: CanvasText; } }
+@media (forced-colors: active) { .combo-home, .combo-star { forced-color-adjust: none; background-color: CanvasText; } }
 .combo-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: var(--text); }
 .combo-list li:hover { background: var(--surface-2); }
 .combo-list li[aria-selected="true"] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--link), inset 0 0 0 1px var(--input-border); }
@@ -1093,6 +1137,7 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .tl-day-on { fill: var(--map-pin-text); }
 .tl-code { font-size: 12px; font-weight: 600; fill: var(--muted); letter-spacing: 0.04em; }
 .tl-stay { fill: var(--info-bg); stroke: var(--map-pin); stroke-width: 1.5; }
+.tl-stay-base { stroke: var(--map-pin-base); }  /* a movement at the base, in the worked example */
 .tl-bar-label { font-size: 12px; font-weight: 600; fill: var(--text); }
 .tl-mark { stroke: var(--text); stroke-width: 2; }
 .tl-today { stroke: var(--error-text); stroke-width: 2; stroke-dasharray: 3 3; }

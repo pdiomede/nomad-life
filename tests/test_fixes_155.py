@@ -374,7 +374,7 @@ class CountryFixTests(unittest.TestCase):
             js = fh.read()
         self.assertIn('.replace(/[-\\u2010-\\u2015]/g, " ").replace(/&/g, " and ")', js)
         # Clearing the field highlighted Afghanistan, so Enter filled it in.
-        self.assertIn("render(search(input.value), fold(input.value) ? 0 : -1);", js)
+        self.assertIn("render(listFor(true), fold(input.value) ? 0 : -1);", js)
 
 
 if __name__ == "__main__":

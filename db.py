@@ -153,6 +153,15 @@ CREATE TABLE IF NOT EXISTS passkeys (
 );
 CREATE INDEX IF NOT EXISTS idx_passkeys_user ON passkeys(user_id);
 
+-- Favorite countries of the country picker (the star), saved with the account so they follow it
+-- on every device. Only names of the country list; at most FAVORITES_MAX per account.
+CREATE TABLE IF NOT EXISTS favorite_countries (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    country TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, country)
+);
+
 -- Paid plans (Stripe subscriptions, yearly). Stripe's webhook is the only writer: it says which
 -- plan a subscription pays for and its state; users.plan follows. user_id is kept NULL when the
 -- account is deleted, so the company's billing history stays. last_event_at is the Stripe time

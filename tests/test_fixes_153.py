@@ -158,13 +158,21 @@ class MovementFixTests(AppTestCase):
                       'data-submit-once>', page)
 
     def test_invisible_places_are_refused_and_joiners_kept(self):
-        for city in ("ㅤ", "⠀", "́", "️", " ​ "):
-            html = self.add(city).get_data(as_text=True)
-            self.assertEqual(self.count(), 0, repr(city))
-        self.assertIn("Country and city are required.",
+        # The city is optional since 1.12.11: one of invisible characters only is no city (never
+        # an empty link); a country of them is still refused.
+        for i, place in enumerate(("ㅤ", "⠀", "́", "️", " ​ ")):
+            before = self.count()
+            self.add("", country=place)
+            self.assertEqual(self.count(), before, repr(place))
+            self.add(place, start=f"2027-04-{i + 1:02d}", end=f"2027-04-{i + 1:02d}")
+            with self.db() as conn:
+                self.assertEqual(conn.execute("SELECT city FROM movements ORDER BY id DESC").fetchone()[0], "")
+        self.assertIn("Country is required.",
                       self.client.post("/year/2027/movements/new", data={
-                          "city": "ㅤ", "country": "Spain", "start_date": "2027-03-01",
+                          "city": "Rome", "country": "ㅤ", "start_date": "2027-03-01",
                           "end_date": "2027-03-05"}).get_data(as_text=True))
+        with self.db() as conn:
+            conn.execute("DELETE FROM movements")
         self.add("خرم‌آباد", "Iran")  # Khorramabad
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT city FROM movements").fetchone()[0],
@@ -190,5 +198,5 @@ class CountryPickerTests(unittest.TestCase):
         js = read("static", "js", "theme.js")
         # A click on an empty or free text field opened the list with Afghanistan highlighted,
         # so Enter replaced the place with "Afghanistan" instead of submitting.
-        self.assertIn("render(entries, current ? entries.indexOf(current) : -1);", js)
-        self.assertIn("if (items.length && highlight >= 0) setActive(highlight);", js)
+        self.assertIn("render(items, current ? items.indexOf(current) : -1);", js)
+        self.assertIn("if (items.length && highlight >= 0) setActive(Math.min(highlight, items.length - 1));", js)

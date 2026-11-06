@@ -27,8 +27,8 @@ DISCLAIMER = ("Nomad Life is a personal organizer, not tax advice. "
               "Residence rules differ by country.")
 RULES = [
     "Dates are inclusive: a stay from 1 to 3 March counts 3 days.",
-    "Days not covered by any stay count toward your base country once they have passed. "
-    "Planned stays count in full; future days without a stay are not counted yet.",
+    "Only logged days count: a day not covered by any stay counts toward no country, past or "
+    "future. Days at the base count through a stay there. Planned stays count in full.",
     "A day shared by two stays, such as a travel day, counts toward the stay that started later.",
     "A side trip inside a longer stay counts toward the side trip. When two stays start on "
     "the same day, the shorter one wins; with identical dates, the one added last wins.",
@@ -132,7 +132,7 @@ class PackageData:
     stays: list = field(default_factory=list)
     receipts: list = field(default_factory=list)
     include_notes: bool = False
-    upcoming_days: int = 0   # future days not covered by a stay, not counted anywhere yet
+    not_logged_days: int = 0   # days no stay covers, past or future: counted for no country
     holder: str = ""         # whose package this is: the name from Settings, or the email
 
     @property
@@ -156,7 +156,10 @@ def stay_label(data, number):
     if number == 0:
         return "Base"
     stay = next((s for s in data.stays if s.number == number), None)
-    return f"{number:02d} {stay.city}, {stay.country}" if stay else f"{number:02d}"
+    if not stay:
+        return f"{number:02d}"
+    # The city is optional: "01 Rome, Italy" or "01 Italy".
+    return f"{number:02d} {stay.city}, {stay.country}" if stay.city else f"{number:02d} {stay.country}"
 
 
 # ---------- CSV ----------
@@ -248,9 +251,12 @@ def assign_arcnames(data):
     folders = {0: "base"}
     taken_folders = {"base"}
     for s in data.stays:
-        folder = "_".join([f"{s.number:02d}", s.start,
-                           clean_segment(s.city, MAX_CITY, "city", False),
-                           clean_segment(s.country, MAX_COUNTRY, "country", False)])
+        # No city (it is optional): 01_2026-02-01_Indonesia, not a made up "city" segment.
+        parts = [f"{s.number:02d}", s.start]
+        if s.city:
+            parts.append(clean_segment(s.city, MAX_CITY, "city", False))
+        parts.append(clean_segment(s.country, MAX_COUNTRY, "country", False))
+        folder = "_".join(parts)
         folders[s.number] = _unique(folder, taken_folders)
     taken = {}
     for r in data.receipts:
@@ -293,8 +299,8 @@ def summary_blocks(data):
         (f"At least {data.threshold} days in base country", yes_no),
         ("Days abroad", str(data.abroad_days)),
     ]
-    if data.upcoming_days:
-        full_year.append(("Days still to come without a stay", str(data.upcoming_days)))
+    if data.not_logged_days:
+        full_year.append(("Days without a stay (not counted)", str(data.not_logged_days)))
     if data.status == "past":
         blocks += [("heading", f"Final numbers for {y}"), ("kv", full_year)]
     elif data.status == "current":
@@ -307,8 +313,8 @@ def summary_blocks(data):
             ]),
             ("heading", "Full year with planned trips"),
             ("kv", full_year),
-            ("note", "These numbers add the trips you have already planned. Days still to come "
-                     "without a stay are not counted toward any country yet."),
+            ("note", "These numbers add the trips you have already planned. Days without a "
+                     "stay are not counted toward any country."),
         ]
     else:
         blocks += [
@@ -348,10 +354,8 @@ def summary_blocks(data):
             blocks.append(("note", "* Counted days are lower when a stay shares days with a stay "
                                    "that takes those days (see the rules below)."))
     else:
-        blocks.append(("note", "No stays recorded for this year. Every day counts toward the "
-                               "base country." if data.status == "past" else
-                               "No stays recorded for this year. Days without a stay count "
-                               "toward the base country once they have passed."))
+        blocks.append(("note", "No stays recorded for this year, so no day is counted yet: "
+                               "only logged stays count, at the base too."))
 
     blocks += [("heading", "Rules used for counting"), ("bullets", RULES)]
 

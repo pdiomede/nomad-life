@@ -121,8 +121,9 @@ class DataTests(AppTestCase):
             row = conn.execute("SELECT * FROM years WHERE year = 2027").fetchone()
         with self.app.test_request_context():
             text = package.summary_text(appmod.build_package_data(row, False))
-        self.assertIn("count toward the base country once they have passed", text)
-        self.assertNotIn("Every day counts toward the base country", text)
+        # Only logged days count, so a year without stays counts no day, the base included.
+        self.assertIn("No stays recorded for this year, so no day is counted yet", text)
+        self.assertNotIn("count toward the base country once they have passed", text)
 
     def test_new_movement_after_the_year_was_deleted(self):
         self.signup()

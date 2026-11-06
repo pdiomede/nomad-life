@@ -47,7 +47,8 @@ class MarkerSwitchTests(AppTestCase):
         self.assertIn(".stat-label { font-size: 13px; color: var(--muted); font-weight: 500; }", css)  # admin keeps its own
 
     def test_the_pill_of_a_year_over_the_line_is_marked_too(self):
-        self.new_year(2020)  # a past year: every day counts toward the base
+        self.new_year(2020)
+        self.add_movement(2020, "Lisbon", "Portugal", "2020-01-01", "2020-07-01")  # 183 days at the base
         _, card = self.card(2020)
         self.assertIn('<p class="pill pill-ok day-marker">At least', card)
 

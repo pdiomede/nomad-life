@@ -20,7 +20,7 @@
   <input type="hidden" name="action" value="upload">
   <div class="field">
     <label for="kind-{{ uid }}">Type</label>
-    <select id="kind-{{ uid }}" name="kind">
+    <select id="kind-{{ uid }}" name="kind" data-select-menu>
       {% for key, label in document_kinds.items() %}
         <option value="{{ key }}" {% if key == default_kind %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
@@ -63,7 +63,7 @@
           </div>
           <div class="field">
             <label for="doc-kind-{{ d.id }}">Type</label>
-            <select id="doc-kind-{{ d.id }}" name="kind">
+            <select id="doc-kind-{{ d.id }}" name="kind" data-select-menu>
               {% for key, label in document_kinds.items() %}
                 <option value="{{ key }}" {% if key == d.kind %}selected{% endif %}>{{ label }}</option>
               {% endfor %}

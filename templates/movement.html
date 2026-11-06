@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui with context %}
-{% block title %}{{ m.city if m else 'New movement' }} | Nomad Life{% endblock %}
+{% block title %}{{ (m | place) if m else 'New movement' }} | Nomad Life{% endblock %}
 {% block content %}
 <div class="narrow">
   <a class="back" href="{{ back_url or url_for('dashboard', year=y.year) }}">&larr; Back to {{ y.year }}</a>
   <div class="page-head">
     <div>
       <p class="eyebrow">Movement</p>
-      <h1>{% if m %}{{ ui.flag(m.country) }}{{ m.city }}, {{ m.country }}{% else %}New movement{% endif %}</h1>
+      <h1>{% if m %}{{ ui.flag(m.country) }}{% if m.city %}{{ m.city }}, {% endif %}{{ m.country }}{% else %}New movement{% endif %}</h1>
     </div>
   </div>
 
@@ -19,11 +19,11 @@
       <div class="grid-2">
         <div class="field">
           <label for="country">Country</label>
-          <input id="country" name="country" maxlength="100" list="country-list" data-country-combo autocomplete="off" value="{{ form.country or '' }}" placeholder="Indonesia" required>
+          <input id="country" name="country" maxlength="100" list="country-list" data-country-combo data-base-country="{{ y.base_country }}" autocomplete="off" value="{{ form.country or '' }}" placeholder="Indonesia" required>
         </div>
         <div class="field">
-          <label for="city">City</label>
-          <input id="city" name="city" maxlength="100" value="{{ form.city or '' }}" placeholder="Bali" required>
+          <label for="city">City (optional)</label>
+          <input id="city" name="city" maxlength="100" value="{{ form.city or '' }}" placeholder="Bali">
         </div>
         <div class="field">
           <label for="start_date">From</label>
@@ -42,7 +42,7 @@
       <div class="grid-2">
         <div class="field">
           <label for="kind-new">Receipt type (optional)</label>
-          <select id="kind-new" name="kind">
+          <select id="kind-new" name="kind" data-select-menu>
             {% for key, label in document_kinds.items() %}
               <option value="{{ key }}" {% if key == (form.kind or 'accommodation') %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
@@ -82,7 +82,7 @@
         <p class="muted small">This removes the movement and all its receipts.</p>
       </div>
       {% set receipts = '' if not docs else ' and its receipt' if docs|length == 1 else ' and its ' ~ docs|length ~ ' receipts' %}
-      {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ m.city ~ receipts, extra={'action': 'delete'}, button_class='btn btn-danger') }}
+      {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete'}, button_class='btn btn-danger') }}
     </div>
   </section>
   {% endif %}

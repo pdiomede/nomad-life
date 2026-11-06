@@ -1,4 +1,5 @@
-"""Days without a stay count toward the base country only once they have passed."""
+"""Only logged days count: a day without a movement counts for no country, past or future,
+the base included (days at the base count through a movement there)."""
 import unittest
 from datetime import date, timedelta
 
@@ -31,7 +32,7 @@ class DayCountTests(AppTestCase):
         self.assertIn("0 days (0 so far)", html)
         self.assertIn("183 days short of 183", html)
 
-    def test_current_year_counts_past_base_days_and_all_stay_days(self):
+    def test_current_year_counts_only_logged_days(self):
         today = date.today()
         y = today.year
         self.new_year(y)
@@ -40,19 +41,35 @@ class DayCountTests(AppTestCase):
         tomorrow = today + timedelta(days=1)
         self.add_movement(y, "Rome", "Italy", tomorrow.isoformat(), tomorrow.isoformat())
         stats = self.stats(y)
-        self.assertEqual(stats["base_days"], stats["elapsed"])
+        self.assertEqual(stats["base_days"], 0)  # passed days without a movement count nowhere
         self.assertEqual(stats["abroad_days"], 1)
-        self.assertEqual(stats["base_days"] + stats["abroad_days"] + stats["upcoming"],
+        self.assertEqual(stats["base_days"] + stats["abroad_days"] + stats["not_logged"],
                          stats["total"])
 
-    def test_past_year_is_unchanged(self):
+    def test_past_year_counts_only_logged_days(self):
         y = date.today().year - 1
         self.new_year(y)
         self.add_movement(y, "Rome", "Italy", f"{y}-03-01", f"{y}-03-10")
         stats = self.stats(y)
-        self.assertEqual((stats["base_days"], stats["abroad_days"], stats["upcoming"]),
-                         (stats["total"] - 10, 10, 0))
+        self.assertEqual((stats["base_days"], stats["abroad_days"], stats["not_logged"]),
+                         (0, 10, stats["total"] - 10))
 
+    def test_a_base_without_movements_has_no_days(self):
+        for y in (date.today().year - 1, date.today().year):
+            self.new_year(y)
+            stats = self.stats(y)
+            self.assertEqual((stats["base_days"], stats["abroad_days"], stats["not_logged"]),
+                             (0, 0, stats["total"]), y)
+            self.assertIn("0 days (0 so far)", self.client.get(f"/year/{y}").get_data(as_text=True))
+
+    def test_a_movement_at_the_base_counts_for_it(self):
+        y = date.today().year - 1
+        self.new_year(y, "Lisbon", "Portugal")
+        self.add_movement(y, "Lisbon", "Portugal", f"{y}-01-01", f"{y}-07-02")  # 183 days
+        self.add_movement(y, "Rome", "Italy", f"{y}-07-02", f"{y}-07-05")  # 2 July goes to Italy
+        stats = self.stats(y)
+        self.assertEqual((stats["base_days"], stats["abroad_days"]), (182, 4))
+        self.assertFalse(stats["base_ok"])
 
 if __name__ == "__main__":
     unittest.main()

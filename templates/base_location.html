@@ -19,7 +19,7 @@
       <div class="grid-2">
         <div class="field">
           <label for="base_country">Base country</label>
-          <input id="base_country" name="base_country" maxlength="100" list="country-list" data-country-combo autocomplete="off" value="{{ (form or y).base_country }}" required>
+          <input id="base_country" name="base_country" maxlength="100" list="country-list" data-country-combo data-base-country="{{ y.base_country }}" autocomplete="off" value="{{ (form or y).base_country }}" required>
         </div>
         <div class="field">
           <label for="base_city">Base city</label>

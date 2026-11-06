@@ -81,16 +81,16 @@
           {% for m in pager.rows %}
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
             <td class="dates"><span class="nowrap">{{ m.start_date }}</span> <span class="muted">to</span> <span class="nowrap">{{ m.end_date }}</span></td>
-            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"><strong>{{ m.city }}</strong></a><div class="muted small">{{ ui.flag(m.country) }}{{ m.country }}</div></td>
+            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"><strong>{{ m.city or m.country }}</strong></a>{% if m.city %}<div class="muted small">{{ ui.flag(m.country) }}{{ m.country }}</div>{% endif %}</td>
             {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
             {% set counted = stats.counted.get(m.id, 0) %}
             <td class="num">{{ length }}{% if counted != length %}<div class="muted small" title="A day shared with another stay counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest)">{{ counted }} counted</div>{% endif %}</td>
             <td class="num hide-sm">{{ m.doc_count }}</td>
             <td class="right hide-sm">
               <div class="row-actions">
-                <a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}" aria-label="Edit movement to {{ m.city }}">Edit</a>
+                <a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}" aria-label="Edit movement to {{ m | place }}">Edit</a>
                 {% set receipts = '' if not m.doc_count else ' and its receipt' if m.doc_count == 1 else ' and its ' ~ m.doc_count ~ ' receipts' %}
-                {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ m.city ~ receipts, extra={'action': 'delete', 'page': pager.page}, aria_label='Delete movement to ' ~ m.city) }}
+                {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete', 'page': pager.page}, aria_label='Delete movement to ' ~ (m | place)) }}
               </div>
             </td>
           </tr>
@@ -143,8 +143,8 @@
       {% for c in calendar.legend %}
       <li><i class="cal-swatch {{ c.color }}" aria-hidden="true"></i>{{ ui.flag(c.country) }}{{ c.country }}{% if c.is_base %} <span class="tag">Base</span>{% endif %} <span class="muted">{{ c.days }} day{{ '' if c.days == 1 else 's' }}</span></li>
       {% endfor %}
-      {% if calendar.not_planned %}
-      <li><i class="cal-swatch cal-none" aria-hidden="true"></i>Not planned yet <span class="muted">{{ calendar.not_planned }} day{{ '' if calendar.not_planned == 1 else 's' }}</span></li>
+      {% if calendar.not_logged %}
+      <li><i class="cal-swatch cal-none" aria-hidden="true"></i>Not logged <span class="muted">{{ calendar.not_logged }} day{{ '' if calendar.not_logged == 1 else 's' }}</span></li>
       {% endif %}
     </ul>
     <div class="cal-grid">
@@ -192,11 +192,11 @@
       {% for p in pins %}
       <button type="button" class="map-pin{% if p.is_base %} map-pin-base{% endif %}{% if p.side %} tip-{{ p.side }}{% endif %}{% if p.below %} tip-below{% endif %}"
               style="left: {{ p.left }}%; top: {{ p.top }}%"
-              aria-label="{{ p.country }}{% if p.is_base %} (base){% endif %}, {{ p.days }} day{{ '' if p.days == 1 else 's' }}: {{ p.cities | join(', ') }}">
+              aria-label="{{ p.country }}{% if p.is_base %} (base){% endif %}, {{ p.days }} day{{ '' if p.days == 1 else 's' }}{% if p.cities %}: {{ p.cities | join(', ') }}{% endif %}">
         <span class="map-pin-days" aria-hidden="true">{{ p.days }}</span>
         <span class="map-tip" aria-hidden="true">
           <span class="map-tip-country">{% if p.flag %}<span class="flag">{{ p.flag }}</span> {% endif %}{{ p.country }}{% if p.is_base %} <span class="tag">Base</span>{% endif %}</span>
-          <span class="map-tip-cities">{{ p.cities | join(', ') }}</span>
+          {% if p.cities %}<span class="map-tip-cities">{{ p.cities | join(', ') }}</span>{% endif %}
           <span class="map-tip-days">{{ p.days }} day{{ '' if p.days == 1 else 's' }}</span>
         </span>
       </button>
@@ -262,7 +262,7 @@
       <h2 id="package-title">Accountant Package</h2>
       {% if not current_plan.package %}<a class="btn btn-upgrade btn-sm" href="{{ url_for('plan') }}" aria-label="Upgrade to Pro for the accountant package">Upgrade</a>{% endif %}
     </div>
-    <p class="muted small">One ZIP for {{ y.year }}: a PDF summary, your timeline and country totals as spreadsheets, and every receipt, ready to share with your accountant.</p>
+    <p class="muted small">Everything for {{ y.year }} in one ZIP: a PDF summary, spreadsheets with your timeline and country totals, and all your receipts, ready to share with your accountant.</p>
     {% if current_plan.package %}
     <form method="get" action="{{ url_for('year_package', year=y.year) }}" class="package-form" data-download>
       <label class="check"><input type="checkbox" name="notes" value="1"> Include my notes</label>

@@ -88,7 +88,13 @@ def seed(app, tmp, password):
              ("Italy", "Rome", "2026-03-06", "2026-03-08", ""),
              ("Japan", "Tokyo", "2026-05-10", "2026-05-24", "Visa free 90 days"),
              ("France", "Paris", "2026-07-01", "2026-07-05", ""),
-             ("Thailand", "Bangkok", "2026-11-13", "2026-11-20", "Planned")]
+             ("Thailand", "Bangkok", "2026-11-13", "2026-11-20", "Planned"),
+             # Only logged days count, so the time at the base is logged too; after the trips
+             # (the receipts below go to movement 1) and clear of their travel days.
+             ("Portugal", "Lisbon", "2026-01-01", "2026-03-03", "Home"),
+             ("Portugal", "Lisbon", "2026-03-09", "2026-05-10", "Home"),
+             ("Portugal", "Lisbon", "2026-05-25", "2026-07-01", "Home"),
+             ("Portugal", "Lisbon", "2026-07-06", "2026-11-12", "Home")]
     for country, city, start, end, notes in stays:
         user.post("/year/2026/movements/new", data={
             "country": country, "city": city, "start_date": start, "end_date": end,

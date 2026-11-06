@@ -68,7 +68,7 @@ class DocsFixTests(AppTestCase):
         self.assertIn("HEIC files, smaller photos and photos over 24 megapixels are stored as they "
                       "are, metadata included", html)
         # The worked example counts 14 days, not the whole dashboard.
-        self.assertIn("Result for these 14 days: Portugal 4", html)
+        self.assertIn("Result for these 14 days: Portugal 2, Spain 3, Italy 3, Thailand 2. Days 9 to 12 count for no country.", html)
         self.assertIn("Close the results; press again to clear the search", html)
         self.assertIn("add your notes to <code>timeline.csv</code>", html)
         self.assertIn("every other file with its SHA-256 checksum", html)

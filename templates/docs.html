@@ -110,6 +110,7 @@
           {{ shot('movement-new', 'The New movement form: after typing "ita" in Country, the list offers Italy; numbered markers point at Country, the To date and the Add movement button', '1 Pick the country, 2 set the dates, 3 press Add movement. A receipt can be attached right away.') }}
           <ul>
             <li>Press <strong>+ Add movement</strong> on the dashboard.</li>
+            <li><strong>The country is what counts</strong>; the city is optional. Without one, the movement shows as its country, such as <strong>Italy</strong>.</li>
             <li><strong>Both dates count.</strong> From 1 March to 3 March is 3 days.</li>
             <li>The dates must fall inside the year. A trip over New Year is two movements: 28 to 31 December in one year, 1 to 5 January in the next.</li>
             <li>Notes are optional, up to {{ '{:,}'.format(notes_max) }} characters, and only you see them (the accountant package leaves them out unless you ask).</li>
@@ -117,12 +118,16 @@
         </section>
         <section id="country-picker" class="doc-sub" data-doc-title="The country picker">
           <h3>The country picker</h3>
-          <p>Type part of a name, a two letter code or a common name: <kbd>ita</kbd> finds Italy, <kbd>JP</kbd> finds Japan, <kbd>Holland</kbd> finds Netherlands. Accents do not matter. Use the arrow keys and <kbd>Enter</kbd>, or tap a country.</p>
+          <p>Type the start of a name or of one of its words, a two letter code or a common name: <kbd>ita</kbd> finds Italy, <kbd>JP</kbd> finds Japan, <kbd>Holland</kbd> finds Netherlands (Holland). Accents do not matter. Use the arrow keys and <kbd>Enter</kbd>, or tap a country.</p>
+          <ul>
+            <li>Your year's base country comes first, with a blue home icon.</li>
+            <li><strong>Favorites:</strong> press the star next to a country (or <kbd>Shift</kbd>+<kbd>Enter</kbd> on the highlighted one) to keep it in the <strong>Favorites</strong> tab, next to <strong>All countries</strong>; <kbd>Alt</kbd>+<kbd>&rarr;</kbd> and <kbd>Alt</kbd>+<kbd>&larr;</kbd> switch between them. Favorites are saved with your account, on every device, up to {{ favorites_max }}.</li>
+          </ul>
           <p>A place that is not in the list can be typed as it is. It is counted as its own country and listed under the map.</p>
         </section>
         <section id="edit-movement" class="doc-sub" data-doc-title="Edit or delete a movement">
           <h3>Edit or delete a movement</h3>
-          <p>Press the city in the Movements table, or <strong>Edit</strong>. <strong>Delete</strong> removes the movement and its receipts after two confirmations.</p>
+          <p>Press the place in the Movements table, or <strong>Edit</strong>. <strong>Delete</strong> removes the movement and its receipts after two confirmations.</p>
           {{ shot('delete-dialog', 'The delete confirmation dialog on step 2 of 2: "Are you sure? This permanently deletes the movement to Madrid and its 2 receipts." with Cancel and Yes, delete permanently', 'Every delete asks twice. The second step says what will be removed.') }}
           <p>Limits: city and country up to {{ place_max }} characters, and up to {{ '{:,}'.format(movements_max) }} movements a year.</p>
         </section>
@@ -134,7 +139,7 @@
         <p>Every day of the year goes to one country at most. Four rules decide which one:</p>
         <ol class="doc-rules">
           <li><strong>Movements count in full</strong>, planned future ones too.</li>
-          <li><strong>Days without a movement count for your base</strong>, but only once they have passed (today included). Empty future days count nowhere yet.</li>
+          <li><strong>Only logged days count.</strong> A day without a movement counts for no country, past or future. To count days at your base, add a movement there too (for example your base city for the months you lived there).</li>
           <li><strong>A day in two movements</strong> (an overlap), such as a travel day, counts for the one that <strong>started later</strong>. If both start the same day, the shorter one wins; with identical dates, the newest.</li>
           <li><strong>A movement inside your base country</strong> counts for the base country.</li>
         </ol>
@@ -142,17 +147,19 @@
 
         <section id="counting-example" class="doc-sub" data-doc-title="A worked example">
           <h3>A worked example</h3>
-          <p>Base Lisbon, Portugal. Today is 10 March. Spain from 3 to 6 March, Italy from 6 to 8 March, and a trip to Thailand planned for 13 and 14 March.</p>
+          <p>Base Lisbon, Portugal. Lisbon logged from 1 to 3 March, Spain from 3 to 6 March, Italy from 6 to 8 March, and a trip to Thailand planned for 13 and 14 March.</p>
           <figure class="doc-figure doc-diagram">
             <svg viewBox="0 0 720 214" role="img" aria-labelledby="timeline-title timeline-desc" class="doc-timeline">
               <title id="timeline-title">How 14 days of March are counted</title>
-              <desc id="timeline-desc">Days 1 and 2 count for Portugal, the base. Spain covers days 3 to 6 and Italy days 6 to 8; day 6 goes to Italy, which started later. Days 9 and 10 count for Portugal. Days 11 and 12 are in the future without a movement and count nowhere yet. Thailand, days 13 and 14, counts because it is planned.</desc>
-              {% set cells = ['base', 'base', 'es', 'es', 'es', 'it', 'it', 'it', 'base', 'base', 'none', 'none', 'th', 'th'] %}
+              <desc id="timeline-desc">Days 1 and 2 count for Portugal, the base, from the Lisbon movement. Day 3 is shared by Lisbon and Spain and goes to Spain, which started later; Spain covers days 3 to 6 and Italy days 6 to 8, and day 6 goes to Italy. Days 9 to 12 have no movement and count nowhere. Thailand, days 13 and 14, counts because it is planned.</desc>
+              {% set cells = ['base', 'base', 'es', 'es', 'es', 'it', 'it', 'it', 'none', 'none', 'none', 'none', 'th', 'th'] %}
               {% set x0, w = 22, 48 %}
               {# Movement bars #}
               <g class="tl-bars">
                 <rect class="tl-stay" x="{{ x0 + 2 * w + 3 }}" y="14" width="{{ 4 * w - 6 }}" height="22" rx="6"/>
                 <text class="tl-bar-label" x="{{ x0 + 2 * w + 12 }}" y="29">Spain, 3 to 6</text>
+                <rect class="tl-stay tl-stay-base" x="{{ x0 + 3 }}" y="42" width="{{ 3 * w - 6 }}" height="22" rx="6"/>
+                <text class="tl-bar-label" x="{{ x0 + 12 }}" y="57">Lisbon, 1 to 3</text>
                 <rect class="tl-stay tl-stay-2" x="{{ x0 + 5 * w + 3 }}" y="42" width="{{ 3 * w - 6 }}" height="22" rx="6"/>
                 <text class="tl-bar-label" x="{{ x0 + 5 * w + 12 }}" y="57">Italy, 6 to 8</text>
                 <rect class="tl-stay tl-stay-3" x="{{ x0 + 12 * w + 3 }}" y="14" width="{{ 2 * w - 6 }}" height="22" rx="6"/>
@@ -168,16 +175,14 @@
               {# Shared day and today #}
               <path class="tl-mark" d="M{{ x0 + 5 * w + w / 2 }} 66 v8"/>
               <text class="tl-note" x="{{ x0 + 5 * w + w / 2 }}" y="162" text-anchor="middle">shared: Italy</text>
-              <path class="tl-today" d="M{{ x0 + 10 * w - 1 }} 70 v76"/>
-              <text class="tl-note tl-today-label" x="{{ x0 + 10 * w - 4 }}" y="162" text-anchor="end">today</text>
               {# Legend #}
               <g class="tl-legend" transform="translate(22 186)">
                 <rect class="tl-cell tl-base" width="14" height="14" rx="3"/><text x="20" y="12">Base (Portugal)</text>
                 <rect class="tl-cell tl-es" x="150" width="14" height="14" rx="3"/><text x="170" y="12">Movements</text>
-                <rect class="tl-cell tl-none" x="270" width="14" height="14" rx="3"/><text x="290" y="12">Not counted yet</text>
+                <rect class="tl-cell tl-none" x="270" width="14" height="14" rx="3"/><text x="290" y="12">No movement: not counted</text>
               </g>
             </svg>
-            <figcaption>Result for these 14 days: Portugal 4, Spain 3, Italy 3, Thailand 2 (on the dashboard, the passed days of January and February count for Portugal too). Spain lasts 4 days but shows <strong>3 counted</strong> in the Movements table, because 6 March went to Italy.</figcaption>
+            <figcaption>Result for these 14 days: Portugal 2, Spain 3, Italy 3, Thailand 2. Days 9 to 12 count for no country. Spain lasts 4 days but shows <strong>3 counted</strong> in the Movements table, because 6 March went to Italy; Lisbon shows <strong>2 counted</strong>, because 3 March went to Spain.</figcaption>
           </figure>
         </section>
 
@@ -191,7 +196,7 @@
 
       <section id="dashboard" class="doc-section" data-doc-title="Your dashboard">
         <h2>Your dashboard</h2>
-        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in Base country 248 of 365, At least 183 days; Days outside Base country 34; Year elapsed 274 of 365. Numbered markers point at + Year, + Add movement and Manage base and contract', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
+        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in Base country 290 of 365, At least 183 days; Days outside Base country 34; Year elapsed. Numbered markers point at + Year, + Add movement and Manage base and contract', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
         <section id="cards" class="doc-sub" data-doc-title="The four cards">
           <h3>The four cards</h3>
           <ul>
@@ -203,7 +208,7 @@
         </section>
         <section id="movements-table" class="doc-sub" data-doc-title="The Movements table">
           <h3>The Movements table</h3>
-          {{ shot('movements-table', 'The Movements table: Madrid, Spain, 4 days with "3 counted" under it, then Rome, Tokyo, Paris and Bangkok', 'A movement that shares a day shows how many of its days count.') }}
+          {{ shot('movements-table', 'The Movements table: Lisbon, then Madrid, Spain, 4 days with "3 counted" under it, then Rome, Lisbon, Tokyo and the rest of the year', 'A movement that shares a day shows how many of its days count.') }}
           <p>Movements are listed by start date; the one you are in today is highlighted. A blinking red triangle next to the title means some movements overlap (see <a href="#counting">How days are counted</a>). Long lists are split into pages; choose {{ per_page_options | join(', ') }} rows with <strong>Show</strong> under the table.</p>
         </section>
         <section id="days-per-country" class="doc-sub" data-doc-title="Days per country">
@@ -212,18 +217,18 @@
         </section>
         <section id="calendar" class="doc-sub" data-doc-title="The calendar">
           <h3>The calendar</h3>
-          {{ shot('calendar', 'The calendar of 2026, four months a row, with Lisbon days in pink, the stays in Spain, Italy, Japan, France and Thailand each in its own color, and a legend with their days', 'Each day in the color of the country it counts for.') }}
+          {{ shot('calendar', 'The calendar of 2026, four months a row, with the Lisbon days in pink, the stays in Spain, Italy, Japan, France and Thailand each in its own color, the last weeks without a movement in grey, and a legend with their days', 'Each day in the color of the country it counts for.') }}
           <ul>
             <li>The calendar starts folded: click <strong>Calendar</strong> to open it, and again to fold it. It shows the year of the tab you are on.</li>
             <li>Each day has the color of the country it counts for, the same days as in Days per Country: a day shared by two stays has the color of the stay that started later.</li>
-            <li>Past days without a stay have your base's color. Grey days are still to come and have no stay yet: they count nowhere until you add one.</li>
+            <li>Grey days have no movement: they count for no country until you add one, at your base too.</li>
             <li>Point at a day to see its date, country and city; screen readers read them with each day. Today has an outline.</li>
           </ul>
         </section>
 
         <section id="map" class="doc-sub" data-doc-title="The map">
           <h3>The map</h3>
-          {{ shot('map', 'The world map with a base pin of 248 days in Portugal and stay pins in Spain, France, Italy, Japan and Thailand; the Italy tooltip shows its flag, Rome and 3 days', 'Point at a pin, tap it or reach it with Tab to see the country, its cities and its days.') }}
+          {{ shot('map', 'The world map with a base pin of 290 days in Portugal and stay pins in Spain, France, Italy, Japan and Thailand; the Italy tooltip shows its flag, Rome and 3 days', 'Point at a pin, tap it or reach it with Tab to see the country, its cities and its days.') }}
           <ul>
             <li>The map starts folded: click <strong>Map</strong> to open it, and again to fold it.</li>
             <li>One pin per country, with its number of days. Your base has the bigger, differently colored pin.</li>
@@ -242,7 +247,7 @@
           {{ shot('receipts', 'The Receipts card of a movement: a type menu set to Flight ticket, a chosen file named flight-lis-bcn.pdf and the Upload button, above two saved receipts', 'Choose the type and the file, then press Upload.') }}
           <ul>
             <li>Upload on a movement's page, or on the base page for your rental contract.</li>
-            <li>Types: {{ kinds() }}.</li>
+            <li>Types: {{ kinds() }}, chosen from a list with an icon for each.</li>
             <li>Files: PDF, PNG, JPG, HEIC or WebP. Files are checked by their content, so a web page renamed to <code>.pdf</code> is refused.</li>
             <li>Big JPG, PNG and WebP photos (over {{ photo_megapixels }} megapixels or {{ photo_shrink_mb }} MB) are resized to at most about {{ photo_megapixels }} megapixels and saved as JPEG without their metadata, which removes the location a phone stores in a photo. They are never made narrower than {{ '{:,}'.format(photo_min_side) }} pixels, so long screenshots stay readable. HEIC files, smaller photos and photos over {{ photo_max_megapixels }} megapixels are stored as they are, metadata included.</li>
           </ul>
@@ -400,6 +405,8 @@
               <tr><td><kbd>+</kbd> <kbd>-</kbd> <kbd>0</kbd></td><td>Map</td><td>Zoom in, zoom out, whole world</td></tr>
               <tr><td><kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>&rarr;</kbd> <kbd>&darr;</kbd></td><td>Map, zoomed</td><td>Move around</td></tr>
               <tr><td><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>Enter</kbd></td><td>Country picker</td><td>Choose a country</td></tr>
+              <tr><td><kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>Country picker</td><td>Add the highlighted country to your favorites, or remove it</td></tr>
+              <tr><td><kbd>Alt</kbd>+<kbd>&rarr;</kbd> <kbd>Alt</kbd>+<kbd>&larr;</kbd></td><td>Country picker</td><td>Favorites, all countries</td></tr>
             </tbody>
           </table>
         </div>

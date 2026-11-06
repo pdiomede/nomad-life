@@ -55,8 +55,8 @@ class PackageContentsTests(AppTestCase):
         stats, movements = self.stats()
         _, zf = self.package(2026)
         totals = self.read_csv(zf, "country-totals.csv")
-        # Future days without a stay are not counted yet; the rest add up to the year.
-        self.assertEqual(sum(int(r["days"]) for r in totals) + stats["upcoming"], 365)
+        # Days without a stay are not counted; with them the totals add up to the year.
+        self.assertEqual(sum(int(r["days"]) for r in totals) + stats["not_logged"], 365)
         self.assertEqual({r["country"]: int(r["days"]) for r in totals},
                          {r["country"]: r["days"] for r in stats["rows"]})
         self.assertEqual({r["country"]: int(r["so_far"]) for r in totals},
@@ -88,7 +88,7 @@ class PackageContentsTests(AppTestCase):
             year_row = db.query("SELECT * FROM years WHERE year = 2028", one=True)
             text = package.summary_text(appmod.build_package_data(year_row, False))
         self.assertIn("(366 days)", text)
-        self.assertIn("Days still to come without a stay: 363", text)
+        self.assertIn("Days without a stay (not counted): 363", text)
 
     def test_receipts_are_byte_identical(self):
         _, zf = self.package(2026)

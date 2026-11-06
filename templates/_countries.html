@@ -4,3 +4,5 @@
   {% for c in countries %}<option value="{{ c }}">{% endfor %}
 </datalist>
 <script type="application/json" id="country-data">{{ country_data | tojson }}</script>
+{# The account's favorite countries (the star in the list), and where to save them. #}
+<script type="application/json" id="country-favorites" data-url="{{ url_for('favorite_country') }}" data-csrf="{{ csrf_token() }}">{{ favorite_countries() | tojson }}</script>

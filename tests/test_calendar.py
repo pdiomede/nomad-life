@@ -65,8 +65,8 @@ class CalendarTests(AppTestCase):
         self.assertNotEqual(italy, spain)
         self.assertEqual(days["2030-03-11"][0], italy)  # one color per country
         self.assertEqual(days["2030-03-05"][0], spain)  # the travel day: the later stay
-        self.assertEqual(days["2030-03-05"][1], "Tue 5 Mar 2030: Spain (Madrid)")
-        self.assertEqual(days["2030-03-09"], ("cal-none", "Sat 9 Mar 2030: not planned yet"))
+        self.assertEqual(days["2030-03-05"][1], "Tue 5 Mar 2030: Spain")
+        self.assertEqual(days["2030-03-09"], ("cal-none", "Sat 9 Mar 2030: not logged"))
 
     def test_screen_readers_hear_where_each_day_counts(self):
         # The color alone tells them nothing, and the hover text is for a mouse only.
@@ -74,18 +74,21 @@ class CalendarTests(AppTestCase):
         self.add_movement(2030, "Rome", "Italy", "2030-03-01", "2030-03-05")
         html = self.page(2030)
         self.assertIn('<time datetime="2030-03-02">2</time><span class="visually-hidden">, '
-                      'Italy (Rome)</span></td>', html)
+                      'Italy</span></td>', html)
         self.assertIn('<time datetime="2030-03-09">9</time><span class="visually-hidden">, '
-                      'not planned yet</span></td>', html)
+                      'not logged</span></td>', html)
 
-    def test_past_days_without_a_stay_are_the_base(self):
+    def test_days_without_a_stay_are_not_logged_also_in_the_past(self):
+        # Only logged days count: a passed day without a movement is not the base either.
         self.new_year(2020, "Lisbon", "Portugal")
         self.add_movement(2020, "Paris", "France", "2020-06-01", "2020-06-10")
+        self.add_movement(2020, "Lisbon", "Portugal", "2020-01-10", "2020-01-20")
         days = self.days(2020)
         self.assertEqual(len(days), 366)
-        self.assertEqual(days["2020-01-15"], ("cal-base", "Wed 15 Jan 2020: Portugal (base)"))
-        self.assertNotIn("cal-none", {c for c, _ in days.values()})
-        self.assertNotIn("Not planned yet", self.page(2020))
+        self.assertEqual(days["2020-01-05"], ("cal-none", "Sun 5 Jan 2020: not logged"))
+        self.assertEqual(days["2020-01-15"], ("cal-base", "Wed 15 Jan 2020: Portugal"))
+        self.assertEqual(Counter(c for c, _ in days.values())["cal-none"], 366 - 10 - 11)
+        self.assertIn("Not logged <span class=\"muted\">345 days</span>", self.page(2020))
 
     def test_the_colors_count_the_same_days_as_days_per_country(self):
         year = self.new_year(2030, "Sofia", "Bulgaria")
@@ -101,8 +104,8 @@ class CalendarTests(AppTestCase):
         cells = Counter(d["color"] for m in calendar["months"] for d in m["days"])
         for entry in calendar["legend"]:
             self.assertEqual(cells[entry["color"]], entry["days"], entry["country"])
-        self.assertEqual(cells["cal-none"], calendar["not_planned"])
-        self.assertEqual(calendar["not_planned"], stats["upcoming"])
+        self.assertEqual(cells["cal-none"], calendar["not_logged"])
+        self.assertEqual(calendar["not_logged"], stats["not_logged"])
         self.assertEqual([e["country"] for e in calendar["legend"]], ["France", "Italy"])
 
     def test_more_countries_than_colors_repeat_the_palette(self):

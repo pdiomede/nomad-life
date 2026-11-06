@@ -20,7 +20,7 @@ class CountrySearchTests(unittest.TestCase):
         with open(os.path.join(ROOT, "static", "js", "theme.js"), encoding="utf-8") as f:
             js = f.read()
         code = js[js.index("  var fold = function (s) {"):
-                  js.index('  document.querySelectorAll("input[data-country-combo]")')]
+                  js.index("  // Favorite countries (the star in the list)")]
         data = [[c[0], c[1], list(c[2]) if len(c) > 2 else []] for c in appmod.COUNTRY_DATA]
         script = ("var countries = %s;\n%s\nvar out = {};\n"
                   "JSON.parse(process.argv[2]).forEach(function (q) { var r = search(q);\n"
