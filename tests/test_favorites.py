@@ -95,6 +95,9 @@ class PickerScriptTests(AppTestCase):
         self.assertIn('star.className = "combo-star";', js)
         self.assertIn('home.className = "combo-home";', js)
         self.assertIn('if (e.key === "Enter" && e.shiftKey)', js)  # Shift+Enter stars
+        # The base country has no star: it is always first, with its home icon.
+        self.assertIn("if (favData && e !== base) {", js)
+        self.assertIn("if (shown[active] !== base) toggleFavorite(shown[active]);", js)
         self.assertIn('e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")', js)
         css = read("static", "css", "style.css")
         self.assertIn('.combo-star[aria-pressed="true"] { opacity: 1; color: var(--star);', css)

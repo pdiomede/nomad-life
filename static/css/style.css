@@ -300,7 +300,9 @@ main:focus { outline: none; }
 
 /* Year tabs */
 .year-tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px; flex-wrap: wrap; }
-.year-tab { padding: 5px 12px; border-radius: 5px; color: var(--muted); font-weight: 600; font-size: 14px; }
+.year-tab { display: inline-flex; align-items: center; justify-content: center; min-width: 68px; padding: 5px 12px; border-radius: 5px; color: var(--muted); font-weight: 600; font-size: 14px; }
+/* The year tabs and "+ Add movement" share one height, and every tab has the same width. */
+.year-actions { align-items: stretch; }
 .year-tab:hover { text-decoration: none; background: var(--surface-2); color: var(--text); }
 .year-tab.active { background: var(--primary); color: var(--primary-text); }
 .year-tab.add { color: var(--link); }
@@ -984,16 +986,21 @@ main:focus { outline: none; }
 
 /* Header icon buttons (Documentation, Contact support) name themselves in a small tooltip under
    the button, on mouse hover and on keyboard focus; screen readers use the aria-label. */
-.icon-btn[data-tip] { position: relative; text-decoration: none; }
-.icon-btn[data-tip]::after {
+/* CSS tooltips: header icon buttons and buttons with a short label ("Download"). */
+.icon-btn[data-tip], .btn[data-tip] { position: relative; text-decoration: none; }
+.icon-btn[data-tip]::after, .btn[data-tip]::after {
   content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 50%; z-index: 30;
   transform: translate(-50%, -2px); padding: 5px 9px; border-radius: 6px; white-space: nowrap;
   background: var(--primary); color: var(--primary-text); font-size: 12px; font-weight: 600;
   line-height: 1.3; box-shadow: var(--shadow); opacity: 0; pointer-events: none;
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
-@media (hover: hover) { .icon-btn[data-tip]:hover::after { opacity: 1; transform: translate(-50%, 0); } }
-.icon-btn[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+@media (hover: hover) { .icon-btn[data-tip]:hover::after, .btn[data-tip]:hover::after { opacity: 1; transform: translate(-50%, 0); } }
+.icon-btn[data-tip]:focus-visible::after, .btn[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+/* A text button's tooltip starts at its left edge: centred, it ran out of the card. */
+.btn[data-tip]::after { left: 0; transform: translate(0, -2px); }
+@media (hover: hover) { .btn[data-tip]:hover::after { transform: none; } }
+.btn[data-tip]:focus-visible::after { transform: none; }
 .icon-btn[aria-current="page"] { background: rgba(255, 255, 255, 0.14); }
 /* Admin page: larger section titles, and the Security Activity gear menu (a <details>, like the
    user menu, with the same panel and items; icons drawn in CSS). */

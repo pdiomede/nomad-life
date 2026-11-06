@@ -421,8 +421,9 @@
           via.textContent = "(" + hint + ")";
           li.appendChild(via);
         }
-        if (favData) {
-          // The star: mouse and touch; Shift+Enter does the same for the highlighted country.
+        if (favData && e !== base) {
+          // The star (not on the base, which is always first anyway): mouse and touch;
+          // Shift+Enter does the same for the highlighted country.
           var on = !!favorites[e.name];
           var star = document.createElement("button");
           star.type = "button"; star.tabIndex = -1;
@@ -528,7 +529,10 @@
         setActive((active + step + shown.length) % shown.length);
       } else if (e.key === "Enter" && e.shiftKey) {
         // Shift+Enter stars or unstars the highlighted country.
-        if (isOpen && active >= 0 && shown[active]) { e.preventDefault(); toggleFavorite(shown[active]); }
+        if (isOpen && active >= 0 && shown[active]) {
+          e.preventDefault();
+          if (shown[active] !== base) toggleFavorite(shown[active]);
+        }
       } else if (e.key === "Enter") {
         if (isOpen && active >= 0 && shown[active]) { e.preventDefault(); choose(shown[active]); }
       } else if (isOpen && e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {

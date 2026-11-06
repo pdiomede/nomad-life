@@ -23,5 +23,25 @@ class CardAlignmentTests(unittest.TestCase):
         self.assertIn(".side > .card > .card-head + * { margin-top: auto; }", text)
 
 
+class YearActionsTests(unittest.TestCase):
+    def test_the_year_tabs_and_add_movement_share_one_size(self):
+        text = css()
+        self.assertIn(".year-actions { align-items: stretch; }", text)
+        self.assertIn(".year-tab { display: inline-flex; align-items: center; justify-content: center; "
+                      "min-width: 68px;", text)
+        with open(os.path.join(ROOT, "templates", "dashboard.html"), encoding="utf-8") as f:
+            self.assertIn('<div class="row wrap gap-sm year-actions">', f.read())
+
+
+class PackageButtonTests(unittest.TestCase):
+    def test_the_button_says_download_with_a_tooltip(self):
+        with open(os.path.join(ROOT, "templates", "dashboard.html"), encoding="utf-8") as f:
+            html = f.read()
+        self.assertIn('<button class="btn btn-primary" type="submit" data-tip="Download Accountant Package" '
+                      'aria-label="Download Accountant Package">Download</button>', html)
+        self.assertIn(".icon-btn[data-tip]::after, .btn[data-tip]::after {", css())
+        self.assertIn(".btn[data-tip]::after { left: 0; transform: translate(0, -2px); }", css())
+
+
 if __name__ == "__main__":
     unittest.main()
