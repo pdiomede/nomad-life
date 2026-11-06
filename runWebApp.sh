@@ -9,12 +9,12 @@ info()  { printf '\033[1;36m[nomad-life]\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33m[nomad-life]\033[0m %s\n' "$*"; }
 fail()  { printf '\033[1;31m[nomad-life]\033[0m %s\n' "$*" >&2; exit 1; }
 
-PY_CHECK='import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'
+PY_CHECK='import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'
 
 # 1. Python
 PYTHON="${PYTHON:-python3}"
-command -v "$PYTHON" >/dev/null 2>&1 || fail "python3 not found. Please install Python 3.10 or newer."
-"$PYTHON" -c "$PY_CHECK" || fail "Python 3.10 or newer is required (found $("$PYTHON" -V 2>&1))."
+command -v "$PYTHON" >/dev/null 2>&1 || fail "python3 not found. Please install Python 3.11 or newer."
+"$PYTHON" -c "$PY_CHECK" || fail "Python 3.11 or newer is required (found $("$PYTHON" -V 2>&1))."
 # Debian and Ubuntu ship venv without ensurepip, which venv needs to install pip.
 "$PYTHON" -c 'import venv, ensurepip' 2>/dev/null || fail "The Python venv module is missing (on Debian/Ubuntu: apt install python3-venv)."
 info "Using $("$PYTHON" -V 2>&1)"

@@ -21,7 +21,7 @@ Everything the app uses comes either with Python or as a Python package (a "whee
 | Emails (confirmations, resets, security alerts) | Gmail over SMTP with an App Password | outbound port 587 open to `smtp.gmail.com` |
 | HTTPS certificates | Let's Encrypt through certbot | apt |
 
-Python 3.10 or newer is required; Ubuntu 24.04 ships 3.12, which the tests also run on. HEIC photos (iPhone) are stored as uploaded: they are zipped but not resized, because Pillow cannot read HEIC without extra libraries.
+Python 3.11 or newer is required; Ubuntu 24.04 ships 3.12, which the tests also run on. HEIC photos (iPhone) are stored as uploaded: they are zipped but not resized, because Pillow cannot read HEIC without extra libraries.
 
 ## 2. System packages
 
@@ -551,6 +551,7 @@ A server set up from an older copy of this guide lacks `--graceful-timeout 120` 
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
 
+- **1.12.10** needs Python 3.11 or newer (Pillow 13, which fixes known image vulnerabilities, dropped 3.10). Ubuntu 24.04 ships 3.12, so nothing changes there: the usual `pip install -r requirements.txt` step installs Pillow 13, Werkzeug 3.1.9 and pyasn1 0.6.5. A server still on Python 3.10 must move to a newer Python and recreate `.venv` first.
 - **1.12.3** adds online payment with Stripe (off until configured) and the Terms, Privacy and Refunds pages. The `subscriptions` and `billing_events` tables and the `users.stripe_customer_id` column are created on start; nothing to install. To take payments, follow [stripe.md](stripe.md): it ends with the four `STRIPE_*` keys for `config.env` and a restart. Stripe must reach `https://<your site>/billing/webhook`; the Cloudflare proxy lets it through.
 - **1.11.1** adds passkeys to two-factor sign in. Upgrading installs new packages (`webauthn`, `cryptography` and their dependencies) with the usual `pip install -r requirements.txt` step, and creates the `passkeys` and `passkey_challenges` tables and the `user_sessions.totp_setup` column on start. Passkeys work only on the address in `APP_BASE_URL`: it must be the real `https://` address people use.
 - **1.6.0** adds hCaptcha to Sign up and Forgot password (off until configured). Create a site at https://dashboard.hcaptcha.com, add your domain to it, then put its site key in `HCAPTCHA_SITEKEY` and your account's secret in `HCAPTCHA_SECRET` in `config.env`, and restart. Set both or neither: one alone stops the app at start.

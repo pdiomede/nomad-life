@@ -370,7 +370,31 @@ main:focus { outline: none; }
 .tip-below .map-tip { bottom: auto; top: calc(100% + 10px); }
 .tip-below .map-tip::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--surface); }
 .map-pin.is-off { opacity: 0; pointer-events: none; }  /* outside the zoomed view */
-.map-head-right { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px 14px; }
+/* The Map card folds (a <details>): the whole head opens it, with a chevron at its end. */
+.map-summary { cursor: pointer; list-style: none; align-items: center; border-radius: 6px; }
+.map-summary::-webkit-details-marker { display: none; }
+.map-summary:focus-visible { outline: 2px solid var(--link); outline-offset: 4px; }
+.map-summary .muted { margin-left: auto; }
+.map-summary::after {
+  content: ""; flex: none; width: 18px; height: 18px; background-color: var(--muted); transition: transform 0.2s ease;
+  -webkit-mask: var(--chevron) center / contain no-repeat; mask: var(--chevron) center / contain no-repeat;
+  --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+}
+.map-summary:hover::after { background-color: var(--text); }
+.map-card[open] > .map-summary::after { transform: rotate(180deg); }
+.map-card:not([open]) > .map-summary { margin-bottom: 0; }
+.map-tools { display: flex; justify-content: flex-end; margin: -4px 0 8px; }
+@media (prefers-reduced-motion: reduce) { .map-summary::after { transition: none; } }
+
+/* Line icons before card titles, drawn as a CSS mask so they take the text color in both themes. */
+.title-icon { display: inline-flex; align-items: center; gap: 9px; }
+.title-icon::before {
+  content: ""; flex: none; width: 20px; height: 20px; background-color: currentColor; opacity: 0.85;
+  -webkit-mask: var(--title-icon) center / contain no-repeat; mask: var(--title-icon) center / contain no-repeat;
+}
+@media (forced-colors: active) { .title-icon::before, .map-summary::after { forced-color-adjust: none; background-color: CanvasText; opacity: 1; } }
+.icon-globe { --title-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M3 12h18M4.6 7.5h14.8M4.6 16.5h14.8'/><ellipse cx='12' cy='12' rx='4' ry='9'/></svg>"); }
+.icon-plane { --title-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 21h18'/><path d='M4.2 15.8 2.5 12.2l2-.9 2.6 1.8 4-2-4.6-5.7 2.2-1 6.9 4 3.4-1.7a1.9 1.9 0 0 1 1.7 3.4l-12 6.1a3.4 3.4 0 0 1-2.6.1z'/></svg>"); }
 .map-zoom { display: flex; gap: 4px; }
 .map-zoom[hidden] { display: none; }
 .map-zoom-btn {

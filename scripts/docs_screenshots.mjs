@@ -55,7 +55,7 @@ const SHOTS = [
       var link = document.querySelector(".stat-base a.small"); link.style.display = "inline-block";
       __callout(".stat-base a.small", 3, "right");` },
   { name: "movements-table", path: "/year/2026", select: ["#movements"] },
-  { name: "map", path: "/year/2026", wait: 500, select: [".map-card"], hover: '.map-pin[aria-label^="Italy"]' },
+  { name: "map", path: "/year/2026", wait: 500, select: [".map-card"], prep: `document.querySelector(".map-card").open = true;`, hover: '.map-pin[aria-label^="Italy"]' },
   { name: "delete-dialog", path: "/year/2026", wait: 900, pad: 28, select: ["#confirm-dialog"], prep: `
       document.querySelector("#movements form[data-confirm-delete] button").click();
       await new Promise(r => setTimeout(r, 300));

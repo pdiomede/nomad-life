@@ -15,8 +15,8 @@ class MapTests(AppTestCase):
 
     def map_html(self, year=2026):
         html = self.client.get(f"/year/{year}").get_data(as_text=True)
-        start = html.index('<section class="card map-card"')
-        return html, html[start:html.index("</section>", start)]
+        start = html.index('<details class="card map-card"')
+        return html, html[start:html.index("</details>", start)]
 
     def test_map_is_under_movements_in_the_left_column(self):
         html, _ = self.map_html()
@@ -80,8 +80,8 @@ class MapDaysTests(AppTestCase):
         self.add_movement(2027, "Rome", "Italy", "2027-01-01", "2027-01-10")
         self.add_movement(2027, "Milan", "Italy", "2027-02-01", "2027-02-01")
         html = self.client.get("/year/2027").get_data(as_text=True)
-        card = html[html.index('<section class="card map-card"'):]
-        card = card[:card.index("</section>")]
+        card = html[html.index('<details class="card map-card"'):]
+        card = card[:card.index("</details>")]
         self.assertIn('aria-label="Italy, 11 days: Rome, Milan"', card)
         self.assertIn('<span class="map-pin-days" aria-hidden="true">11</span>', card)
         self.assertIn('<span class="map-tip-days">11 days</span>', card)

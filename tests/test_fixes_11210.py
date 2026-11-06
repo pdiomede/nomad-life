@@ -172,6 +172,40 @@ class DeleteAsksStripeTests(BillingCase):
         self.assertIsNotNone(self.user())
 
 
+class FoldingMapTests(AppTestCase):
+    def setUp(self):
+        super().setUp()
+        self.signup()
+        self.new_year(2026)
+        self.html = self.client.get("/year/2026").get_data(as_text=True)
+
+    def test_the_map_starts_folded_and_opens_from_its_head(self):
+        self.assertIn('<details class="card map-card">', self.html)  # no "open": folded
+        card = self.html[self.html.index('<details class="card map-card">'):]
+        card = card[:card.index("</details>")]
+        summary = card[card.index('<summary class="card-head map-summary">'):card.index("</summary>")]
+        self.assertIn('<h2 id="map-title" class="title-icon icon-globe">Map</h2>', summary)
+        # The zoom buttons are outside the summary, where a click would fold the card.
+        self.assertNotIn("map-zoom", summary)
+        self.assertLess(card.index("</summary>"), card.index('<div class="map-zoom" hidden>'))
+
+    def test_the_pins_are_placed_when_the_card_opens(self):
+        js = read("static", "js", "theme.js")
+        block = js[js.index('card.addEventListener("toggle"'):]
+        self.assertIn("if (!card.open) return;", block[:200])
+        self.assertIn("render();", block[:400])
+
+    def test_movements_and_map_titles_have_their_icons(self):
+        self.assertIn('<h2 id="movements-title" class="title-icon icon-plane">Movements</h2>',
+                      self.html)
+        text = css()
+        self.assertIn("mask: var(--title-icon)", rule(text, ".title-icon::before")
+                      or text[text.index(".title-icon::before {"):][:400])
+        self.assertIn("<circle cx='12' cy='12' r='9'/>", rule(text, ".icon-globe"))
+        self.assertIn("<path d='M3 21h18'/>", rule(text, ".icon-plane"))  # the runway
+        self.assertIn("transform: rotate(180deg);", rule(text, ".map-card[open] > .map-summary::after"))
+
+
 class InterfaceTests(unittest.TestCase):
     def test_purge_items_use_the_readable_red(self):
         # --danger is not lightened in the dark theme (2.5:1 on the menu): only for buttons

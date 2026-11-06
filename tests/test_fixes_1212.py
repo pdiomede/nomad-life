@@ -79,7 +79,8 @@ class ReceiptFixTests(AppTestCase):
 
     def test_sixteen_bit_grey_keeps_its_brightness(self):
         # A 16 bit scan with mid grey noise (a smooth gradient would stay smaller as PNG).
-        grey = Image.effect_noise((4000, 3000), 30).convert("I").point(lambda v: v * 257)
+        # Saved as I;16, what a 16 bit PNG holds (Pillow 13 no longer writes mode I as PNG).
+        grey = Image.effect_noise((4000, 3000), 30).convert("I").point(lambda v: v * 257).convert("I;16")
         with self.app.app_context():
             out = appmod.shrink_photo(png(grey), "png")
         self.assertIsNotNone(out)

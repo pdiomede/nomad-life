@@ -632,6 +632,14 @@
         render();
       }, 100);
     });
+    // The card starts folded, where the map has no size: place the pins once it opens.
+    card.addEventListener("toggle", function () {
+      if (!card.open) return;
+      var w = map.clientWidth;
+      if (last && w !== last) { tx *= w / last; ty *= w / last; }
+      last = w;
+      render();
+    });
   });
 
   // Show the chosen file name next to custom file inputs, and reject files over the

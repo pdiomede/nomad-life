@@ -19,7 +19,7 @@ The full user guide is in the app at `/docs`. Developer notes are in [CLAUDE.md]
 
 ## Quick start
 
-Requirements: Python 3.10 or newer.
+Requirements: Python 3.11 or newer.
 
 ```bash
 ./runWebApp.sh

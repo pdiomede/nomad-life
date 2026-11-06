@@ -9,6 +9,13 @@ All notable changes to this project are documented in this file.
 - **Dashboard layout.** Movements and the Map now span the full width under the four summary cards, and Days per Country, Receipt Storage and Accountant Package sit side by side in one row below them. On narrow screens the three cards stack, in the same order as before.
 - **Equal card heights.** On a year with only the base, the three cards are the same height. Receipt Storage and Accountant Package always match each other; only Days per Country grows as more countries are added.
 - The three card titles are in title case: **Days per Country**, **Receipt Storage**, **Accountant Package**.
+- **The Map folds.** It starts folded on every visit and opens with a click on its head (a chevron shows which way); the zoom buttons sit just above the map.
+- **Card icons.** A globe before **Map** and a plane taking off before **Movements**, line icons drawn in CSS that follow the light and dark theme.
+
+### Security
+
+- **Dependencies updated** for known vulnerabilities reported by the weekly audit: Pillow 13.0.0 (40 advisories in 12.3.0; Pillow reads every uploaded photo), Werkzeug 3.1.9 and pyasn1 0.6.5.
+- **Python 3.11 or newer is now required**, since Pillow 13 dropped Python 3.10 (which reached its end of life in October 2026). `runWebApp.sh`, the README, setup_vps.md and the tests in GitHub Actions (now 3.11 and 3.12) follow; Ubuntu 24.04 servers run 3.12 and need nothing.
 
 ### Fixed
 
