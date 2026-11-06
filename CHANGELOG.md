@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.10] - 2026-11-06
+
+### Changed
+
+- **Dashboard layout.** Movements and the Map now span the full width under the four summary cards, and Days per country, Receipt storage and Accountant package sit side by side in one row below them. On narrow screens the three cards stack, in the same order as before.
+
 ## [1.12.9] - 2026-11-06
 
 ### Changed
