@@ -101,7 +101,7 @@ class DataTests(AppTestCase):
         self.add_movement(2025, "Hilo", "Hawai'i", "2025-05-01", "2025-05-02")
         self.add_movement(2025, "Kona", "Hawai’i", "2025-06-01", "2025-06-02")
         html = self.client.get("/year/2025").data.decode()
-        abroad = re.search(r'Days outside the Base Country</p>\s*<p class="stat-value">(\d+)<', html).group(1)
+        abroad = re.search(r'Days outside Base country</p>\s*<p class="stat-value">(\d+)<', html).group(1)
         self.assertEqual(abroad, "4")  # Somaliland is the base; both Hawaii spellings are one
         self.assertIn("4 days (4 so far)", html)
         self.assertNotIn("2 days (2 so far)", html)

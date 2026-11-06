@@ -17,7 +17,7 @@
     });
   }
 
-  // The "Show 183 marker" switches of the Days in Base Country and Days per Country cards, one
+  // The "Show 183 marker" switches of the Days in Base country and Days per Country cards, one
   // setting for both: off hides the marker and its message (.day-marker) through data-marker on
   // <html>, which theme-init.js sets again on the next page before it is drawn. Kept in this
   // browser, for every year; flipping one moves the other too.
@@ -244,7 +244,8 @@
                                 0x1F1E6 + code.toUpperCase().charCodeAt(1) - 65);
   };
   var entries = countries.map(function (c) {
-    return { name: c[0], code: c[1], flag: flagOf(c[1]), keys: [fold(c[0])].concat((c[2] || []).map(fold)) };
+    return { name: c[0], code: c[1], flag: flagOf(c[1]), aliases: c[2] || [],
+             keys: [fold(c[0])].concat((c[2] || []).map(fold)) };
   });
   var exact = {};
   [0, 1, 2].forEach(function (pass) {  // names win over codes, codes over aliases
@@ -253,24 +254,30 @@
       keys.forEach(function (k) { if (!(k in exact)) exact[k] = e; });
     });
   });
+  // Matches the start of a name, of one of its words, or of an alias (never the middle of a
+  // word: "ita" found Mauritania, and United Kingdom through "Britain"). A country found only
+  // through an alias gets that alias as its hint, so "eng" shows "United Kingdom (England)".
   var search = function (query) {
     var q = fold(query);
-    if (!q) return entries.slice();
+    var all = entries.slice();
+    all.hints = [];
+    if (!q) return all;
     var scored = [];
     entries.forEach(function (e) {
-      var best = e.code.toLowerCase() === q ? 1 : 99;
+      var best = e.code.toLowerCase() === q ? 1 : 99, via = "";
       e.keys.forEach(function (k, i) {
         var s = 99, alias = i > 0 ? 1 : 0;
         if (k === q) s = 0 + alias;
         else if (k.indexOf(q) === 0) s = 2 + alias;
-        else if ((" " + k).indexOf(" " + q) >= 0 || k.indexOf("-" + q) >= 0) s = 4 + alias;
-        else if (k.indexOf(q) >= 0) s = 6 + alias;
-        if (s < best) best = s;
+        else if ((" " + k).indexOf(" " + q) >= 0) s = 4 + alias;
+        if (s < best) { best = s; via = alias ? e.aliases[i - 1] : ""; }
       });
-      if (best < 99) scored.push([best, e]);
+      if (best < 99) scored.push([best, e, via]);
     });
     scored.sort(function (a, b) { return a[0] - b[0] || a[1].name.localeCompare(b[1].name); });
-    return scored.map(function (x) { return x[1]; });
+    var found = scored.map(function (x) { return x[1]; });
+    found.hints = scored.map(function (x) { return x[2]; });
+    return found;
   };
 
   document.querySelectorAll("input[data-country-combo]").forEach(function (input, n) {
@@ -345,6 +352,13 @@
         var label = document.createElement("span");
         label.textContent = e.name;
         li.appendChild(f); li.appendChild(label);
+        var hint = items.hints && items.hints[i];
+        if (hint) {  // what the typed text matched: "United Kingdom (England)"
+          var via = document.createElement("span");
+          via.className = "combo-hint";
+          via.textContent = "(" + hint + ")";
+          li.appendChild(via);
+        }
         li.addEventListener("mousedown", function (ev) { ev.preventDefault(); });  // keep focus in the input
         li.addEventListener("click", function () { choose(e); });
         list.appendChild(li);

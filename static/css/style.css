@@ -313,6 +313,9 @@ main:focus { outline: none; }
 .stat-base::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--gradient); }
 .stat-head { display: flex; flex-direction: column; gap: 6px; }
 .stat-head .switch { align-self: flex-end; }  /* above the title, at the top right */
+/* Cards in a row share one height: the title stays at the top and the content sits at the
+   bottom, so a card with less to show has its gap under the title, not under the content. */
+.year-stats .stat > .stat-label + *, .year-stats .stat > .stat-head + * { margin-top: auto; }
 
 /* iOS style switch (role="switch", aria-checked), here for the 183 day marker of the Days in
    Base Country and Days per Country cards, one setting for both. Off hides everything marked
@@ -350,6 +353,8 @@ main:focus { outline: none; }
 
 .side { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto 1fr; column-gap: 20px; row-gap: 0; align-items: stretch; min-width: 0; }
 /* Receipt Storage and Accountant Package share row 1 and so always match; Days per Country spans both rows, so it matches them until it has more to show and then alone grows into row 2. */
+.side > .card { display: flex; flex-direction: column; }
+.side > .card > .card-head + * { margin-top: auto; }  /* content at the bottom, as in the top cards */
 .side > .days-card { grid-column: 1; grid-row: 1 / span 2; }
 .side > .storage-card { grid-column: 2; grid-row: 1; }
 .side > .package-card { grid-column: 3; grid-row: 1; }
@@ -563,6 +568,7 @@ main:focus { outline: none; }
 .combo-list li:hover { background: var(--surface-2); }
 .combo-list li[aria-selected="true"] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--link), inset 0 0 0 1px var(--input-border); }
 .combo-list .flag { width: 22px; text-align: center; font-size: 18px; }
+.combo-hint { color: var(--muted); font-size: 13px; }  /* the alias the typed text matched */
 .combo-empty:empty { display: none; }
 .combo-empty { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); padding: 10px 12px; font-size: 13px; color: var(--muted);
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }

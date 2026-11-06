@@ -30,7 +30,7 @@
       {# Shown by theme.js; the choice is kept in this browser (theme-init.js applies it before
          the page is drawn). Without JavaScript the marker always shows. #}
       <button type="button" class="switch" role="switch" aria-checked="true" data-marker-switch hidden><span class="switch-label">Show {{ stats.threshold }} marker</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
-      <p class="stat-label">Days in Base Country</p>
+      <p class="stat-label">Days in Base country</p>
     </div>
     <p class="stat-value">{{ stats.base_days }} <span class="muted stat-of">/ {{ stats.total }}</span></p>
     <div class="meter" aria-hidden="true">
@@ -44,7 +44,7 @@
     {% endif %}
   </div>
   <div class="card stat">
-    <p class="stat-label">Days outside the Base Country</p>
+    <p class="stat-label">Days outside Base country</p>
     <p class="stat-value">{{ stats.abroad_days }}</p>
     <p class="muted">{{ movements|length }} movement{{ '' if movements|length == 1 else 's' }} logged</p>
   </div>
@@ -215,7 +215,7 @@
   <section class="card days-card">
     <div class="card-head">
       <h2>Days per Country</h2>
-      {# The same setting as the switch of Days in Base Country: both move together. #}
+      {# The same setting as the switch of Days in Base country: both move together. #}
       <button type="button" class="switch" role="switch" aria-checked="true" data-marker-switch hidden><span class="switch-label">Show {{ stats.threshold }} marker</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
     </div>
     <p class="muted small">A day shared by two stays, such as a travel day, counts toward the stay that started later.</p>

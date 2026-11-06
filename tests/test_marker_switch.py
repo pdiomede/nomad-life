@@ -1,4 +1,4 @@
-"""The "Show 183 marker" switch of the Days in Base Country card, and the renamed cards."""
+"""The "Show 183 marker" switch of the Days in Base country card, and the renamed cards."""
 import os
 
 import app as appmod
@@ -31,7 +31,7 @@ class MarkerSwitchTests(AppTestCase):
                       card)
         self.assertIn('<i class="day-marker" style="left:', card)
         self.assertIn('<p class="pill pill-warn day-marker">', card)
-        self.assertIn('<p class="stat-label">Days outside the Base Country</p>', html)
+        self.assertIn('<p class="stat-label">Days outside Base country</p>', html)
         # The same switch on Days per Country, one setting for both.
         self.assertEqual(html.count(f'data-marker-switch hidden><span class="switch-label">Show {threshold} marker</span>'), 2)
         self.assertNotIn("Days abroad", html)
@@ -39,7 +39,7 @@ class MarkerSwitchTests(AppTestCase):
     def test_the_switch_sits_above_the_title(self):
         self.new_year(2030)
         _, card = self.card(2030)
-        self.assertLess(card.index("data-marker-switch"), card.index('<p class="stat-label">Days in Base Country</p>'))
+        self.assertLess(card.index("data-marker-switch"), card.index('<p class="stat-label">Days in Base country</p>'))
         css = read("static", "css", "style.css")
         self.assertIn(".stat-head .switch { align-self: flex-end; }", css)
         # The four top cards' titles look like the card titles below them (h2).
