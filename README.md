@@ -6,31 +6,16 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 
 ## Features
 
-- A simple landing page that explains the app, with a "Launch app" button to sign in.
-- Documentation at `/docs` (see [Documentation](#documentation)), opened from the question mark in the header, the menu under your name or the footer.
-- Public guides at `/guides`: the 183 day rule, counting your days per country, and the documents that prove where you lived. Linked from the landing page, the footer and the docs.
-- Share buttons for X, LinkedIn, Facebook, WhatsApp, Telegram and Reddit, with a link preview image.
-- A friendly 404 page for wrong links.
-- One private workspace per user with sign up, sign in and password reset by email (Gmail). New accounts confirm their email with a link and a "Confirm my account" button on the page it opens (so company mail scanners, which open every link, cannot confirm an account for someone), and accounts not confirmed within 20 minutes are deleted.
-- One workspace per solar year, each with a base city and country.
-- Log movements with date range, country and city.
-- The movements list shows 10 per page, with numbered square page buttons and a choice of 10, 25 or 50 per page.
-- Searchable country picker with flags. Type a name, a common alternative (UK, USA, Holland) or a country code.
-- Edit or delete every entry: years, movements and documents. Deleting always asks twice.
+- One private workspace per user, with sign up, sign in, password reset by email (Gmail), optional two-factor sign in (authenticator app or passkey) and an email confirmation link.
+- One workspace per solar year with a base city and country. Log movements with a date range, country and city, and see the days per country with a 183 day indicator and a world map.
+- Upload receipts per movement and documents for the base. Each file is stored as a ZIP, with a size limit per receipt and a storage quota per user.
 - Accountant package (Pro and Nomad+): one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.
-- Upload receipts per movement (hotel or home rent, flight tickets) and documents for the base (rental contract).
-- Account page: change your password or email, or delete your account with all its data.
-- Protection against password guessing: failed sign ins and reset requests are limited.
-- Admin page for the operator: an accounts table with search and sorting, and a page per account to change its plan or quota, disable or delete it.
-- Support tickets: the chat bubble in the header (or "Support" in the menu) opens your tickets; write to support and follow the conversation (see [Support](#support)).
-- Size limit per receipt and a storage quota per user, with used and remaining space shown on the dashboard.
-- Plans: Free, Pro ($0.99 a month or $9.99 a year) and Nomad+ ($1.99 a month or $19.99 a year), each with its own storage and receipt limits. The menu under your email in the header shows your plan, and "Upgrade" on the storage card shows the next plan. There is no online payment yet (see [Plans](#plans)).
-- A world map under the movements with a pin for each country of the year (the base in its own color) showing its number of days; hovering or focusing a pin shows the flag, country, cities and days.
-- Overlapping movements (sharing more than a travel day) make a red triangle blink next to the Movements title, until its report has been opened; it opens a report of which movements share which days and where those days count, with Copy and Close.
-- Days per country for the year, with a 183 day indicator. Days without a stay count toward the base country once they have passed; logged stays count in full, also future ones.
-- Light and dark mode, inspired by the Aave color palette.
-- Everything stored locally: SQLite database in `data/`, files in `uploads/`.
-- "Contact Us" in the footer of every page writes to info@nomadlife.pro (`CONTACT_EMAIL` in `app.py`).
+- Plans (Free, Pro, Nomad+) with online payment through Stripe.
+- Support tickets between users and the operator, and an admin area for accounts, plans and security activity.
+- A landing page, documentation at `/docs` and public guides at `/guides`, with SEO tags, share buttons and a 404 page.
+- Light and dark mode. Everything is stored locally: SQLite in `data/`, files in `uploads/`.
+
+The full user guide is in the app at `/docs`. Developer notes are in [CLAUDE.md](CLAUDE.md).
 
 ## Quick start
 
@@ -40,116 +25,29 @@ Requirements: Python 3.10 or newer.
 ./runWebApp.sh
 ```
 
-The script checks Python, creates `config.env` on first run, sets up a virtual environment, installs the requirements when needed, frees the configured port if it is busy and starts the app. Then open `http://localhost:5050` and click "Launch app" in the top right corner.
+The script creates `config.env` on first run, sets up a virtual environment, installs the requirements when needed, frees the configured port and starts the app. Then open `http://localhost:5050` and click "Launch app".
+
+To run it on a server (Ubuntu, gunicorn, nginx, HTTPS, backups), follow [setup_vps.md](setup_vps.md).
 
 ## Configuration
 
-All settings live in `config.env` (see `config.env.example`). This file is git ignored and only readable by you when the launcher creates it. Values in `config.env` win over variables exported in your shell; leave a key out of the file to set it from the environment instead. Paths may start with `~` for your home folder.
+All settings live in `config.env` (see `config.env.example`), which is git ignored. Its values win over variables exported in your shell. Paths may start with `~`.
 
 | Key | Description |
 | --- | --- |
 | `APP_PORT` | Port the app listens on. Default `5050`. |
-| `APP_BASE_URL` | Public URL used in confirmation and reset emails, link previews and share buttons. Empty means `http://localhost:APP_PORT`. When it starts with `https://`, sign in cookies are only sent over HTTPS. |
-| `SECRET_KEY` | Random secret for sessions, confirmation and reset links. Generated on first run if empty. |
-| `GMAIL_USER` | Gmail address used to send emails. |
-| `GMAIL_APP_PASSWORD` | Gmail App Password (not your normal password). |
+| `APP_BASE_URL` | Public URL used in emails, link previews and share buttons. Empty means `http://localhost:APP_PORT`. With `https://`, cookies are only sent over HTTPS. Set it before going live: the canonical URL, sitemap and previews come from it. |
+| `SECRET_KEY` | Random secret for sessions and links. Generated on first run if empty. |
+| `GMAIL_USER`, `GMAIL_APP_PASSWORD` | Gmail address and [App Password](https://myaccount.google.com/apppasswords) used to send emails. Without them, links are printed in the terminal. |
 | `DATABASE_PATH` | SQLite file. Default `data/nomad.db`. |
 | `UPLOAD_DIR` | Folder for uploaded files. Default `uploads`. |
-| `MAX_RECEIPT_MB` | Max size of a single receipt in MB on the Free plan. Default `10`. Older configs using `MAX_UPLOAD_MB` still work. |
-| `USER_QUOTA_MB` | Total receipt storage per user in MB, across all years, on the Free plan. Default `500`. An admin can set a different quota per account. |
-| `ADMIN_EMAILS` | Comma separated emails of the accounts that can open the admin page. Empty by default. |
+| `MAX_RECEIPT_MB` | Max size of a receipt on the Free plan. Default `10`. (`MAX_UPLOAD_MB` still works.) |
+| `USER_QUOTA_MB` | Receipt storage per user on the Free plan. Default `500`. An admin can set a quota per account. |
+| `ADMIN_EMAILS` | Comma separated emails of the accounts that can open the admin page (they need two-factor sign in). Empty by default. |
 | `PROXY_COUNT` | Reverse proxies in front of the app, so sign in limits see each visitor's address. Default `0`; use `1` behind nginx or Caddy. |
-| `PWNED_CHECK` | Refuse new passwords found in known data breaches (Have I Been Pwned; only the first 5 characters of the password's SHA-1 hash leave the server). Default `1`; set `0` on a server without internet access. |
-| `HCAPTCHA_SITEKEY`, `HCAPTCHA_SECRET` | hCaptcha on Sign up and Forgot password (keys from dashboard.hcaptcha.com). Empty by default, which turns it off; set both or neither. A hidden honeypot field is always on. |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PLUS` | Online payment with Stripe (see [stripe.md](stripe.md)): the secret API key, the webhook signing secret, and the price ids of the two yearly plans. Empty by default, which keeps payment off ("coming soon"); set all four or none. |
-
-To create a Gmail App Password, enable 2-Step Verification on your Google account and visit https://myaccount.google.com/apppasswords. If Gmail is not configured, confirmation and reset links are printed in the terminal.
-
-## Settings and sign in protection
-
-Open **Settings** from the menu under your name or email at the top (or the footer link) to:
-
-- Add your first and last name (optional). The name then shows in the menu at the top instead of your email, greets you in emails ("Hi Ada,"; security alerts and emails to a new address never include it), is printed on your accountant package ("Prepared for: ...", right to left names included) and appears next to your email on the admin page.
-- Change your password. You stay signed in on this device; every other device is signed out.
-- Change your email. A confirmation link goes to the new address, and the change happens when it is opened.
-- Turn on **two-factor sign in**: scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden...) or type the setup key shown in groups of 4, then signing in also asks for its 6 digit code. Each code works only once. Turn it off with your password and a current code.
-- Sign out every other browser and device, and see how many were used in the last 31 days. "Sign out" in the menu ends that browser's session for good: a copied session or "Remember me" cookie stops working at once.
-- See your recent security activity (sign ins, password, email and two-factor changes) with the network address.
-- Delete your account with all years, movements and receipts. It asks for your password, asks twice and needs your email typed.
-
-Every change of password, email address or two-factor sign in sends a **security alert** to the account's address, with a link to reset the password if it was not you. For an email change the alert goes to the old address, with a link (valid 7 days) that **undoes the change**: it puts the old address back, signs out every device and sends a link to choose a new password. It still works after further changes of the address, and undoes them too.
-
-New passwords (sign up, Settings page, reset) are refused when they appear in known data breaches, checked with [Have I Been Pwned](https://haveibeenpwned.com/Passwords): only the first 5 characters of the password's SHA-1 hash leave the server, and if the service cannot be reached the password is accepted. Turn it off with `PWNED_CHECK=0`.
-
-Receipts must really be what their name says: a PDF must contain a PDF header, an image must be a PNG, JPEG, WebP or HEIC image. An image saved under another image extension (a WebP downloaded as `.jpg`) is kept under its real type; anything else, such as a web page renamed to `.pdf`, is refused.
-
-Lost the phone with the authenticator app? Whoever runs the server can remove two-factor sign in from the account:
-
-```bash
-.venv/bin/flask --app app reset-2fa someone@example.com
-```
-
-Password guessing is slowed down. After 5 failed sign ins for one account, or 20 from one network, within 15 minutes, sign in waits until the oldest attempt is 15 minutes old. A browser that signed in to the account before has its own count, so strangers failing on purpose cannot lock the owner out. Wrong two-factor codes are counted separately (5 per account, 20 per network, per 15 minutes), and only a right code clears them. Wrong current passwords on the Settings page count the same way. Password reset requests are limited to 5 per network per 15 minutes, on top of one email per account per minute. Behind a reverse proxy, set `PROXY_COUNT=1`.
-
-## Receipts and storage
-
-Receipts are stored on the server in one folder per account (`UPLOAD_DIR/<account id>/`), each under a random name, as a **ZIP file** holding the receipt itself: compressed when that makes it smaller (invoice PDFs, screenshots), stored as is otherwise (photos and scans barely compress). Downloading a receipt always gives that ZIP; renaming a receipt also renames the file inside.
-
-Big photos (JPEG, PNG, WebP over 4 megapixels or 1 MB) are resized when uploaded to about 4 megapixels (never narrower than 1000 px, so long receipt screenshots stay readable) and saved as JPEG, only when that is smaller. The original is not kept, and photo metadata such as the location is removed. HEIC photos are zipped but not resized. The storage quota counts the space really used on disk, so a big photo that shrinks can fit where its original would not.
-
-Receipts uploaded before version 1.2.12 keep working (they are zipped when downloaded). To store them as ZIP files and resize their big photos, run once:
-
-```bash
-.venv/bin/flask --app app zip-receipts            # or add --no-shrink to keep photos as they are
-```
-
-To run Nomad Life on a server (Ubuntu, gunicorn, nginx, HTTPS, backups), follow [setup_vps.md](setup_vps.md).
-
-## Admin page
-
-Accounts listed in `ADMIN_EMAILS` get an **Admin** link (in the menu under their email, and in the footer) to `/admin`, which shows:
-
-- Totals: accounts, disabled accounts, custom quotas, receipt storage used, years and movements (always for every account, also while searching).
-- The monthly and yearly price of Pro and Nomad+ ("Plans and prices"). Leave both fields empty to go back to the default prices in `PLANS`.
-- The accounts table, 10 per page: account (name, email, and flags such as Admin, Two-factor on, Disabled, Email not confirmed, Over quota), a red **Likely fake** chip for accounts that look fake (the same rule as `./checkFakeUsers.sh`, see [Fake accounts](#fake-accounts); the reason shows on hover or focus, and under the email on phones), plan, joined, last sign in, last known IP (the address of the last sign in, marked "at last sign in", or the sign up address, marked "at sign up", for an account that never signed in; accounts from before 1.4.0 have no sign up IP) and storage used. Search by part of an email, a name or an IP (`185.220.` lists every account from that network; a whole IP, as linked from an account page, finds only that address), and sort by account, joined, last sign in or storage. Next to the Users title, **All accounts**, **Suspected fake** (with their count) and **Hide suspected** filter the table; the choice stays with the search, sort and page. With **Suspected fake** on, **Delete these N accounts** deletes every account that view lists (all its pages, within the search, so `corp.example` deletes only those): it asks twice and needs the number of accounts typed, and if the list changed meanwhile (one signed in, a new one appeared) it deletes nothing and shows the new number.
-- Security activity: a table of every event (sign ins, failed sign ins, password, email and two-factor changes, admin actions with the admin who made them), 20 a page, sortable by time, event, account and IP (IPs sort by number), with a search: an account's email shows that account's whole history (also from before an email change, and never events of an address's previous owner), anything else searches the events' emails, IPs and details and the event names (`corp.com`, `72.145.`, `fake`, `password changed`). Each email in the table links to its account's history. Both tables keep each other's search, sort and page. Events are kept for 365 days.
-
-**View** (or the email in the table) opens the account's own page, `/admin/users/<id>`:
-
-- Details: joined, email confirmed, last sign in, sign up IP and last sign in IP (each linked to a search for it), two-factor, signed in devices, years, movements, receipts, storage, and its support tickets (linked). The IPs are kept with the account and deleted with it; the security history keeps its own copy for 365 days.
-- The plan (Free, Pro or Nomad+) and a storage quota in MB (empty means the quota of the plan).
-- Disable or enable the account (disabling signs it out everywhere and blocks sign in), or delete it with all its years, movements and receipts (it asks twice and needs the email typed).
-- The account's recent security activity.
-
-**Back to accounts** returns to the same search, sort and page, also after saving.
-
-Admins also get **Support tickets** in the menu (`/admin/support`), see [Support](#support).
-
-### Fake accounts
-
-Bots sign other people's work addresses up on many websites at once (to flood their inbox), and until 1.4.0 the company mail scanners that open every link in incoming mail confirmed those accounts. They look like this on the admin page: a company address, joined recently, **never signed in**, no years, often several from the same company. To list them and delete them, run on the server (from the app folder, as the user that runs the app):
-
-```bash
-./checkFakeUsers.sh --dry-run            # report only
-./checkFakeUsers.sh                      # report, then asks what to delete
-./checkFakeUsers.sh --min-age-hours 72   # only accounts older than 3 days (default 24)
-```
-
-It lists only accounts that are confirmed, never signed in, hold nothing (no years, receipts or tickets), are not admins, not disabled, have no plan or quota set by an admin, and joined at least a day ago. For each one it shows how soon after sign up it was confirmed ("4 s, likely scanner" when under 2 minutes: typical of a scanner, though not proof on its own; a confirming IP in a cloud network such as Microsoft or Amazon settles it) and the confirming and sign up IPs. It then asks which to delete (all, some by number such as `1,3,5-7`, or none) and to type `DELETE`. Each deletion is checked again at that moment, so an account that signs in meanwhile is kept, and each is recorded in the security history ("Suspected fake account deleted" by `check-fake-users`, plus one "Suspected fake accounts deleted (bulk)" row for the run). The admin page deletes them too, with **Delete these N accounts** on the Suspected fake list; its rows name the admin. Take a backup first (`scripts/backup.py`). It is the same as `.venv/bin/flask --app app check-fake-users`.
-
-The admin page needs **two-factor sign in**: an admin without it is sent to the Settings page to turn it on first. Admins cannot disable or delete their own account or another admin's (remove it from `ADMIN_EMAILS` first), and nobody can become an admin from inside the app. Everyone else gets "Page not found" at `/admin`.
-
-## Support
-
-Signed in users get a chat bubble in the header ("Contact support") and a **Support** item in the menu, both leading to `/support`:
-
-- The list of your tickets with their status (Open or Closed), opened, last updated and closed dates, filterable by status. A dot on the chat bubble and a count in the menu show tickets with a reply you have not read.
-- **Submit a ticket** opens a form with a type (Report a bug, Feature request, General question), a subject (up to 150 characters) and a description (up to 5000). You can have up to 20 open tickets, and open at most 5 tickets and write 30 messages every 15 minutes.
-- Each ticket is a conversation between you and support, shown as a chat: your messages on the right in blue, support's on the left in purple (in the admin view support is on the right, the colors stay), grouped when they follow each other within 10 minutes, with the day above. You can close it, and writing on a closed ticket reopens it.
-
-Admins open **Support tickets** in the menu (`/admin/support`): every ticket with its number, type, subject, user, status, opened, last updated and closed dates and number of messages. Filter by status and type, search by email, name or ticket number (`2026-3`), and sort by any column. Tickets are numbered per year: `2026-1`, `2026-2`, then `2027-1` from January. On a ticket an admin can answer, close, reopen, or reopen and answer at once. Times are shown in UTC.
-
-Emails are notifications only: admins get one for each new ticket or message, the user for each answer and when support closes the ticket. They carry a link to the ticket and never the message itself, so answers are always written in the app.
+| `PWNED_CHECK` | Refuse new passwords found in known breaches ([Have I Been Pwned](https://haveibeenpwned.com/Passwords); only 5 characters of the SHA-1 hash leave the server). Default `1`; `0` for a server without internet. |
+| `HCAPTCHA_SITEKEY`, `HCAPTCHA_SECRET` | hCaptcha on Sign up and Forgot password. Empty turns it off; set both or neither. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PLUS` | Online payment (see [stripe.md](stripe.md)). Empty keeps payment off; set all four or none. |
 
 ## Plans
 
@@ -159,42 +57,23 @@ Emails are notifications only: admins get one for each new ticket or message, th
 | Pro | $9.99 a year | 5 GB | 25 MB |
 | Nomad+ | $19.99 a year | 25 GB | 50 MB, plus priority support |
 
-Paid plans are yearly only, in US dollars before VAT or sales tax, sold by Nemax Tech LLC (Sofia, Bulgaria, VAT BG207405380). Paid plans never get less than Free, and a quota set on the admin page wins over the plan's. Plans are defined in `PLANS` in `app.py`.
-
-**Online payment (Stripe).** With the four `STRIPE_*` settings in `config.env`, the plan page's Upgrade button opens Stripe's hosted Checkout:
-- cards, Apple Pay and Google Pay;
-- VAT and sales tax worked out by Stripe Tax;
-- business customers can enter their VAT number.
-
-Stripe's signed webhook (`/billing/webhook`) then sets the plan; it is the only thing that does. **Manage billing** opens Stripe's customer portal (cancel, switch between Pro and Nomad+, card, invoices). Renewals, failed payments and cancellations move the plan automatically, and an account that still pays cannot be deleted until its plan is cancelled. Setting up the Stripe account is described step by step in [stripe.md](stripe.md). Without the settings, the button says "Online payment is coming soon".
-
-After testing with Stripe's test keys and switching `config.env` to the live ones, forget what the test purchases left behind (the live webhook never updates them, so a test purchase would keep its plan). The command asks the live account about each stored subscription and customer and only forgets the ones it does not know; `--dry-run` only lists them:
-
-```bash
-.venv/bin/flask --app app forget-test-billing
-```
-
-An admin can still give an account a plan with the plan selector on the [admin page](#admin-page), for example as a gift. Without an admin, change the database (`free`, `pro` or `plus`):
-
-Yearly prices can be changed on the admin page ("Plans & Prices"); keep them equal to the Stripe prices, which are what people are charged. The prices in `PLANS` are the defaults. Storage limits and features are changed in `PLANS`.
+Paid plans are yearly, in US dollars before tax, sold by Nemax Tech LLC. Plans live in `PLANS` in `app.py`; yearly prices can be changed on the admin page and must equal the Stripe prices. Stripe's signed webhook (`/billing/webhook`) is the only thing that sets a paid plan; setup is in [stripe.md](stripe.md). An admin can also give a plan from the account page, or without one:
 
 ```bash
 sqlite3 data/nomad.db "UPDATE users SET plan = 'pro' WHERE email = 'you@example.com'"
 ```
 
-## Accountant package
+## Operator commands
 
-Available on the Pro and Nomad+ plans.
+```bash
+.venv/bin/flask --app app reset-2fa someone@example.com   # remove an account's two-factor sign in
+.venv/bin/flask --app app zip-receipts                    # convert receipts from before 1.2.12 to ZIP
+.venv/bin/flask --app app forget-test-billing --dry-run   # with live Stripe keys, forget test mode billing
+./checkFakeUsers.sh --dry-run                             # list suspected fake accounts (without --dry-run: ask, then delete)
+.venv/bin/python scripts/backup.py --dest DIR --keep 14   # backup of the database and secret key
+```
 
-On each year's dashboard, "Download accountant package" builds one ZIP you can hand to your accountant:
-
-- `summary.pdf`: base, days in the base country and the 183 day line, days abroad, days per country, travel timeline, the counting rules and a receipt index. For the current year it shows numbers so far and for the full year with the trips already planned.
-- `timeline.csv` and `country-totals.csv`: the same numbers for Excel or LibreOffice (UTF-8, with protection against spreadsheet formulas).
-- `receipts/`: the receipts as stored (big photos resized at upload, everything else byte for byte), taken out of their ZIP files, in one folder per stay plus `receipts/base`.
-- `manifest.csv`: every file with its size and SHA-256 checksum. Receipts missing on the server are listed as missing.
-- `README.txt`: what each file is.
-
-Your notes are left out unless you tick "Include my notes". The package is built when you download it and never stored, so it does not use storage. The numbers are the same as on the dashboard. It is an organizer, not tax advice.
+Take a backup before deleting accounts. Fake accounts are confirmed, never signed in and hold nothing; the same rule drives the **Suspected fake** filter on the admin page.
 
 ## Tests
 
@@ -202,28 +81,13 @@ Your notes are left out unless you tick "Include my notes". The package is built
 .venv/bin/python -m unittest
 ```
 
-Dependencies in `requirements.txt` are pinned to exact versions. The GitHub Action in `.github/workflows/security.yml` runs the tests and `pip-audit` (known vulnerabilities) on every push and every Monday. To check locally: `.venv/bin/pip install pip-audit && .venv/bin/pip-audit -r requirements.txt`.
+Dependencies in `requirements.txt` are pinned. The GitHub Action in `.github/workflows/security.yml` runs the tests and `pip-audit` on every push and every Monday.
 
-## Documentation
-
-`/docs` explains how to use the app in short sections with examples: getting started, years and the base, movements, how days are counted (with a diagram), the dashboard and map, receipts, the accountant package, plans, settings, support, troubleshooting and keyboard shortcuts. A search box at the top (press `/`) finds any section, ignoring accents and case, and the contents on the left follow the reading position. Limits, durations and plan prices on the page come from the app's own settings, so they never contradict it.
-
-The screenshots, in the light and the dark theme, are made by a script from a demo account on a scratch copy of the app (your data and config.env are never touched). It needs Node 22 or newer and Google Chrome; run it again after changing a page that the documentation shows:
+The screenshots in `/docs` are made by a script from a demo account on a scratch copy of the app (needs Node 22 and Google Chrome):
 
 ```bash
-.venv/bin/python scripts/docs_screenshots.py          # all screenshots
-.venv/bin/python scripts/docs_screenshots.py map      # only the ones named
+.venv/bin/python scripts/docs_screenshots.py          # all, or name the ones to redo
 ```
-
-## Link previews and 404 page
-
-Social networks read the preview image and text from `APP_BASE_URL`, so set it to your public address (for example `https://nomadlife.example.com`) once the app is online. Previews cannot work on `localhost`.
-
-The 404 page is a standalone file, `static/404.html`. The app already serves it for wrong links. If you put a web server in front of the app, you can point its error page to the same file, for example in nginx: `error_page 404 /static/404.html;`.
-
-## SEO
-
-The landing page, the documentation (`/docs`) and the guides (`/guides`) are ready for search engines: keyword title and description, canonical URL, Open Graph and Twitter card tags, structured data (JSON-LD), `robots.txt` and `sitemap.xml`. Sign in and app pages are marked `noindex` so private pages stay out of search results. Set `APP_BASE_URL` to your public HTTPS address before going live, because the canonical URL, sitemap and previews are built from it.
 
 ## Disclaimer
 
@@ -233,6 +97,4 @@ Day counts are an organizational aid, not tax advice. Residence rules differ by 
 
 [MIT](LICENSE)
 
-The PDF summary is made with [fpdf2](https://github.com/py-pdf/fpdf2) (LGPL-3.0) using the bundled DejaVu Sans fonts (Bitstream Vera license, `static/fonts/LICENSE-DejaVu.txt`) and IPAGothic for Japanese names (IPA Font License, `static/fonts/LICENSE-IPAGothic.txt`).
-
-Country flags are drawn with the Twemoji Country Flags font (`static/fonts/TwemojiCountryFlags.woff2`) from [country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill). The flag artwork is from [Twemoji](https://github.com/twitter/twemoji), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+The PDF summary uses [fpdf2](https://github.com/py-pdf/fpdf2) (LGPL-3.0), the bundled DejaVu Sans fonts (Bitstream Vera license, `static/fonts/LICENSE-DejaVu.txt`) and IPAGothic (IPA Font License, `static/fonts/LICENSE-IPAGothic.txt`). Country flags use the Twemoji Country Flags font from [country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill); the artwork is from [Twemoji](https://github.com/twitter/twemoji), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
