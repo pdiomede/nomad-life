@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.9] - 2026-11-06
+
+### Changed
+
+- The help text of the **Days per country** card on the dashboard is shorter: it now only says that a day shared by two stays counts toward the stay that started later, and what the marker shows. The full rules stay on the documentation page.
+
 ## [1.12.8] - 2026-10-02
 
 ### Added
