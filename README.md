@@ -11,6 +11,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Upload receipts per movement and documents for the base. Each file is stored as a ZIP, with a size limit per receipt and a storage quota per user.
 - Accountant package (Pro and Nomad+): one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.
 - Plans (Free, Pro, Nomad+) with online payment through Stripe.
+- Calendar Integration: connect a Google Calendar in Settings and choose one calendar Nomad Life can use.
 - Support tickets between users and the operator, and an admin area for accounts, plans and security activity.
 - A landing page, documentation at `/docs` and public guides at `/guides`, with SEO tags, share buttons and a 404 page.
 - Light and dark mode. Everything is stored locally: SQLite in `data/`, files in `uploads/`.
@@ -63,6 +64,24 @@ Paid plans are yearly, in US dollars before tax, sold by Nemax Tech LLC. Plans l
 ```bash
 sqlite3 data/nomad.db "UPDATE users SET plan = 'pro' WHERE email = 'you@example.com'"
 ```
+
+## Google Calendar
+
+Calendar Integration (Settings, or the gear next to the dashboard's Calendar title) lets each user connect a Google account and choose one calendar they can edit. It stays off until the server has a Google OAuth client:
+
+1. In [Google Cloud](https://console.cloud.google.com), create a project and enable the **Google Calendar API** (APIs & Services -> Library).
+2. Set up the consent screen (Google Auth Platform): app name, support email, privacy policy and terms URLs, audience **External**, and the scope `https://www.googleapis.com/auth/calendar.calendarlist.readonly`. While the app is in Testing, add the Google addresses that may connect as test users.
+3. Create an OAuth client (Clients -> Create client) of type **Web application**, with the authorized redirect URI `<APP_BASE_URL>/settings/calendar/google/callback`, for example `https://nomadlife.pro/settings/calendar/google/callback` (add `http://localhost:5050/settings/calendar/google/callback` for a local test).
+4. Put its values in `config.env` and restart the app:
+
+   ```
+   GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=...
+   ```
+
+5. Open Settings > Calendar Integration, press **Connect Google Calendar**, sign in with a test user, then choose a calendar and press **Save calendar**.
+
+Calendar permissions are sensitive for Google: before anyone outside the test users can connect, publish the app and pass Google's verification. Each connection is stored in the `calendar_links` table; **Disconnect** or deleting the account removes it and revokes the access at Google. Details are in [google_calendar.md](google_calendar.md).
 
 ## Operator commands
 
