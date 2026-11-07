@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.16] - 2026-11-07
+
+### Added
+
+- **Choose a country's color.** Point at (or tab to) a country's square in the Nomad Life calendar's legend: a menu offers 17 colors (16 new ones and the base pink) and **Automatic**. The choice is saved with the account for every year, the days and the legend change at once, and screen readers hear "Thailand is now Coral". Without JavaScript the menu is a plain form.
+- **The same colors in the Google Calendar tab.** An event named after a country (Thailand, TH) or after a city of that year's stays (Bangkok) takes the country's Nomad Life color; other events get colors no country of the year uses.
+
+### Changed
+
+- README.md no longer has a Plans section, as the landing page hides its plans for now.
+- The calendar palette has 16 colors (it had 8), all readable in both themes, so colors repeat only after 16 countries; automatic colors skip the ones chosen for the year's countries.
+
+### Fixed
+
+Found in a review of the new color features and their sync with the Google tab (6 bugs):
+
+- A click, a tap or Enter on a country's square closed the menu that pointing or focus had just opened, so phones needed two taps and the keyboard could not reach the colors. A click now opens it (and says so to screen readers), a second click, Escape or a click outside closes it.
+- A free-text country typed two ways ("Atlantis", "atlantis") kept two saved colors, so **Automatic** could leave one in place. A country has one saved color, whatever its spelling.
+- A city of two countries (Santiago in Spain and in Chile) gave a Google event a different color in the server's view and in the loaded tab. Such a city now matches neither country.
+- Choosing the base's pink for another country gave both the same color. The base then takes an automatic color.
+- Without JavaScript, an error landed on the calendar with its message out of view at the top. It now lands at the top.
+- A crafted year number made the color answer fail after saving. It is ignored.
+
+Found in a review of every database call (2):
+
+- A transaction whose commit failed (disk full, an I/O error) stayed open on its connection. It is rolled back.
+- The tests' helper connections were committed but never closed. They close.
+
 ## [1.12.15] - 2026-11-07
 
 ### Added

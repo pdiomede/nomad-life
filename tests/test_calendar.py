@@ -8,7 +8,7 @@ import app as appmod
 from tests.helpers import AppTestCase
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DAY = re.compile(r'<td class="cal-day (cal-[a-z0-9]+)( cal-today)?" data-tip="([^"]*)"'
+DAY = re.compile(r'<td class="cal-day (cal-[a-z0-9]+)( cal-today)?" data-tip="([^"]*)"(?: data-c="[^"]*")?'
                  r'(?: aria-current="date")?><time datetime="(\d{4}-\d{2}-\d{2})">')
 # The country's flag in a day's tooltip (1.12.15): two regional indicator letters and a space.
 FLAG = re.compile("[\U0001F1E6-\U0001F1FF]{2} ")
@@ -112,14 +112,15 @@ class CalendarTests(AppTestCase):
 
     def test_more_countries_than_colors_repeat_the_palette(self):
         year = self.new_year(2030)
+        # 16 colors since 1.12.16: the 17th and 18th countries take the 1st and 2nd again.
         countries = ["Spain", "Italy", "France", "Japan", "Chile", "Peru", "Kenya", "Egypt",
-                     "Nepal", "Fiji"]
+                     "Nepal", "Fiji", "Ghana", "Chad", "Cuba", "Iran", "Iraq", "Oman", "Togo", "Mali"]
         for i, country in enumerate(countries):
-            self.add_movement(2030, "Town", country, f"2030-01-{i * 2 + 1:02d}",
-                              f"2030-01-{i * 2 + 2:02d}")
+            self.add_movement(2030, "Town", country, f"2030-{1 + i // 10:02d}-{(i % 10) * 2 + 1:02d}",
+                              f"2030-{1 + i // 10:02d}-{(i % 10) * 2 + 2:02d}")
         html = self.page(2030)
-        self.assertEqual(html.count('<i class="cal-swatch cal-1"'), 2)  # the 1st and the 9th
-        self.assertNotIn("cal-9", html)
+        self.assertEqual(html.count('<button type="button" class="cal-swatch cal-color-btn cal-1"'), 2)
+        self.assertEqual(html.count('<button type="button" class="cal-swatch cal-color-btn cal-16"'), 1)
 
 
 class CalendarStyleTests(AppTestCase):

@@ -209,12 +209,12 @@ class GoogleGridTests(AppTestCase):
         self.assertEqual(self.day(cal, "2026-03-01")["where"], "no event")
         self.assertEqual(cal["not_logged"], 365 - 11)
 
-    def test_colors_repeat_after_eight(self):
-        stays = [{"title": f"Place {i}", "start_date": f"2026-03-{i + 1:02d}",
-                  "end_date": f"2026-03-{i + 1:02d}"} for i in range(9)]
+    def test_colors_repeat_after_sixteen(self):
+        stays = [{"title": f"Place {i:02d}", "start_date": f"2026-03-{i + 1:02d}",
+                  "end_date": f"2026-03-{i + 1:02d}"} for i in range(17)]
         cal = self.grid(stays)
         self.assertEqual([c["color"] for c in cal["legend"]],
-                         [f"cal-{i % 8 + 1}" for i in range(9)])
+                         [f"cal-{i % 16 + 1}" for i in range(17)])
 
 
 class FragmentTests(TabsCase):

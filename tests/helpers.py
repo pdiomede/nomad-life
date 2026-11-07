@@ -20,6 +20,14 @@ def ref(n):
     return f"{datetime.now(timezone.utc).year}-{n}"
 
 
+class _ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)
+        finally:
+            self.close()
+
+
 class AppTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="nomadlife-test-")
@@ -86,7 +94,10 @@ class AppTestCase(unittest.TestCase):
     # --- data helpers ---
 
     def db(self):
-        conn = sqlite3.connect(self.app.config["DATABASE_PATH"])
+        """A second connection to the test database. As a context manager (`with self.db()
+        as conn:`) it commits, or rolls back, and then closes (sqlite3's own only ends the
+        transaction, leaving the connection open)."""
+        conn = sqlite3.connect(self.app.config["DATABASE_PATH"], factory=_ClosingConnection)
         conn.row_factory = sqlite3.Row
         return conn
 

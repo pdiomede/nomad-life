@@ -162,6 +162,15 @@ CREATE TABLE IF NOT EXISTS favorite_countries (
     PRIMARY KEY (user_id, country)
 );
 
+-- The calendar color an account chose for a country (the legend's color picker), for every
+-- year: country is the canonical name (normalize_country), color a key of CALENDAR_PALETTE.
+CREATE TABLE IF NOT EXISTS country_colors (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    country TEXT NOT NULL,
+    color TEXT NOT NULL,
+    PRIMARY KEY (user_id, country)
+);
+
 -- Paid plans (Stripe subscriptions, yearly). Stripe's webhook is the only writer: it says which
 -- plan a subscription pays for and its state; users.plan follows. user_id is kept NULL when the
 -- account is deleted, so the company's billing history stays. last_event_at is the Stripe time
@@ -506,11 +515,13 @@ def transaction():
     db.execute("BEGIN IMMEDIATE")
     try:
         yield db
-    except BaseException:
-        db.rollback()
-        raise
-    else:
         db.commit()
+    except BaseException:
+        # Also when the commit itself fails (disk full, I/O error): never leave the
+        # BEGIN IMMEDIATE open on the connection.
+        if db.in_transaction:
+            db.rollback()
+        raise
 
 
 def execute_rowcount(sql, args=()):

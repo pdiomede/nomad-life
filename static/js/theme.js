@@ -958,6 +958,82 @@
   openMovements();
   window.addEventListener("hashchange", openMovements);
 
+  // The Nomad Life legend's color picker: a country's square opens the palette (CSS, on hover
+  // and focus). Here a choice is saved with fetch and the whole year is recolored in place from
+  // the server's answer (a choice can move other countries' automatic colors), the Google tab
+  // reloads with the same colors, Escape closes the menu, and it opens inward near the edge.
+  var CAL_COLOR = /(^|\s)cal-(base|\d+)(?=\s|$)/g;
+  function setCalColor(el, color) {
+    el.className = el.className.replace(CAL_COLOR, " ").replace(/\s+/g, " ").trim() + " " + color;
+  }
+  document.querySelectorAll("[data-cal-color]").forEach(function (form) {
+    var btn = form.querySelector(".cal-color-btn");
+    var menu = form.querySelector(".cal-color-menu");
+    var status = document.querySelector("[data-cal-color-status]");
+    form.classList.add("js-picker");  // the menu opens on hover or with aria-expanded only
+    function place() {
+      menu.classList.remove("to-left");
+      var wasHidden = getComputedStyle(menu).display === "none";
+      if (wasHidden) menu.style.display = "grid";
+      if (menu.getBoundingClientRect().right > document.documentElement.clientWidth - 8) menu.classList.add("to-left");
+      if (wasHidden) menu.style.display = "";
+    }
+    function setOpen(open) {
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      form.classList.toggle("is-closed", !open);  // also closes the hover's menu
+      if (open) place();
+    }
+    form.addEventListener("mouseenter", function () { if (btn.getAttribute("aria-expanded") !== "true") form.classList.remove("is-closed"); place(); });
+    form.addEventListener("mouseleave", function () { form.classList.remove("is-closed"); });
+    // A click, a tap or Enter opens; a second one closes (it never closes what it just opened).
+    btn.addEventListener("click", function () { setOpen(btn.getAttribute("aria-expanded") !== "true"); });
+    form.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { e.preventDefault(); setOpen(false); btn.focus(); }
+    });
+    form.addEventListener("focusout", function (e) {
+      if (!form.contains(e.relatedTarget)) btn.setAttribute("aria-expanded", "false");
+    });
+    document.addEventListener("mousedown", function (e) {
+      if (!form.contains(e.target) && btn.getAttribute("aria-expanded") === "true") setOpen(false);
+    });
+    form.addEventListener("submit", function (e) {
+      var choice = e.submitter;
+      if (!choice || !window.fetch || !window.FormData) return;  // the plain form posts instead
+      e.preventDefault();
+      var data = new FormData(form);
+      data.set("color", choice.value);
+      fetch(form.action, { method: "POST", body: data, credentials: "same-origin", headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ""); return j; }); })
+        .then(function (j) {
+          Object.keys(j.colors || {}).forEach(function (key) {
+            var color = j.colors[key];
+            document.querySelectorAll('td[data-c="' + (window.CSS && CSS.escape ? CSS.escape(key) : key) + '"]').forEach(function (td) { setCalColor(td, color); });
+            document.querySelectorAll("[data-cal-color]").forEach(function (f) {
+              if (f.getAttribute("data-key") !== key) return;
+              var b = f.querySelector(".cal-color-btn");
+              setCalColor(b, color);
+              b.setAttribute("aria-label", "Color of " + f.querySelector('input[name="country"]').value + ": " + (j.names[color] || color));
+              f.querySelectorAll(".cal-color-opt").forEach(function (o) {
+                if (o.value === color) o.setAttribute("aria-pressed", "true"); else o.removeAttribute("aria-pressed");
+              });
+            });
+          });
+          setOpen(false);
+          btn.focus();
+          var mine = (j.colors || {})[form.getAttribute("data-key")];
+          if (status) { status.textContent = ""; setTimeout(function () { status.textContent = j.country + " is now " + (j.names[mine] || "recolored") + "."; }, 60); }
+          document.dispatchEvent(new CustomEvent("nl:calcolors"));
+        })
+        .catch(function () {
+          // The plain post shows the server's message; submit() sends no button value.
+          var field = document.createElement("input");
+          field.type = "hidden"; field.name = "color"; field.value = choice.value;
+          form.appendChild(field);
+          form.submit();
+        });
+    });
+  });
+
   // Calendar card tabs (with a Google Calendar connected): Nomad Life and Google Calendar.
   // They are links (?cal=google renders the Google view on the server); here a click swaps
   // the two views in place, opens the card when it is folded, and loads the Google view once
@@ -1089,6 +1165,10 @@
       if (!tab) return;
       e.preventDefault();
       choose(tab);
+    });
+    // A country's color changed: the Google view takes it the next time it shows.
+    document.addEventListener("nl:calcolors", function () {
+      if (!google.hidden) load(); else { loaded = false; google.textContent = ""; }
     });
     // Refresh Calendar is a button (role="button"): Space presses it too.
     nav.addEventListener("keydown", function (e) {

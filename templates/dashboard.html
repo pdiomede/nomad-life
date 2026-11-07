@@ -156,6 +156,7 @@
   {# cal-on-google: the Google tab is the one shown, so its two icons (Refresh Calendar,
      open in Google Calendar) show too, in the overlay and in the summary's copy alike. #}
   <div class="fold-wrap{% if cal_link %} has-cal-tabs{% endif %}{% if google_view %} cal-on-google{% endif %}" id="calendar">
+  <p class="visually-hidden" aria-live="polite" data-cal-color-status></p>
   {# The overlay comes first in the page, so the gear and the tabs come before the content
      they switch for keyboards and screen readers; it is laid over the head either way. #}
   {% set cal_page = request.args.get("page", "1") | int %}
@@ -186,7 +187,7 @@
       <span class="muted small fold-sub">Your {{ y.year }} day-by-day plan</span>
     </summary>
     <div class="cal-panel" data-cal-panel="local"{% if google_view %} hidden{% endif %}>
-    {% with cal=calendar, empty_label="Not logged", flags=true %}{% include "_calendar_grid.html" %}{% endwith %}
+    {% with cal=calendar, empty_label="Not logged", picker=true %}{% include "_calendar_grid.html" %}{% endwith %}
     </div>
     <div class="cal-panel" data-cal-panel="google"{% if not google_view %} hidden{% endif %}>
     {% if google_view %}{% with view=google_view %}{% include "_google_calendar.html" %}{% endwith %}{% endif %}
@@ -197,7 +198,7 @@
       <span class="fold-gear-space" aria-hidden="true"></span>
       <span class="muted small">Your {{ y.year }} day-by-day plan</span>
     </summary>
-    {% with cal=calendar, empty_label="Not logged", flags=true %}{% include "_calendar_grid.html" %}{% endwith %}
+    {% with cal=calendar, empty_label="Not logged", picker=true %}{% include "_calendar_grid.html" %}{% endwith %}
     {% endif %}
   </details>
   </div>

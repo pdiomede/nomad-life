@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.15**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.16**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -10,7 +10,6 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - One workspace per solar year with a base city and country. Log movements with a date range, country and city, and see the days per country with a 183 day indicator and a world map.
 - Upload receipts per movement and documents for the base. Each file is stored as a ZIP, with a size limit per receipt and a storage quota per user.
 - Accountant package (Pro and Nomad+): one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.
-- Plans (Free, Pro, Nomad+) with online payment through Stripe.
 - Calendar Integration: connect a Google Calendar in Settings and choose one calendar Nomad Life can use.
 - Support tickets between users and the operator, and an admin area for accounts, plans and security activity.
 - A landing page, documentation at `/docs` and public guides at `/guides`, with SEO tags, share buttons and a 404 page.
@@ -50,20 +49,6 @@ All settings live in `config.env` (see `config.env.example`), which is git ignor
 | `HCAPTCHA_SITEKEY`, `HCAPTCHA_SECRET` | hCaptcha on Sign up and Forgot password. Empty turns it off; set both or neither. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PLUS` | Online payment (see [stripe.md](stripe.md)). Empty keeps payment off; set all four or none. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client for Calendar Integration in Settings (see [google_calendar.md](google_calendar.md)). Empty turns it off; set both or neither. |
-
-## Plans
-
-| Plan | Price | Receipt storage | Per receipt |
-| --- | --- | --- | --- |
-| Free | 0 | `USER_QUOTA_MB` (500 MB) | `MAX_RECEIPT_MB` (10 MB) |
-| Pro | $9.99 a year | 5 GB | 25 MB |
-| Nomad+ | $19.99 a year | 25 GB | 50 MB, plus priority support |
-
-Paid plans are yearly, in US dollars before tax, sold by Nemax Tech LLC. Plans live in `PLANS` in `app.py`; yearly prices can be changed on the admin page and must equal the Stripe prices. Stripe's signed webhook (`/billing/webhook`) is the only thing that sets a paid plan; setup is in [stripe.md](stripe.md). An admin can also give a plan from the account page, or without one:
-
-```bash
-sqlite3 data/nomad.db "UPDATE users SET plan = 'pro' WHERE email = 'you@example.com'"
-```
 
 ## Google Calendar
 

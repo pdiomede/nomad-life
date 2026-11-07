@@ -23,6 +23,8 @@
   --cal-text: #1B2030; --cal-none: #ECEDF1; --cal-base: #F6C7DC;
   --cal-1: #CDE8DC; --cal-2: #FFE1A3; --cal-3: #DDD3F5; --cal-4: #CFE0F7;
   --cal-5: #F8CFCB; --cal-6: #D7EDB4; --cal-7: #C6ECEF; --cal-8: #F3D9B8;
+  --cal-9: #FFC2B0; --cal-10: #EBC6F2; --cal-11: #E2F0A6; --cal-12: #C5CBF5;
+  --cal-13: #A9E3D4; --cal-14: #F5D98A; --cal-15: #D3DAE3; --cal-16: #DDD9A8;
   --accent-1: #B6509E;
   --accent-2: #2EBAC6;
   --gradient: linear-gradient(248.86deg, #B6509E 10.51%, #2EBAC6 93.41%);
@@ -70,6 +72,8 @@
   --cal-text: #F1F3F8; --cal-none: #343A4F; --cal-base: #7A3A5E;
   --cal-1: #2F5E4D; --cal-2: #6B5520; --cal-3: #4E4378; --cal-4: #2F4A72;
   --cal-5: #6E3A37; --cal-6: #4A5E2A; --cal-7: #24585E; --cal-8: #66503A;
+  --cal-9: #7A3F2E; --cal-10: #5E3A6B; --cal-11: #4F5A1E; --cal-12: #3A4280;
+  --cal-13: #1F5C52; --cal-14: #6A5A14; --cal-15: #46505E; --cal-16: #5A5634;
   --success-bg: rgba(70, 188, 75, 0.14);
   --warning-bg: rgba(242, 164, 58, 0.14);
   --warning: #F2A43A;
@@ -109,6 +113,8 @@
     --cal-text: #F1F3F8; --cal-none: #343A4F; --cal-base: #7A3A5E;
     --cal-1: #2F5E4D; --cal-2: #6B5520; --cal-3: #4E4378; --cal-4: #2F4A72;
     --cal-5: #6E3A37; --cal-6: #4A5E2A; --cal-7: #24585E; --cal-8: #66503A;
+    --cal-9: #7A3F2E; --cal-10: #5E3A6B; --cal-11: #4F5A1E; --cal-12: #3A4280;
+    --cal-13: #1F5C52; --cal-14: #6A5A14; --cal-15: #46505E; --cal-16: #5A5634;
     --success-bg: rgba(70, 188, 75, 0.14);
     --warning-bg: rgba(242, 164, 58, 0.14);
     --warning: #F2A43A;
@@ -539,6 +545,27 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .cal-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 16px; padding: 0; list-style: none; }
 .cal-legend li { display: inline-flex; align-items: center; gap: 6px; }
 .cal-swatch { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+/* The Nomad Life legend's color picker: the square opens a menu of the palette on hover or
+   focus (a plain form: without JavaScript a click posts the color). */
+.cal-color { position: relative; display: inline-flex; margin: 0; }
+.cal-color-btn { padding: 0; border: 0; cursor: pointer; }
+.cal-color-btn:hover, .cal-color-btn:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.cal-color-menu { display: none; position: absolute; top: calc(100% + 8px); left: -8px; z-index: 40; grid-template-columns: repeat(6, 22px); gap: 6px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); }
+.cal-color-menu::before { content: ""; position: absolute; left: 0; right: 0; top: -10px; height: 10px; }  /* keeps the hover from the square to the menu */
+/* Open: on hover; from a click, a tap or Enter on the square (aria-expanded, set by theme.js);
+   without JavaScript, while the keyboard focus is inside. */
+.cal-color:hover .cal-color-menu, .cal-color:not(.js-picker):focus-within .cal-color-menu,
+.cal-color-btn[aria-expanded="true"] + .cal-color-menu { display: grid; }
+.cal-color.is-closed .cal-color-menu { display: none; }  /* Escape, or a second click on the square */
+.cal-color-menu.to-left { left: auto; right: -8px; }
+.cal-color-opt { width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 5px; cursor: pointer; }
+.cal-color-opt[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--link); }
+.cal-color-opt:hover { transform: scale(1.1); }
+.cal-color-opt:focus-visible, .cal-color-auto:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.cal-color-auto { grid-column: 1 / -1; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.cal-color-auto:hover { background: var(--surface-2); }
+@media (prefers-reduced-motion: reduce) { .cal-color-opt:hover { transform: none; } }
+@media (forced-colors: active) { .cal-color-opt, .cal-color-btn { forced-color-adjust: none; border: 1px solid CanvasText; } }
 .cal-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px 24px; align-items: start; }  /* a 5 week month keeps the row height of a 6 week one */
 .cal-month { width: 100%; border-collapse: separate; border-spacing: 3px; table-layout: fixed; font-size: 13px; }
 .cal-month caption { text-align: left; font-weight: 600; padding: 0 3px 4px; color: var(--link); }
@@ -560,6 +587,8 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .cal-none { background: var(--cal-none); color: var(--muted); }
 .cal-1 { background: var(--cal-1); } .cal-2 { background: var(--cal-2); } .cal-3 { background: var(--cal-3); } .cal-4 { background: var(--cal-4); }
 .cal-5 { background: var(--cal-5); } .cal-6 { background: var(--cal-6); } .cal-7 { background: var(--cal-7); } .cal-8 { background: var(--cal-8); }
+.cal-9 { background: var(--cal-9); } .cal-10 { background: var(--cal-10); } .cal-11 { background: var(--cal-11); } .cal-12 { background: var(--cal-12); }
+.cal-13 { background: var(--cal-13); } .cal-14 { background: var(--cal-14); } .cal-15 { background: var(--cal-15); } .cal-16 { background: var(--cal-16); }
 @media (max-width: 1000px) { .cal-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .cal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; } .cal-month { border-spacing: 2px; } }
 @media (max-width: 400px) { .cal-grid { grid-template-columns: minmax(0, 1fr); } }

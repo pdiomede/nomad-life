@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.15"
+APP_VERSION = "1.12.16"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -810,6 +810,7 @@ def create_app(overrides=None):
     app.add_template_filter(ticket_ref, "ticket_ref")
     app.add_template_global(chat_rows, "chat_rows")
     app.add_template_global(favorite_countries, "favorite_countries")
+    app.add_template_global(CALENDAR_COLOR_NAMES, "calendar_colors")
     app.add_template_global(ip_lookup_url, "ip_lookup_url")
     app.add_template_filter(country_flag, "flag")
     app.add_template_filter(lambda m: place_label(m["city"], m["country"]), "place")
@@ -2896,10 +2897,13 @@ def google_events(access_token, calendar_id, year):
     return {"stays": stays, "truncated": truncated}
 
 
-def google_year_calendar(year, stays):
+def google_year_calendar(year, stays, palette=None):
     """The Google tab of the dashboard calendar, in the shape of year_calendar(): each day in
     the color of the event it belongs to (the same rule as stays: a shared day goes to the
-    event that started later, then the shorter one), one color per title."""
+    event that started later, then the shorter one), one color per title. palette
+    (calendar_palette()): an event named after a country (Thailand, TH) or a city of the
+    year's movements (Bangkok) takes that country's Nomad Life color; others take colors no
+    country of the year uses."""
     # assign_days() on the year's part of each event, in the order of the real dates (an event
     # that began in December still started before one that began on January 1).
     first, last = date(year, 1, 1), date(year, 12, 31)
@@ -2917,7 +2921,16 @@ def google_year_calendar(year, stays):
         counts[key] = counts.get(key, 0) + 1
         names.setdefault(key, by_id[sid]["title"])
     order = sorted(counts, key=lambda k: (-counts[k], db.sort_fold(names[k])))
-    colors = {k: f"cal-{i % CALENDAR_COLORS + 1}" for i, k in enumerate(order)}
+    palette = palette or {}
+    used = set(palette.values())
+    spare = [c for c in CALENDAR_PALETTE[1:] if c not in used] or list(CALENDAR_PALETTE[1:])
+    colors, n = {}, 0
+    for k in order:
+        title = names[k]
+        color = palette.get(fold(normalize_country(title))) or palette.get(fold(title))
+        if not color:
+            color, n = spare[n % len(spare)], n + 1
+        colors[k] = color
     legend = [{"country": names[k], "days": counts[k], "is_base": False, "color": colors[k]}
               for k in order]
     today, months, none = date.today(), [], 0
@@ -3004,7 +3017,7 @@ def recently_failed(key):
     return at is not None and time.monotonic() - at < GOOGLE_REFRESH_MIN_SECONDS
 
 
-def google_calendar_view(user_id, year, fresh=False):
+def google_calendar_view(user_id, year, fresh=False, palette=None):
     """What the Google tab shows for a year: {"state": "ok" | "scope" | "broken" | "gone" |
     "error" | "server_off" | "unchosen" | "off", "calendar": ..., "truncated": ..., "link": ...}.
     The events are read from Google (kept a minute, never stored); fresh: the Refresh
@@ -3024,7 +3037,7 @@ def google_calendar_view(user_id, year, fresh=False):
                                 max_age=GOOGLE_REFRESH_MIN_SECONDS if fresh else None)
     if events is not None:
         return {"state": "ok", "link": link, "truncated": events["truncated"],
-                "calendar": google_year_calendar(year, events["stays"])}
+                "calendar": google_year_calendar(year, events["stays"], palette)}
 
     def failed(called=True):
         """Google did not answer: a refresh keeps the read it has (the minute's copy) and
@@ -3037,7 +3050,7 @@ def google_calendar_view(user_id, year, fresh=False):
             if kept is not None:
                 return {"state": "ok", "link": link, "truncated": kept["truncated"],
                         "refresh_failed": True,
-                        "calendar": google_year_calendar(year, kept["stays"])}
+                        "calendar": google_year_calendar(year, kept["stays"], palette)}
         return {"state": "error", "link": link}
 
     if recently_failed(key):
@@ -3057,7 +3070,7 @@ def google_calendar_view(user_id, year, fresh=False):
         return failed()
     remember_events(key, events)
     return {"state": "ok", "link": link, "truncated": events["truncated"],
-            "calendar": google_year_calendar(year, events["stays"])}
+            "calendar": google_year_calendar(year, events["stays"], palette)}
 
 
 def revoke_after_answer(refresh_token, account):
@@ -3272,27 +3285,74 @@ def map_pins(year_row, movements, stats=None):
 
 # Colors of the stay countries in the dashboard calendar (--cal-1 to --cal-8 in style.css);
 # after eight countries they repeat, and the legend and hover text still name every day.
-CALENDAR_COLORS = 8
+CALENDAR_COLORS = 16
+# The colors a country can be given with the legend's picker: the base pink and the 16 above.
+CALENDAR_PALETTE = ("cal-base",) + tuple(f"cal-{i}" for i in range(1, CALENDAR_COLORS + 1))
+COLORS_MAX = 300  # chosen colors per account
+# Their names, for the picker's buttons (screen readers) and its messages.
+CALENDAR_COLOR_NAMES = {
+    "cal-base": "Pink", "cal-1": "Mint", "cal-2": "Yellow", "cal-3": "Lilac", "cal-4": "Light blue",
+    "cal-5": "Salmon", "cal-6": "Light green", "cal-7": "Cyan", "cal-8": "Tan", "cal-9": "Coral",
+    "cal-10": "Orchid", "cal-11": "Lime", "cal-12": "Periwinkle", "cal-13": "Teal", "cal-14": "Gold",
+    "cal-15": "Grey", "cal-16": "Khaki"}
 
 
-def year_calendar(year_row, movements, stats):
+def country_colors(user_id):
+    """The calendar colors the account chose: {fold(country): color}."""
+    return {fold(r["country"]): r["color"]
+            for r in db.query("SELECT country, color FROM country_colors WHERE user_id = ?",
+                              (user_id,)) if r["color"] in CALENDAR_PALETTE}
+
+
+def year_colors(stats, chosen):
+    """{fold(country): color} for a year's countries: the color the account chose, else the
+    base pink for the base and the next automatic color for the others, skipping colors chosen
+    for this year's countries so two of them do not share one by surprise."""
+    keys = [fold(r["country"]) for r in stats["rows"]]
+    taken = {chosen[k] for k in keys if k in chosen}
+    auto = [c for c in CALENDAR_PALETTE[1:] if c not in taken] or list(CALENDAR_PALETTE[1:])
+    colors, n = {}, 0
+    for r, key in zip(stats["rows"], keys):
+        if key in chosen:
+            colors[key] = chosen[key]
+        elif r["is_base"] and "cal-base" not in taken:  # another country chose pink: the
+            colors[key] = "cal-base"                     # base takes an automatic color
+        else:
+            colors[key] = auto[n % len(auto)]
+            n += 1
+    return colors
+
+
+def calendar_palette(movements, colors):
+    """The Nomad Life colors the Google tab matches its events with: each country's key, and
+    each city of the year's movements under its country's color."""
+    palette, cities = dict(colors), {}
+    for m in movements:
+        city = fold(m["city"] or "")
+        if city:
+            cities.setdefault(city, set()).add(fold(normalize_country(m["country"])))
+    for city, countries in cities.items():
+        # A city of two countries (Santiago) names neither; whatever the movements' order.
+        if len(countries) == 1 and city not in palette:
+            color = colors.get(next(iter(countries)))
+            if color:
+                palette[city] = color
+    return palette
+
+
+def year_calendar(year_row, movements, stats, chosen=None):
     """The dashboard calendar: the year's 12 months (Monday first), each day with the color of
     the country it counts for, from compute_stats (day_owner), so it never disagrees with
     "Days per country". A day without a stay counts nowhere and is grey ("not logged"). The
     legend follows the Days per country rows."""
     y = year_row["year"]
     by_id = {m["id"]: m for m in movements}
-    colors, legend, n = {}, [], 0
+    colors, legend = year_colors(stats, chosen or {}), []
     for r in stats["rows"]:
         key = fold(r["country"])
-        if r["is_base"]:
-            colors[key] = "cal-base"
-        else:
-            colors[key] = f"cal-{n % CALENDAR_COLORS + 1}"
-            n += 1
         if r["days"]:
             legend.append({"country": r["country"], "days": r["days"], "is_base": r["is_base"],
-                           "color": colors[key]})
+                           "color": colors[key], "key": key})
     names = {fold(r["country"]): r["country"] for r in stats["rows"]}
     today, owner = date.today(), stats["day_owner"]
     months, none = [], 0
@@ -3307,13 +3367,14 @@ def year_calendar(year_row, movements, stats):
                 key = fold(normalize_country(m["country"]))
                 color, where = colors[key], names[key]  # the country: a city is optional
             else:
-                color, where = "cal-none", "not logged"
+                key, color, where = "", "cal-none", "not logged"
                 none += 1
             # The place is in the hover text and, for screen readers, in the cell itself: the
             # color alone would tell them nothing.
             days.append({"day": d.day, "iso": d.isoformat(), "color": color, "where": where,
                          "title": f"{d:%a} {d.day} {d:%b} {y}: {where}",
                          # the CSS tooltip: the country with its flag (none for "not logged")
+                         "key": key,  # data-c: the picker recolors the country's days in place
                          "tip": f"{d:%a} {d.day} {d:%b} {y}: "
                                 + (f"{country_flag(where)} " if mid is not None and country_flag(where) else "")
                                 + where,
@@ -5042,8 +5103,11 @@ def register_routes(app):
         link = calendar_link(current_user.id)
         cal_tabs = calendar_tabs_on(link)
         cal = calendar_choice() if cal_tabs else None  # a tab's link: the card opens on it
+        chosen = country_colors(current_user.id)
+        palette = calendar_palette(movements, year_colors(stats, chosen))
         google_view = (google_calendar_view(current_user.id, year,
-                                            fresh=request.args.get("refresh") == "1")
+                                            fresh=request.args.get("refresh") == "1",
+                                            palette=palette)
                        if cal == "google" else None)
         g.calendar_forms = cal_tabs  # CALENDAR_CSP: the Google tab's Connect again
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
@@ -5053,7 +5117,9 @@ def register_routes(app):
                                movements_open=session.pop("movements_open", False)
                                or any(k in request.args for k in ("page", "per_page", "sort")),
                                cal_link=link if cal_tabs else None, google_view=google_view,
-                               cal_open=cal is not None,
+                               # ?cal=local opens the card also without the tabs (the color
+                               # picker's answer without JavaScript)
+                               cal_open=cal is not None or request.args.get("cal") == "local",
                                cal_web=google_calendar_web_url(link, year) if cal_tabs else None,
                                overlaps=overlaps, overlap_total=overlap_total,
                                overlap_text=overlap_text,
@@ -5063,7 +5129,7 @@ def register_routes(app):
                                per_page_options=PER_PAGE_OPTIONS,
                                years=years, stats=stats,
                                base_docs=base_docs, map=map_pins(year_row, movements, stats),
-                               calendar=year_calendar(year_row, movements, stats),
+                               calendar=year_calendar(year_row, movements, stats, chosen),
                                today=date.today().isoformat())
 
     @app.route("/year/<int:year>/calendar/google")
@@ -5074,7 +5140,11 @@ def register_routes(app):
         year_row = get_year_or_404(year)
         g.calendar_forms = True  # the fragment's Connect again form goes on to Google
         fresh = request.args.get("refresh") == "1"
-        view = google_calendar_view(current_user.id, year, fresh=fresh)
+        movements = db.query("SELECT * FROM movements WHERE year_id = ? "
+                             "ORDER BY start_date, end_date DESC, id", (year_row["id"],))
+        stats = compute_stats(year_row, movements)
+        palette = calendar_palette(movements, year_colors(stats, country_colors(current_user.id)))
+        view = google_calendar_view(current_user.id, year, fresh=fresh, palette=palette)
         html = render_template("_google_calendar.html", y=year_row, view=view)
         # A refresh Google did not answer, with no earlier read to keep: 503, so the page
         # keeps the calendar it shows and says the refresh failed.
@@ -5163,6 +5233,61 @@ def register_routes(app):
                 return json_answer({"error": f"You can keep up to {FAVORITES_MAX} favorite "
                                              "countries.", "favorites": favorite_countries()}, 409)
         return json_answer({"favorites": favorite_countries()})
+
+    @app.route("/calendar/colors", methods=["POST"])
+    @login_required
+    def calendar_color():
+        """The legend's color picker: the color of a country in every year's calendar (and of
+        the Google tab's matching events). color=auto goes back to the automatic one. JSON for
+        theme.js; without JavaScript, back to the dashboard (back) with the calendar open."""
+        country = normalize_country(clean_place(request.form.get("country", "")))
+        color = request.form.get("color", "")
+        back = safe_next(request.form.get("back", "")) or ""
+        back = back if back.startswith("/year/") else url_for("index")
+        wants_json = request.accept_mimetypes.best == "application/json"
+        key = fold(country)
+
+        def year_map():
+            """The year's colors after the change ({key: color}): picking a color can move
+            other countries' automatic ones, so the page recolors them all."""
+            year = to_int(request.form.get("year"), 0)
+            if not 1970 <= year <= 2100:  # the years an account can have; no SQLite overflow
+                return {}
+            year_row = db.query("SELECT * FROM years WHERE user_id = ? AND year = ?",
+                                (current_user.id, year), one=True)
+            if not year_row:
+                return {}
+            movements = db.query("SELECT * FROM movements WHERE year_id = ?", (year_row["id"],))
+            return year_colors(compute_stats(year_row, movements), country_colors(current_user.id))
+
+        def answer(error=None, status=200):
+            if wants_json:
+                return json_answer({"error": error} if error else
+                                   {"country": country, "color": color, "colors": year_map(),
+                                    "names": CALENDAR_COLOR_NAMES}, status)
+            if error:
+                flash(error, "error")
+                return redirect(back.split("#")[0])  # no anchor: the message stays in view
+            return redirect(back)
+
+        if not country or len(country) > PLACE_MAX or (color != "auto" and color not in CALENDAR_PALETTE):
+            return answer("Choose one of the colors.", 400)
+        # One row per country whatever its spelling: free text like "Atlantis" and "atlantis"
+        # is one country for the calendar (fold), so it is one row here too.
+        with db.transaction() as conn:  # the cap is checked with the write
+            rows = conn.execute("SELECT country FROM country_colors WHERE user_id = ?",
+                                (current_user.id,)).fetchall()
+            same = [r["country"] for r in rows if fold(r["country"]) == key]
+            full = color != "auto" and len(rows) - len(same) >= COLORS_MAX  # a new country
+            if not full:
+                conn.executemany("DELETE FROM country_colors WHERE user_id = ? AND country = ?",
+                                 [(current_user.id, c) for c in same])
+                if color != "auto":
+                    conn.execute("INSERT INTO country_colors (user_id, country, color) "
+                                 "VALUES (?, ?, ?)", (current_user.id, country, color))
+        if full:
+            return answer(f"You can choose colors for up to {COLORS_MAX} countries.", 409)
+        return answer()
 
     @app.route("/year/<int:year>/movements/new", methods=["GET", "POST"])
     @login_required
