@@ -46,6 +46,7 @@ class AppTestCase(unittest.TestCase):
             # Emails are recorded at once, so tests can read the outbox right after a request.
             "EMAIL_IN_BACKGROUND": False,
         })
+        appmod._events_cache.clear()  # the Google tab's short cache is per process
         self.client = self.app.test_client()
         self.outbox = []
         patcher = mock.patch.object(appmod, "send_email", side_effect=self._record_email)

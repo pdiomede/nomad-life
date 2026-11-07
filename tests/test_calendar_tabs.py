@@ -96,7 +96,7 @@ class TabsShownTests(TabsCase):
         self.assertIn('<summary class="card-head fold-summary fold-head-grid">', summary)
         tools = html[html.index('<div class="fold-tools fold-head-grid">'):]
         tools = tools[:tools.index("</nav>")]
-        self.assertIn('<a class="cal-tab" href="/year/2026#calendar" data-cal-tab="local" '
+        self.assertIn('<a class="cal-tab" href="/year/2026?cal=local#calendar" data-cal-tab="local" '
                       'data-tip="Nomad Life local calendar" aria-current="page">Nomad Life</a>', tools)
         self.assertIn('href="/year/2026?cal=google#calendar" data-cal-tab="google" '
                       'data-src="/year/2026/calendar/google" '
@@ -158,7 +158,9 @@ class EventDaysTests(AppTestCase):
             ev("Gone", "2026-06-01", "2026-06-02", status="cancelled"),
             {"summary": "Broken", "start": {}, "end": {}},
             ev("", "2026-07-01", "2026-07-02")]),
-            [("New year", "2026-01-01", "2026-01-02"), ("Winter", "2026-12-30", "2026-12-31"),
+            # The real dates (google_year_calendar clips them): the order of a shared day
+            # depends on when each event started, also before the year.
+            [("New year", "2025-12-30", "2026-01-02"), ("Winter", "2026-12-30", "2027-01-04"),
              ("(No title)", "2026-07-01", "2026-07-01")])
 
     def test_the_request(self):
@@ -242,7 +244,11 @@ class FragmentTests(TabsCase):
         self.connect()
         self.choose()
         html = self.fragment().get_data(as_text=True)
-        self.assertIn("Allow Nomad Life to see the events of <strong dir=\"auto\">Work</strong>", html)
+        self.assertIn("Your Google Calendar <strong dir=\"auto\">Work</strong> is connected. To show its "
+                      "events here, Google needs one more permission", html)
+        self.assertIn('<input type="hidden" name="back" value="/year/2026?cal=google#calendar">', html)
+        self.assertIn(">Allow events</button>", html)
+        self.assertNotIn("Connect again", html)
         self.assertIn('<form method="post" action="/settings/calendar/google/connect">', html)
         self.assertFalse(any("/events" in c[1] for c in self.google.calls))
         # Connecting again with it keeps the chosen calendar and shows the events.
@@ -318,7 +324,7 @@ class AssetTests(AppTestCase):
         self.assertIn(".fold-head-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);", css)
         self.assertIn(".fold-summary.fold-head-grid::after { grid-column: 3; grid-row: 1; justify-self: end; }", css)
         self.assertIn(".cal-tab[aria-current=\"page\"] { background: var(--primary); color: var(--primary-text); }", css)
-        phone = css[css.index("@media (max-width: 720px) {\n  .fold-head-grid"):]
+        phone = css[css.index("@media (max-width: 820px) {\n  .fold-head-grid"):]
         self.assertIn(".fold-head-grid > .cal-tabs { grid-column: 1 / -1; grid-row: 2; justify-self: center; }", phone)
 
     def test_the_tabs_script(self):

@@ -1,10 +1,11 @@
 {# The legend and the 12 months of a dashboard calendar: Nomad Life's (year_calendar) or the
    chosen Google calendar's (google_year_calendar). cal: the calendar; empty_label: the grey
-   days' name ("Not logged", "No event"). #}
+   days' name ("Not logged", "No event"); flags: show country flags (Nomad Life only: an event
+   titled "PT" is not Portugal). #}
 {% import "_macros.html" as ui with context %}
     <ul class="cal-legend small" aria-label="Colors">
       {% for c in cal.legend %}
-      <li><i class="cal-swatch {{ c.color }}" aria-hidden="true"></i>{{ ui.flag(c.country) }}<span dir="auto">{{ c.country }}</span>{% if c.is_base %} <span class="tag">Base</span>{% endif %} <span class="muted">{{ c.days }} day{{ '' if c.days == 1 else 's' }}</span></li>
+      <li><i class="cal-swatch {{ c.color }}" aria-hidden="true"></i>{% if flags %}{{ ui.flag(c.country) }}{% endif %}<span dir="auto">{{ c.country }}</span>{% if c.is_base %} <span class="tag">Base</span>{% endif %} <span class="muted">{{ c.days }} day{{ '' if c.days == 1 else 's' }}</span></li>
       {% endfor %}
       {% if cal.not_logged %}
       <li><i class="cal-swatch cal-none" aria-hidden="true"></i>{{ empty_label }} <span class="muted">{{ cal.not_logged }} day{{ '' if cal.not_logged == 1 else 's' }}</span></li>

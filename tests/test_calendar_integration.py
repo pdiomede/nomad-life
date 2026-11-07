@@ -104,7 +104,8 @@ class GearTests(AppTestCase):
         self.assertNotIn("fold-gear\"", summary)
         self.assertIn('<span class="fold-gear-space" aria-hidden="true"></span>', summary)
         tools = html[html.index('<div class="fold-tools">'):]
-        self.assertLess(html.index("</details>", html.index("cal-card")), html.index('<div class="fold-tools">'))
+        # Before the card in the page (laid over its head), so the gear comes before the grid.
+        self.assertLess(html.index('<div class="fold-tools">'), html.index('<details class="card fold-card cal-card">'))
         self.assertIn('<span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar (2026)</span>', tools)
         self.assertIn('<a class="fold-gear" href="/settings#calendar" data-tip="Calendar Integration" '
                       'aria-label="Calendar Integration"></a>', tools)

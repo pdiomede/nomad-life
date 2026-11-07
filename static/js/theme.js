@@ -950,7 +950,8 @@
   // Calendar card tabs (with a Google Calendar connected): Nomad Life and Google Calendar.
   // They are links (?cal=google renders the Google view on the server); here a click swaps
   // the two views in place, opens the card when it is folded, and loads the Google view once
-  // from its fragment URL. A failed load follows the link instead.
+  // from its fragment URL. The address keeps no ?cal, so a reload never waits on Google. A
+  // failed load follows the link instead, if the Google tab is still the one chosen.
   document.querySelectorAll("[data-cal-tabs]").forEach(function (nav) {
     var card = document.querySelector(".cal-card");
     var local = card && card.querySelector('[data-cal-panel="local"]');
@@ -973,7 +974,15 @@
           return r.text();
         })
         .then(function (html) { google.innerHTML = html; google.removeAttribute("aria-busy"); })
-        .catch(function () { window.location.href = googleTab.href; });
+        .catch(function () {
+          if (googleTab.getAttribute("aria-current") === "page") {
+            window.location.href = googleTab.href;
+          } else {
+            loaded = false;  // Nomad Life was chosen meanwhile: load again on the next click
+            google.textContent = "";
+            google.removeAttribute("aria-busy");
+          }
+        });
     }
     nav.addEventListener("click", function (e) {
       var tab = e.target.closest("[data-cal-tab]");
@@ -986,7 +995,11 @@
       card.open = true;
       local.hidden = which !== "local";
       google.hidden = which !== "google";
-      try { history.replaceState(history.state, "", tab.href); } catch (err) { /* file:, old browsers */ }
+      try {
+        var url = new URL(window.location.href);
+        url.searchParams.delete("cal");
+        history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+      } catch (err) { /* old browsers: the address stays as it was */ }
       if (which === "google" && !loaded) load();
     });
     // "Try again" in the Google view, after Google did not answer.

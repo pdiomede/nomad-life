@@ -2802,6 +2802,12 @@ def calendar_events_ok(link):
     return GOOGLE_EVENTS_SCOPE in (link.get("scopes") or "").split()
 
 
+def calendar_choice():
+    """The calendar tab a dashboard link asks for (?cal=local or ?cal=google), else None."""
+    cal = request.args.get("cal")
+    return cal if cal in ("local", "google") else None
+
+
 def calendar_tabs_on(link):
     """The dashboard calendar shows the Nomad Life and Google Calendar tabs: the server has
     the Google client, and the account's connection works and has a calendar chosen."""
@@ -2848,10 +2854,11 @@ def google_events(access_token, calendar_id, year):
             if not start or not end:
                 continue
             end = max(end, start)  # an end before its start: a one day event
-            start, end = max(start, first), min(end, last)
-            if start > end:
+            if start > last or end < first:
                 continue  # outside the year
             title = clean_name(item["summary"]) if isinstance(item.get("summary"), str) else ""
+            # The real dates: which event a shared day goes to depends on when each one
+            # started, also before the year (google_year_calendar clips them to the year).
             stays.append({"id": len(stays) + 1, "title": title[:GOOGLE_NAME_MAX] or "(No title)",
                           "start_date": start.isoformat(), "end_date": end.isoformat()})
         page = answer.get("nextPageToken")
@@ -2865,7 +2872,16 @@ def google_year_calendar(year, stays):
     """The Google tab of the dashboard calendar, in the shape of year_calendar(): each day in
     the color of the event it belongs to (the same rule as stays: a shared day goes to the
     event that started later, then the shorter one), one color per title."""
-    owner = assign_days(stays)
+    # assign_days() on the year's part of each event, in the order of the real dates (an event
+    # that began in December still started before one that began on January 1).
+    first, last = date(year, 1, 1), date(year, 12, 31)
+    owner = {}
+    for s in stay_order(stays):
+        d = max(parse_date(s["start_date"]), first)
+        end = min(parse_date(s["end_date"]), last)
+        while d <= end:
+            owner[d] = s["id"]
+            d += timedelta(days=1)
     by_id = {s["id"]: s for s in stays}
     counts, names = {}, {}
     for sid in owner.values():
@@ -2895,6 +2911,33 @@ def google_year_calendar(year, stays):
     return {"months": months, "legend": legend, "not_logged": none}
 
 
+# The Google tab's events, kept a short while per account, year and calendar: a reload or a
+# second click does not wait on Google again, and one person cannot spend the app's Google
+# quota by repeating it. Per process; never written anywhere.
+GOOGLE_EVENTS_CACHE_SECONDS = 60
+GOOGLE_EVENTS_CACHE_MAX = 500
+_events_cache = {}
+_events_cache_lock = threading.Lock()
+
+
+def cached_events(link, year):
+    key = (link["user_id"], year, link["calendar_id"],
+           hashlib.sha256(link["refresh_token"].encode()).hexdigest())
+    now = time.monotonic()
+    with _events_cache_lock:
+        hit = _events_cache.get(key)
+        if hit and now - hit[0] < GOOGLE_EVENTS_CACHE_SECONDS:
+            return key, hit[1]
+    return key, None
+
+
+def remember_events(key, stays):
+    with _events_cache_lock:
+        if len(_events_cache) >= GOOGLE_EVENTS_CACHE_MAX:
+            _events_cache.clear()
+        _events_cache[key] = (time.monotonic(), stays)
+
+
 def google_calendar_view(user_id, year):
     """What the Google tab shows for a year: {"state": "ok" | "scope" | "broken" | "error" |
     "off", "calendar": ..., "link": ...}. Reads the events from Google at every call (nothing
@@ -2904,6 +2947,9 @@ def google_calendar_view(user_id, year):
         return {"state": "broken" if link and link["broken"] else "off", "link": link}
     if not calendar_events_ok(link):
         return {"state": "scope", "link": link}
+    key, stays = cached_events(link, year)
+    if stays is not None:
+        return {"state": "ok", "link": link, "calendar": google_year_calendar(year, stays)}
     token = google_access_token(link["refresh_token"])
     if token is None and g.get("google_error") == "invalid_grant":
         db.execute("UPDATE calendar_links SET broken = 1 WHERE user_id = ? AND "
@@ -2912,6 +2958,7 @@ def google_calendar_view(user_id, year):
     stays = google_events(token, link["calendar_id"], year) if token else None
     if stays is None:
         return {"state": "error", "link": link}
+    remember_events(key, stays)
     return {"state": "ok", "link": link, "calendar": google_year_calendar(year, stays)}
 
 
@@ -3458,6 +3505,9 @@ def dashboard_url(year, page=1, per_page=MOVEMENTS_PER_PAGE, anchor=True):
     explicit = per_page != MOVEMENTS_PER_PAGE or per_page != remembered
     return url_for("dashboard", year=year, page=page if page > 1 else None,
                    per_page=per_page if explicit else None,
+                   # The calendar tab chosen with a link (no JavaScript) stays for the pager.
+                   cal=calendar_choice() if has_request_context()
+                   and request.endpoint == "dashboard" else None,
                    _anchor="movements" if anchor else None)
 
 
@@ -4831,11 +4881,12 @@ def register_routes(app):
         # JavaScript).
         link = calendar_link(current_user.id)
         cal_tabs = calendar_tabs_on(link)
-        google_view = (google_calendar_view(current_user.id, year)
-                       if cal_tabs and request.args.get("cal") == "google" else None)
+        cal = calendar_choice() if cal_tabs else None  # a tab's link: the card opens on it
+        google_view = google_calendar_view(current_user.id, year) if cal == "google" else None
         g.calendar_forms = cal_tabs  # CALENDAR_CSP: the Google tab's Connect again
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
                                cal_link=link if cal_tabs else None, google_view=google_view,
+                               cal_open=cal is not None,
                                overlaps=overlaps, overlap_total=overlap_total,
                                overlap_text=overlap_text,
                                # Changes with the overlaps: the triangle blinks again for new ones.
@@ -5520,8 +5571,12 @@ def register_routes(app):
             flash("Calendar Integration is not set up on this server.", "error")
             return redirect(url_for("settings"))
         state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
+        # Where to come back to: the dashboard's Google tab when its Allow events was pressed
+        # (only a dashboard path of this site), else Settings.
+        back = safe_next(request.form.get("back", ""))
         session["gcal"] = {"state": state, "verifier": verifier, "uid": current_user.id,
-                           "fp": current_user.fingerprint, "t": int(time.time())}
+                           "fp": current_user.fingerprint, "t": int(time.time()),
+                           "back": back if back and back.startswith("/year/") else None}
         challenge = base64.urlsafe_b64encode(
             hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
         params = {"client_id": current_app.config["GOOGLE_CLIENT_ID"],
@@ -5608,6 +5663,15 @@ def register_routes(app):
         # same grant as the new token: revoking it would take the new one away too.
         if old and old["account"] != account:
             revoke_after_answer(old["refresh_token"], old["account"])
+        back = pending.get("back") if isinstance(pending.get("back"), str) else None
+        if keep and back and safe_next(back) and back.startswith("/year/"):
+            # Allow events from the dashboard: straight back to its Google tab.
+            if calendar_events_ok({"scopes": str(tokens.get("scope", ""))}):
+                flash(f"Nomad Life now shows the events of {keep['name']}.", "success")
+            else:  # the events permission was unticked on Google's page
+                flash("Google did not allow Nomad Life to see the events, so they cannot be "
+                      "shown.", "error")
+            return redirect(back)
         if keep:
             flash(f"Google Calendar is connected again. Nomad Life still uses {keep['name']}.",
                   "success")

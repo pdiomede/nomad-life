@@ -142,7 +142,26 @@
      Google Calendar tabs sit in the middle the same way: the summary and the overlay share
      one grid (fold-head-grid), each holding invisible copies of what the other shows. #}
   <div class="fold-wrap{% if cal_link %} has-cal-tabs{% endif %}" id="calendar">
-  <details class="card fold-card cal-card"{% if google_view %} open{% endif %}>
+  {# The overlay comes first in the page, so the gear and the tabs come before the content
+     they switch for keyboards and screen readers; it is laid over the head either way. #}
+  {% set cal_page = request.args.get("page", "1") | int %}
+  {% set cal_page = cal_page if cal_page > 1 else none %}
+  {% if cal_link %}
+  <div class="fold-tools fold-head-grid">
+    <span class="fold-start"><span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar ({{ y.year }})</span><a class="fold-gear" href="{{ url_for('settings', _anchor='calendar') }}" data-tip="Calendar Integration" aria-label="Calendar Integration"></a></span>
+    <nav class="cal-tabs" aria-label="Calendar to show" data-cal-tabs>
+      <a class="cal-tab" href="{{ url_for('dashboard', year=y.year, page=cal_page, cal='local', _anchor='calendar') }}" data-cal-tab="local" data-tip="Nomad Life local calendar"{% if not google_view %} aria-current="page"{% endif %}>Nomad Life</a>
+      <a class="cal-tab" href="{{ url_for('dashboard', year=y.year, page=cal_page, cal='google', _anchor='calendar') }}" data-cal-tab="google" data-src="{{ url_for('calendar_google', year=y.year) }}" data-tip="This is the Google calendar &quot;{{ cal_link.calendar_name }}&quot;" aria-label="Google Calendar: {{ cal_link.calendar_name }}"{% if google_view %} aria-current="page"{% endif %}>Google Calendar</a>
+    </nav>
+    <span class="muted small fold-sub fold-ghost-text" aria-hidden="true">Your {{ y.year }} day-by-day plan</span>
+  </div>
+  {% else %}
+  <div class="fold-tools">
+    <span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar ({{ y.year }})</span>
+    <a class="fold-gear" href="{{ url_for('settings', _anchor='calendar') }}" data-tip="Calendar Integration" aria-label="Calendar Integration"></a>
+  </div>
+  {% endif %}
+  <details class="card fold-card cal-card"{% if cal_open %} open{% endif %}>
     {% if cal_link %}
     <summary class="card-head fold-summary fold-head-grid">
       <h2 id="calendar-title" class="title-icon icon-calendar">Calendar ({{ y.year }})<span class="fold-gear-space" aria-hidden="true"></span></h2>
@@ -150,7 +169,7 @@
       <span class="muted small fold-sub">Your {{ y.year }} day-by-day plan</span>
     </summary>
     <div class="cal-panel" data-cal-panel="local"{% if google_view %} hidden{% endif %}>
-    {% with cal=calendar, empty_label="Not logged" %}{% include "_calendar_grid.html" %}{% endwith %}
+    {% with cal=calendar, empty_label="Not logged", flags=true %}{% include "_calendar_grid.html" %}{% endwith %}
     </div>
     <div class="cal-panel" data-cal-panel="google"{% if not google_view %} hidden{% endif %}>
     {% if google_view %}{% with view=google_view %}{% include "_google_calendar.html" %}{% endwith %}{% endif %}
@@ -161,24 +180,9 @@
       <span class="fold-gear-space" aria-hidden="true"></span>
       <span class="muted small">Your {{ y.year }} day-by-day plan</span>
     </summary>
-    {% with cal=calendar, empty_label="Not logged" %}{% include "_calendar_grid.html" %}{% endwith %}
+    {% with cal=calendar, empty_label="Not logged", flags=true %}{% include "_calendar_grid.html" %}{% endwith %}
     {% endif %}
   </details>
-  {% if cal_link %}
-  <div class="fold-tools fold-head-grid">
-    <span class="fold-start"><span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar ({{ y.year }})</span><a class="fold-gear" href="{{ url_for('settings', _anchor='calendar') }}" data-tip="Calendar Integration" aria-label="Calendar Integration"></a></span>
-    <nav class="cal-tabs" aria-label="Calendar to show" data-cal-tabs>
-      <a class="cal-tab" href="{{ url_for('dashboard', year=y.year, _anchor='calendar') }}" data-cal-tab="local" data-tip="Nomad Life local calendar"{% if not google_view %} aria-current="page"{% endif %}>Nomad Life</a>
-      <a class="cal-tab" href="{{ url_for('dashboard', year=y.year, cal='google', _anchor='calendar') }}" data-cal-tab="google" data-src="{{ url_for('calendar_google', year=y.year) }}" data-tip="This is the Google calendar &quot;{{ cal_link.calendar_name }}&quot;" aria-label="Google Calendar: {{ cal_link.calendar_name }}"{% if google_view %} aria-current="page"{% endif %}>Google Calendar</a>
-    </nav>
-    <span class="muted small fold-sub fold-ghost-text" aria-hidden="true">Your {{ y.year }} day-by-day plan</span>
-  </div>
-  {% else %}
-  <div class="fold-tools">
-    <span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar ({{ y.year }})</span>
-    <a class="fold-gear" href="{{ url_for('settings', _anchor='calendar') }}" data-tip="Calendar Integration" aria-label="Calendar Integration"></a>
-  </div>
-  {% endif %}
   </div>
 
   {% set pins, off_map = map %}

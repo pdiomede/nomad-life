@@ -26,7 +26,7 @@ Menu names are Google Cloud's at the time of writing; the search box at the top 
 
 1. **Branding:** app name **Nomad Life**, support email, the logo (`static/img/logo-mark.png`), home page `https://nomadlife.pro`, privacy policy `https://nomadlife.pro/privacy`, terms `https://nomadlife.pro/terms`, and the authorized domain `nomadlife.pro`.
 2. **Audience:** External. While the app is in **Testing**, only the test users listed here can connect (up to 100), and their connection expires after 7 days: add your own Google address to try it.
-3. **Data access:** add the scopes `https://www.googleapis.com/auth/calendar.calendarlist.readonly` ("See the list of Google calendars you're subscribed to") and `https://www.googleapis.com/auth/calendar.events.readonly` ("View events on all your calendars"). A connection made before the second one was added shows **Connect again** in the dashboard's Google Calendar tab.
+3. **Data access:** add the scopes `https://www.googleapis.com/auth/calendar.calendarlist.readonly` ("See the list of Google calendars you're subscribed to") and `https://www.googleapis.com/auth/calendar.events.readonly` ("View events on all your calendars"). A connection made before the second one was added shows **Allow events** in the dashboard's Google Calendar tab.
 
 ## 4. Create the OAuth client
 

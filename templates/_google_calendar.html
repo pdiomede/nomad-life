@@ -5,13 +5,14 @@
 {% if view.state == "ok" %}
     <p class="muted small cal-source">Events of your Google calendar <strong dir="auto">{{ name }}</strong>, read from Google just now. Each title has its own color; a day shared by two events counts for the one that started later.</p>
     {% if not view.calendar.legend %}<p class="small cal-notice">No events in {{ y.year }} in this calendar.</p>{% endif %}
-    {% with cal=view.calendar, empty_label="No event" %}{% include "_calendar_grid.html" %}{% endwith %}
+    {% with cal=view.calendar, empty_label="No event", flags=false %}{% include "_calendar_grid.html" %}{% endwith %}
 {% elif view.state == "scope" %}
     <div class="cal-notice">
-      <p class="small">Allow Nomad Life to see the events of <strong dir="auto">{{ name }}</strong> to show them here. Google asks once more; your chosen calendar stays chosen.</p>
+      <p class="small">Your Google Calendar <strong dir="auto">{{ name }}</strong> is connected. To show its events here, Google needs one more permission from you: to see events, read only. You are asked once; your calendar stays chosen and Google brings you back here.</p>
       <form method="post" action="{{ url_for('calendar_connect') }}">
         {{ ui.csrf() }}
-        <button class="btn btn-primary btn-sm" type="submit">Connect again</button>
+        <input type="hidden" name="back" value="{{ url_for('dashboard', year=y.year, cal='google', _anchor='calendar') }}">
+        <button class="btn btn-primary btn-sm" type="submit">Allow events</button>
       </form>
     </div>
 {% elif view.state == "broken" %}

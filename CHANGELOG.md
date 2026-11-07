@@ -7,12 +7,32 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - **Nomad Life and Google Calendar tabs** in the middle of the dashboard Calendar card's head, shown only while a Google Calendar is connected and chosen. **Nomad Life** (tooltip "Nomad Life local calendar") is the calendar as before; **Google Calendar** (tooltip: This is the Google calendar "<name>") shows the chosen calendar's events of the year on the same 12 months, read from Google when the tab is opened and not stored. Events with the same title share a color, a day shared by two events counts for the one that started later, all-day events end the day before Google's end date, and days without an event are grey ("No event"). A click on a tab opens a folded card and swaps the view in place; without JavaScript the tabs are links. On phones the tabs get their own row under the title.
-- Connecting asks Google for the calendars' events too, read only (`calendar.events.readonly`). A connection made before shows **Connect again** in the Google Calendar tab, and keeps its chosen calendar.
+- Connecting asks Google for the calendars' events too, read only (`calendar.events.readonly`). A connection made before shows **Allow events** in the Google Calendar tab: Google asks for that one permission and brings you back to the tab, with the chosen calendar kept.
 
 ### Changed
 
 - The landing page's **Plans** section, the hero's **Pricing** button and the footer's **Refunds** link are hidden for now (template comments, ready to show again); the plan and refund pages stay as they are.
 - The privacy policy says the chosen calendar's events are read only to show them and are not stored, and that the use of Google data follows the Google API Services User Data Policy, including the Limited Use requirements.
+
+### Fixed
+
+Found in a review of the new calendar tabs (10 bugs):
+
+- With a long Google calendar name (often an email address), the Google tab's tooltip, though invisible, made phone pages scroll sideways. It now takes no room until shown, wraps, and stays on screen.
+- After a tab click the address kept `?cal=google`, so every reload waited on Google before the dashboard appeared, and every click read Google again. The address no longer keeps it, and the events are kept for a minute.
+- The tabs came after the 12-month grid in the page, so keyboards and screen readers met the whole calendar before them. They now come first.
+- Between 721 and 726px wide the title wrapped and the gear and tabs sat beside their places. The head now stacks from 820px down and the title never wraps.
+- A tab link dropped the Movements page shown, and the pager dropped the tab chosen.
+- The **Nomad Life** tab's link (without JavaScript, or opened in a new tab) showed the calendar folded.
+- An event that began in December and one that began on January 1 counted as starting together, so the shorter one took the shared days. The real start dates decide now.
+- Event titles that read as a country or its code (such as "PT" or "Jordan") got that country's flag.
+- A click between the two tabs folded the card.
+- Clicking **Google Calendar** and then **Nomad Life** before Google answered could still jump to the Google view if loading failed.
+
+Found in use:
+
+- A connection from before the events permission showed **Connect again** in the Google tab, as if it were broken: it now explains the one missing permission, with an **Allow events** button that brings you back to the tab.
+- **Refresh list** showed next to a chosen calendar; it now shows only while choosing.
 
 ## [1.12.12] - 2026-11-07
 

@@ -100,7 +100,8 @@
     <p class="muted small">This Google account has no calendar you can edit. Create one in Google Calendar, then refresh the list.</p>
     {% endif %}
     <div class="row gap-sm cal-link-actions">
-      {% if calendar_on and not calendar.broken %}
+      {# Only while choosing: with a calendar chosen, its Disconnect brings the list back. #}
+      {% if calendar_on and not calendar.broken and not calendar.calendar_id %}
       <form method="post">
         {{ ui.csrf() }}
         <input type="hidden" name="action" value="calendar_refresh">

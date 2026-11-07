@@ -479,27 +479,32 @@ main:focus { outline: none; }
 .fold-start { display: inline-flex; align-items: center; gap: 6px; }
 .fold-ghost-text, .cal-tabs-ghost { visibility: hidden; }
 .cal-tabs { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.fold-tools .cal-tabs { pointer-events: auto; }  /* a click in its padding or gap must not fold the card */
 .cal-tab { position: relative; pointer-events: auto; display: inline-flex; align-items: center; justify-content: center; padding: 4px 12px; border-radius: 5px; color: var(--muted); font-size: 13px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
 .cal-tab:hover { text-decoration: none; background: var(--surface-2); color: var(--text); }
 .cal-tab[aria-current="page"] { background: var(--primary); color: var(--primary-text); }
 .cal-tab:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+/* The tooltip exists only while shown (an invisible one still widened phone pages: a calendar
+   is often named after a long address), wraps, and starts at its tab's outer edge. */
 .cal-tab[data-tip]::after {
-  content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 50%; z-index: 30;
-  transform: translate(-50%, -2px); padding: 5px 9px; border-radius: 6px; white-space: nowrap;
+  content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 0; z-index: 30;
+  display: none; width: max-content; max-width: min(300px, calc(100vw - 48px)); padding: 5px 9px;
+  border-radius: 6px; white-space: normal; overflow-wrap: anywhere; text-align: left;
   background: var(--primary); color: var(--primary-text); font-size: 12px; font-weight: 600;
-  line-height: 1.3; box-shadow: var(--shadow); opacity: 0; pointer-events: none;
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  line-height: 1.3; box-shadow: var(--shadow); pointer-events: none;
 }
-@media (hover: hover) { .cal-tab[data-tip]:hover::after { opacity: 1; transform: translate(-50%, 0); } }
-.cal-tab[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
-@media (prefers-reduced-motion: reduce) { .cal-tab[data-tip]::after { transition: none; } }
+.cal-tab[data-tip]:last-child::after { left: auto; right: 0; }
+@media (hover: hover) { .cal-tab[data-tip]:hover::after { display: block; } }
+.cal-tab[data-tip]:focus-visible::after { display: block; }
 @media (forced-colors: active) { .cal-tab[aria-current="page"] { forced-color-adjust: none; background: Highlight; color: HighlightText; } }
 .cal-source { margin: 0 0 12px; }
 .cal-notice { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); }
 .cal-notice p { margin: 0 0 10px; }
 .cal-panel[aria-busy="true"] { min-height: 60px; }
-/* Phones: the title and the chevron, then the tabs centred, then the line under them. */
-@media (max-width: 720px) {
+/* Narrow screens: the title and the chevron, then the tabs centred, then the line under them
+   (from 820px down: below that the three columns no longer hold the title on one line). */
+.fold-head-grid > h2, .fold-start { white-space: nowrap; }
+@media (max-width: 820px) {
   .fold-head-grid { grid-template-columns: minmax(0, 1fr) auto; }
   .fold-head-grid > .cal-tabs { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
   .fold-head-grid > .fold-sub { grid-column: 1 / -1; grid-row: 3; justify-self: start; padding-right: 0; text-align: left; }
