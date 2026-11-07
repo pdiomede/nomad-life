@@ -947,6 +947,57 @@
     });
   });
 
+  // Calendar card tabs (with a Google Calendar connected): Nomad Life and Google Calendar.
+  // They are links (?cal=google renders the Google view on the server); here a click swaps
+  // the two views in place, opens the card when it is folded, and loads the Google view once
+  // from its fragment URL. A failed load follows the link instead.
+  document.querySelectorAll("[data-cal-tabs]").forEach(function (nav) {
+    var card = document.querySelector(".cal-card");
+    var local = card && card.querySelector('[data-cal-panel="local"]');
+    var google = card && card.querySelector('[data-cal-panel="google"]');
+    if (!local || !google) return;
+    var tabs = nav.querySelectorAll("[data-cal-tab]");
+    var googleTab = nav.querySelector('[data-cal-tab="google"]');
+    var loaded = google.children.length > 0;
+    function load() {
+      loaded = true;
+      google.setAttribute("aria-busy", "true");
+      google.textContent = "";
+      var note = document.createElement("p");
+      note.className = "muted small cal-source";
+      note.textContent = "Loading Google Calendar\u2026";
+      google.appendChild(note);
+      fetch(googleTab.getAttribute("data-src"), { credentials: "same-origin", headers: { Accept: "text/html" } })
+        .then(function (r) {
+          if (!r.ok || r.redirected) throw new Error("not loaded");  // a sign in page, an error
+          return r.text();
+        })
+        .then(function (html) { google.innerHTML = html; google.removeAttribute("aria-busy"); })
+        .catch(function () { window.location.href = googleTab.href; });
+    }
+    nav.addEventListener("click", function (e) {
+      var tab = e.target.closest("[data-cal-tab]");
+      if (!tab || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      var which = tab.getAttribute("data-cal-tab");
+      tabs.forEach(function (t) {
+        if (t === tab) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
+      });
+      card.open = true;
+      local.hidden = which !== "local";
+      google.hidden = which !== "google";
+      try { history.replaceState(history.state, "", tab.href); } catch (err) { /* file:, old browsers */ }
+      if (which === "google" && !loaded) load();
+    });
+    // "Try again" in the Google view, after Google did not answer.
+    google.addEventListener("click", function (e) {
+      var retry = e.target.closest("[data-cal-retry]");
+      if (!retry || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      load();
+    });
+  });
+
   // Map: zoom (+, -, whole world) and pan by dragging or with the arrow keys. Only the land is
   // scaled; pins are placed in screen pixels, keep their size and are nudged apart when they
   // would cover each other's day counts. Without JavaScript the map stays a plain, whole map.

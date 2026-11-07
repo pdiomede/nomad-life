@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.13] - 2026-11-07
+
+### Added
+
+- **Nomad Life and Google Calendar tabs** in the middle of the dashboard Calendar card's head, shown only while a Google Calendar is connected and chosen. **Nomad Life** (tooltip "Nomad Life local calendar") is the calendar as before; **Google Calendar** (tooltip: This is the Google calendar "<name>") shows the chosen calendar's events of the year on the same 12 months, read from Google when the tab is opened and not stored. Events with the same title share a color, a day shared by two events counts for the one that started later, all-day events end the day before Google's end date, and days without an event are grey ("No event"). A click on a tab opens a folded card and swaps the view in place; without JavaScript the tabs are links. On phones the tabs get their own row under the title.
+- Connecting asks Google for the calendars' events too, read only (`calendar.events.readonly`). A connection made before shows **Connect again** in the Google Calendar tab, and keeps its chosen calendar.
+
+### Changed
+
+- The landing page's **Plans** section, the hero's **Pricing** button and the footer's **Refunds** link are hidden for now (template comments, ready to show again); the plan and refund pages stay as they are.
+- The privacy policy says the chosen calendar's events are read only to show them and are not stored, and that the use of Google data follows the Google API Services User Data Policy, including the Limited Use requirements.
+
 ## [1.12.12] - 2026-11-07
 
 ### Added

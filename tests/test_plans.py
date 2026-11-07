@@ -67,12 +67,21 @@ class PlanTests(AppTestCase):
         self.assertIn("/login", self.client.get("/plan").headers["Location"])
         self.assertIn("Disallow: /plan", self.page("/robots.txt"))
 
-    def test_landing_lists_every_tier(self):
+    def test_landing_hides_the_plans_for_now(self):
+        # Hidden with a template comment until paid plans open (see "What's next" in CLAUDE.md).
         self.client.post("/logout")
         html = self.page("/")
-        for text in ('id="pricing"', ">Free<", ">Pro<", ">Nomad+<", "$9.99", "$19.99",
+        self.assertNotIn('id="pricing"', html)
+        self.assertNotIn('href="#pricing"', html)
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "templates", "landing.html"), encoding="utf-8") as fh:
+            source = fh.read()
+        self.assertIn('{# Plans: hidden for now (see "What\'s next" in CLAUDE.md)', source)
+        # The cards themselves still list every tier, ready to show again.
+        cards = plan_cards_html(self.app)
+        for text in (">Free<", ">Pro<", ">Nomad+<", "$9.99", "$19.99",
                      "25 GB of receipt storage", "Priority support"):
-            self.assertIn(text, html)
+            self.assertIn(text, cards)
 
     def test_quota_follows_the_plan(self):
         self.app.config["USER_QUOTA_BYTES"] = 1 * MB
@@ -220,12 +229,23 @@ class AdminPlanSelectorTests(AppTestCase):
         self.assertEqual(self.plan(), "free")
 
 
+def plan_cards_html(app):
+    """The plan cards as the landing page drew them (its Plans section is hidden for now, see
+    "What's next" in CLAUDE.md): the same ui.plan_card macro over plan_catalog()."""
+    from flask import render_template_string
+    with app.test_request_context("/"):
+        return render_template_string(
+            '{% import "_macros.html" as ui with context %}<div id="pricing">'
+            '{% for p in plans %}{% call ui.plan_card(p, highlight=loop.index == 2) %}{% endcall %}'
+            '{% endfor %}</div>Prices in US dollars', plans=appmod.plan_catalog())
+
+
 class PlanFeatureTests(unittest.TestCase):
     def cards(self):
         a = appmod.create_app({"TESTING": True, "SECRET_KEY": "k", "DATABASE_PATH": self.db,
                                "UPLOAD_DIR": self.up, "GMAIL_USER": "", "GMAIL_APP_PASSWORD": "",
                                "USER_QUOTA_BYTES": 500 * MB, "MAX_RECEIPT_BYTES": 10 * MB})
-        html = a.test_client().get("/").get_data(as_text=True)
+        html = plan_cards_html(a)
         section = html[html.index('id="pricing"'):html.index("Prices in US dollars")]
         return dict(zip(("Free", "Pro", "Nomad+"), section.split('class="card plan-card')[1:]))
 
@@ -314,8 +334,9 @@ class AdminPriceTests(AppTestCase):
         self.assertIn("Pro now shows $49.99 / year. Set the same price on its Stripe product",
                       html)
         landing = self.app.test_client().get("/").get_data(as_text=True)
-        self.assertIn("$49.99 <span", landing)
-        self.assertIn("About $4.16 a month, paid yearly", landing)
+        cards = plan_cards_html(self.app)
+        self.assertIn("$49.99 <span", cards)
+        self.assertIn("About $4.16 a month, paid yearly", cards)
         self.assertIn('"price": "49.99"', landing)
         self.assertIn("Upgrade to Pro, $49.99 / year",
                       self.client.get("/plan").get_data(as_text=True))
@@ -326,7 +347,7 @@ class AdminPriceTests(AppTestCase):
         self.price("plus", "", "100")
         html = self.price("plus", "", "").get_data(as_text=True)
         self.assertIn("Nomad+ is back to its default price ($19.99 / year).", html)
-        self.assertIn("$19.99 <span", self.app.test_client().get("/").get_data(as_text=True))
+        self.assertIn("$19.99 <span", plan_cards_html(self.app))
 
     def test_bad_prices_are_refused(self):
         for year in ("abc", "0", "-40", "4.555", "20000"):

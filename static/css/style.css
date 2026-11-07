@@ -465,6 +465,46 @@ main:focus { outline: none; }
 .fold-gear[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
 @media (prefers-reduced-motion: reduce) { .fold-gear[data-tip]::after { transition: none; } }
 @media (forced-colors: active) { .fold-gear::before { forced-color-adjust: none; background-color: LinkText; } }
+/* With a Google Calendar connected: the Nomad Life and Google Calendar tabs in the middle of the
+   head. The summary and the overlay share this grid, each with invisible copies of what the
+   other shows, so the real tabs (overlay) land on their copy (summary): the outer columns
+   share the free space equally, which centres the middle one in both. */
+.fold-head-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px 12px; }
+.fold-head-grid > :first-child { grid-column: 1; grid-row: 1; justify-self: start; min-width: 0; }
+.fold-head-grid > .cal-tabs { grid-column: 2; grid-row: 1; }
+.fold-head-grid > .fold-sub { grid-column: 3; grid-row: 1; justify-self: end; margin: 0; padding-right: 30px; text-align: right; }
+.fold-summary.fold-head-grid::after { grid-column: 3; grid-row: 1; justify-self: end; }
+.fold-tools.fold-head-grid { right: 21px; }
+.fold-head-grid .fold-gear-space { display: inline-block; vertical-align: middle; margin-left: -3px; }  /* the h2's gap is 9px, the gear's 6px */
+.fold-start { display: inline-flex; align-items: center; gap: 6px; }
+.fold-ghost-text, .cal-tabs-ghost { visibility: hidden; }
+.cal-tabs { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.cal-tab { position: relative; pointer-events: auto; display: inline-flex; align-items: center; justify-content: center; padding: 4px 12px; border-radius: 5px; color: var(--muted); font-size: 13px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+.cal-tab:hover { text-decoration: none; background: var(--surface-2); color: var(--text); }
+.cal-tab[aria-current="page"] { background: var(--primary); color: var(--primary-text); }
+.cal-tab:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.cal-tab[data-tip]::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 50%; z-index: 30;
+  transform: translate(-50%, -2px); padding: 5px 9px; border-radius: 6px; white-space: nowrap;
+  background: var(--primary); color: var(--primary-text); font-size: 12px; font-weight: 600;
+  line-height: 1.3; box-shadow: var(--shadow); opacity: 0; pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+@media (hover: hover) { .cal-tab[data-tip]:hover::after { opacity: 1; transform: translate(-50%, 0); } }
+.cal-tab[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) { .cal-tab[data-tip]::after { transition: none; } }
+@media (forced-colors: active) { .cal-tab[aria-current="page"] { forced-color-adjust: none; background: Highlight; color: HighlightText; } }
+.cal-source { margin: 0 0 12px; }
+.cal-notice { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); }
+.cal-notice p { margin: 0 0 10px; }
+.cal-panel[aria-busy="true"] { min-height: 60px; }
+/* Phones: the title and the chevron, then the tabs centred, then the line under them. */
+@media (max-width: 720px) {
+  .fold-head-grid { grid-template-columns: minmax(0, 1fr) auto; }
+  .fold-head-grid > .cal-tabs { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
+  .fold-head-grid > .fold-sub { grid-column: 1 / -1; grid-row: 3; justify-self: start; padding-right: 0; text-align: left; }
+  .fold-summary.fold-head-grid::after { grid-column: 2; grid-row: 1; }
+}
 
 /* Dashboard calendar: the year's months, each day in the color of the country it counts for
    (--cal-* tokens, set in the three theme blocks). Four months a row, fewer on narrow screens. */
@@ -854,6 +894,7 @@ main:focus { outline: none; }
   .cta { padding: 22px; }
   .card { padding: 16px; }
   .fold-tools { top: 17px; left: 17px; }  /* the card's padding plus its border */
+  .fold-tools.fold-head-grid { right: 17px; }
   .table-wrap { margin: 0 -16px; }
   .table th, .table td { padding: 10px; }
   .table th:first-child, .table td:first-child { padding-left: 16px; }

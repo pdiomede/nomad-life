@@ -46,8 +46,8 @@ class LegalPageTests(AppTestCase):
                       '<a href="/privacy">Privacy Policy</a>', signup)
 
     def test_footer_everywhere(self):
+        # Refunds is hidden for now with the landing Plans (see "What's next" in CLAUDE.md).
         footer_links = ('<a href="/terms">Terms</a>', '<a href="/privacy">Privacy</a>',
-                        '<a href="/refunds">Refunds</a>',
                         'Built by <a href="https://nemax.tech" target="_blank" '
                         'rel="noopener">Nemax Tech</a>')
         anonymous = self.client.get("/").get_data(as_text=True)
@@ -58,6 +58,7 @@ class LegalPageTests(AppTestCase):
             for link in footer_links:
                 self.assertIn(link, footer)
             self.assertNotIn("Paolo Diomede", footer)
+            self.assertNotIn('href="/refunds"', footer)
         with open(os.path.join(ROOT, "static", "404.html"), encoding="utf-8") as fh:
             page404 = fh.read()
         for link in ('href="/terms"', 'href="/privacy"', 'href="/refunds"',

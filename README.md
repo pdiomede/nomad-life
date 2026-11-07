@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.12**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.13**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -70,7 +70,7 @@ sqlite3 data/nomad.db "UPDATE users SET plan = 'pro' WHERE email = 'you@example.
 Calendar Integration (Settings, or the gear next to the dashboard's Calendar title) lets each user connect a Google account and choose one calendar they can edit. It stays off until the server has a Google OAuth client:
 
 1. In [Google Cloud](https://console.cloud.google.com), create a project and enable the **Google Calendar API** (APIs & Services -> Library).
-2. Set up the consent screen (Google Auth Platform): app name, support email, privacy policy and terms URLs, audience **External**, and the scope `https://www.googleapis.com/auth/calendar.calendarlist.readonly`. While the app is in Testing, add the Google addresses that may connect as test users.
+2. Set up the consent screen (Google Auth Platform): app name, support email, privacy policy and terms URLs, audience **External**, and the scopes `https://www.googleapis.com/auth/calendar.calendarlist.readonly` and `https://www.googleapis.com/auth/calendar.events.readonly` (the chosen calendar's events, shown in the dashboard calendar's Google Calendar tab). While the app is in Testing, add the Google addresses that may connect as test users.
 3. Create an OAuth client (Clients -> Create client) of type **Web application**, with the authorized redirect URI `<APP_BASE_URL>/settings/calendar/google/callback`, for example `https://nomadlife.pro/settings/calendar/google/callback` (add `http://localhost:5050/settings/calendar/google/callback` for a local test).
 4. Put its values in `config.env` and restart the app:
 

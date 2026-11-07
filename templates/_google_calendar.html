@@ -1,0 +1,23 @@
+{# The Google tab of the dashboard calendar (google_calendar_view): rendered in the page with
+   ?cal=google, or loaded by theme.js from /year/<year>/calendar/google. No scripts here. #}
+{% import "_macros.html" as ui with context %}
+{% set name = view.link.calendar_name if view.link else "" %}
+{% if view.state == "ok" %}
+    <p class="muted small cal-source">Events of your Google calendar <strong dir="auto">{{ name }}</strong>, read from Google just now. Each title has its own color; a day shared by two events counts for the one that started later.</p>
+    {% if not view.calendar.legend %}<p class="small cal-notice">No events in {{ y.year }} in this calendar.</p>{% endif %}
+    {% with cal=view.calendar, empty_label="No event" %}{% include "_calendar_grid.html" %}{% endwith %}
+{% elif view.state == "scope" %}
+    <div class="cal-notice">
+      <p class="small">Allow Nomad Life to see the events of <strong dir="auto">{{ name }}</strong> to show them here. Google asks once more; your chosen calendar stays chosen.</p>
+      <form method="post" action="{{ url_for('calendar_connect') }}">
+        {{ ui.csrf() }}
+        <button class="btn btn-primary btn-sm" type="submit">Connect again</button>
+      </form>
+    </div>
+{% elif view.state == "broken" %}
+    <p class="small cal-notice">Google no longer lets Nomad Life see your calendar. <a href="{{ url_for('settings', _anchor='calendar') }}">Connect again in Settings</a>.</p>
+{% elif view.state == "error" %}
+    <p class="small cal-notice">Google did not answer, so the calendar could not be shown. <a href="{{ url_for('dashboard', year=y.year, cal='google', _anchor='calendar') }}" data-cal-retry>Try again</a></p>
+{% else %}
+    <p class="small cal-notice">Google Calendar is not connected. <a href="{{ url_for('settings', _anchor='calendar') }}">Connect it in Settings</a>.</p>
+{% endif %}

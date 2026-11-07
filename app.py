@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.12"
+APP_VERSION = "1.12.13"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -170,7 +170,7 @@ GUIDES_BY_SLUG = {g["slug"]: g for g in GUIDES}
 LEGAL_PAGES = {
     "terms": {"title": "Terms of Service", "updated": "2026-10-02",
               "description": "The terms for using Nomad Life and its paid plans."},
-    "privacy": {"title": "Privacy Policy", "updated": "2026-10-02",
+    "privacy": {"title": "Privacy Policy", "updated": "2026-11-07",
                 "description": "What Nomad Life stores about you, why, for how long, and your "
                                "rights."},
     "refunds": {"title": "Refund Policy", "updated": "2026-10-02",
@@ -2649,6 +2649,11 @@ GOOGLE_CALENDAR_LIST_URL = "https://www.googleapis.com/calendar/v3/users/me/cale
 # Only the list of calendars for now: what the chosen calendar is used for asks for its own
 # permission when it ships (include_granted_scopes keeps this one).
 GOOGLE_SCOPE = "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
+# The chosen calendar's events, read only, for the Google tab of the dashboard calendar. Not
+# needed to connect: without it the tab asks to connect again.
+GOOGLE_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly"
+GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/{}/events"
+GOOGLE_EVENTS_PAGES = 4  # of 2500 events each
 GOOGLE_TIMEOUT_SECONDS = 10
 GOOGLE_STATE_SECONDS = 600  # from Connect to Google's answer
 GOOGLE_CALENDARS_MAX = 250
@@ -2790,6 +2795,124 @@ def grant_in_use(account):
     tokens would cut every connection to that Google account."""
     return bool(account) and db.query("SELECT 1 FROM calendar_links WHERE account = ? LIMIT 1",
                                       (account,), one=True) is not None
+
+
+def calendar_events_ok(link):
+    """The connection may read the chosen calendar's events (granted since 1.12.13)."""
+    return GOOGLE_EVENTS_SCOPE in (link.get("scopes") or "").split()
+
+
+def calendar_tabs_on(link):
+    """The dashboard calendar shows the Nomad Life and Google Calendar tabs: the server has
+    the Google client, and the account's connection works and has a calendar chosen."""
+    return bool(google_calendar_on() and link and not link["broken"] and link["calendar_id"])
+
+
+def _event_day(value, end=False):
+    """The day of a Google event's start or end: {"date": ...} for an all-day event (the end
+    is exclusive), {"dateTime": ...} for a timed one (its own date; an end at 00:00 belongs to
+    the day before). None when it cannot be read."""
+    if not isinstance(value, dict):
+        return None
+    if isinstance(value.get("date"), str):
+        day = parse_date(value["date"][:10])
+        return day - timedelta(days=1) if day and end else day
+    stamp = value.get("dateTime")
+    if not isinstance(stamp, str):
+        return None
+    day = parse_date(stamp[:10])
+    if day and end and stamp[11:19] == "00:00:00":
+        day -= timedelta(days=1)
+    return day
+
+
+def google_events(access_token, calendar_id, year):
+    """The chosen calendar's events of the year as stays [{id, title, start_date, end_date}]
+    (ISO dates, clipped to the year), or None when Google did not answer. The window reaches
+    a day past each end of the year, so no time zone loses its first or last day."""
+    first, last = date(year, 1, 1), date(year, 12, 31)
+    url = GOOGLE_EVENTS_URL.format(quote(calendar_id, safe=""))
+    params = {"singleEvents": "true", "orderBy": "startTime", "maxResults": 2500,
+              "timeMin": f"{first - timedelta(days=1)}T00:00:00Z",
+              "timeMax": f"{last + timedelta(days=2)}T00:00:00Z",
+              "fields": "items(id,summary,status,start,end),nextPageToken"}
+    stays = []
+    for _page in range(GOOGLE_EVENTS_PAGES):
+        answer = google_api("GET", f"{url}?{urlencode(params)}", token=access_token)
+        if answer is None or not isinstance(answer.get("items", []), list):
+            return None
+        for item in answer.get("items", []):
+            if not isinstance(item, dict) or item.get("status") == "cancelled":
+                continue
+            start, end = _event_day(item.get("start")), _event_day(item.get("end"), end=True)
+            if not start or not end:
+                continue
+            end = max(end, start)  # an end before its start: a one day event
+            start, end = max(start, first), min(end, last)
+            if start > end:
+                continue  # outside the year
+            title = clean_name(item["summary"]) if isinstance(item.get("summary"), str) else ""
+            stays.append({"id": len(stays) + 1, "title": title[:GOOGLE_NAME_MAX] or "(No title)",
+                          "start_date": start.isoformat(), "end_date": end.isoformat()})
+        page = answer.get("nextPageToken")
+        if not isinstance(page, str) or not page:
+            break
+        params["pageToken"] = page
+    return stays
+
+
+def google_year_calendar(year, stays):
+    """The Google tab of the dashboard calendar, in the shape of year_calendar(): each day in
+    the color of the event it belongs to (the same rule as stays: a shared day goes to the
+    event that started later, then the shorter one), one color per title."""
+    owner = assign_days(stays)
+    by_id = {s["id"]: s for s in stays}
+    counts, names = {}, {}
+    for sid in owner.values():
+        key = fold(by_id[sid]["title"])
+        counts[key] = counts.get(key, 0) + 1
+        names.setdefault(key, by_id[sid]["title"])
+    order = sorted(counts, key=lambda k: (-counts[k], db.sort_fold(names[k])))
+    colors = {k: f"cal-{i % CALENDAR_COLORS + 1}" for i, k in enumerate(order)}
+    legend = [{"country": names[k], "days": counts[k], "is_base": False, "color": colors[k]}
+              for k in order]
+    today, months, none = date.today(), [], 0
+    for month in range(1, 13):
+        start = date(year, month, 1)
+        days, d = [], start
+        while d.month == month:
+            sid = owner.get(d)
+            if sid is not None:
+                key = fold(by_id[sid]["title"])
+                color, where = colors[key], names[key]
+            else:
+                color, where = "cal-none", "no event"
+                none += 1
+            days.append({"day": d.day, "iso": d.isoformat(), "color": color, "where": where,
+                         "title": f"{d:%a} {d.day} {d:%b} {year}: {where}", "today": d == today})
+            d += timedelta(days=1)
+        months.append({"name": f"{start:%B}", "blanks": start.weekday(), "days": days})
+    return {"months": months, "legend": legend, "not_logged": none}
+
+
+def google_calendar_view(user_id, year):
+    """What the Google tab shows for a year: {"state": "ok" | "scope" | "broken" | "error" |
+    "off", "calendar": ..., "link": ...}. Reads the events from Google at every call (nothing
+    of them is stored)."""
+    link = calendar_link(user_id)
+    if not calendar_tabs_on(link):
+        return {"state": "broken" if link and link["broken"] else "off", "link": link}
+    if not calendar_events_ok(link):
+        return {"state": "scope", "link": link}
+    token = google_access_token(link["refresh_token"])
+    if token is None and g.get("google_error") == "invalid_grant":
+        db.execute("UPDATE calendar_links SET broken = 1 WHERE user_id = ? AND "
+                   "refresh_token = ?", (user_id, link["refresh_token"]))
+        return {"state": "broken", "link": link}
+    stays = google_events(token, link["calendar_id"], year) if token else None
+    if stays is None:
+        return {"state": "error", "link": link}
+    return {"state": "ok", "link": link, "calendar": google_year_calendar(year, stays)}
 
 
 def revoke_after_answer(refresh_token, account):
@@ -4703,7 +4826,16 @@ def register_routes(app):
         overlaps, overlap_total = movement_overlaps(movements, stats["day_owner"])
         overlap_text = (overlap_report(year, overlaps, movements, stats["counted"], overlap_total)
                         if overlaps else "")
+        # The Calendar card's Nomad Life and Google Calendar tabs, only with a working
+        # connection; ?cal=google shows the Google view at once (the tabs' links, without
+        # JavaScript).
+        link = calendar_link(current_user.id)
+        cal_tabs = calendar_tabs_on(link)
+        google_view = (google_calendar_view(current_user.id, year)
+                       if cal_tabs and request.args.get("cal") == "google" else None)
+        g.calendar_forms = cal_tabs  # CALENDAR_CSP: the Google tab's Connect again
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
+                               cal_link=link if cal_tabs else None, google_view=google_view,
                                overlaps=overlaps, overlap_total=overlap_total,
                                overlap_text=overlap_text,
                                # Changes with the overlaps: the triangle blinks again for new ones.
@@ -4714,6 +4846,16 @@ def register_routes(app):
                                base_docs=base_docs, map=map_pins(year_row, movements, stats),
                                calendar=year_calendar(year_row, movements, stats),
                                today=date.today().isoformat())
+
+    @app.route("/year/<int:year>/calendar/google")
+    @login_required
+    def calendar_google(year):
+        """The Google tab of the dashboard calendar, as an HTML fragment (theme.js loads it
+        when the tab is opened). The events are read from Google at every call."""
+        year_row = get_year_or_404(year)
+        g.calendar_forms = True  # the fragment's Connect again form goes on to Google
+        return render_template("_google_calendar.html", y=year_row,
+                               view=google_calendar_view(current_user.id, year))
 
     @app.route("/year/<int:year>/base", methods=["GET", "POST"])
     @login_required
@@ -5384,7 +5526,7 @@ def register_routes(app):
             hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
         params = {"client_id": current_app.config["GOOGLE_CLIENT_ID"],
                   "redirect_uri": google_redirect_uri(), "response_type": "code",
-                  "scope": GOOGLE_SCOPE, "access_type": "offline",
+                  "scope": f"{GOOGLE_SCOPE} {GOOGLE_EVENTS_SCOPE}", "access_type": "offline",
                   # consent every time, so Google always hands over a refresh token
                   "prompt": "consent", "include_granted_scopes": "true", "state": state,
                   "code_challenge": challenge, "code_challenge_method": "S256"}
@@ -5449,14 +5591,16 @@ def register_routes(app):
                              if old and c["id"] == old["calendar_id"]), None)
                 conn.execute(
                     "INSERT INTO calendar_links (user_id, provider, account, refresh_token, "
-                    "calendars, calendar_id, calendar_name) VALUES (?, 'google', ?, ?, ?, ?, ?) "
+                    "calendars, calendar_id, calendar_name, scopes) "
+                    "VALUES (?, 'google', ?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(user_id) DO UPDATE SET account = excluded.account, "
                     "refresh_token = excluded.refresh_token, calendars = excluded.calendars, "
                     "calendar_id = excluded.calendar_id, calendar_name = excluded.calendar_name, "
-                    "broken = 0, connected_at = CURRENT_TIMESTAMP, "
+                    "scopes = excluded.scopes, broken = 0, connected_at = CURRENT_TIMESTAMP, "
                     "updated_at = CURRENT_TIMESTAMP",
                     (current_user.id, account, refresh, json.dumps(calendars),
-                     keep["id"] if keep else None, keep["name"] if keep else ""))
+                     keep["id"] if keep else None, keep["name"] if keep else "",
+                     " ".join(str(tokens.get("scope", "")).split())))
                 audit("calendar_connected", current_user.id, user["email"], account, conn=conn)
         if not user:
             return account_gone()

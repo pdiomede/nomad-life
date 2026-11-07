@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS passkey_challenges (
 -- account is the Google address (the primary calendar's id); calendars the JSON list of the
 -- calendars it may edit, as read when connecting or refreshing ([{id, name, color, primary}]);
 -- calendar_id the one chosen (NULL until chosen). broken = 1 once Google refused the token.
+-- scopes: what Google granted, space separated (since 1.12.13; '' before: connect again).
 CREATE TABLE IF NOT EXISTS calendar_links (
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     provider TEXT NOT NULL DEFAULT 'google',
@@ -211,6 +212,7 @@ CREATE TABLE IF NOT EXISTS calendar_links (
     calendar_id TEXT,
     calendar_name TEXT NOT NULL DEFAULT '',
     broken INTEGER NOT NULL DEFAULT 0,
+    scopes TEXT NOT NULL DEFAULT '',
     connected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -425,6 +427,10 @@ MIGRATIONS = [
         "WHERE '#' || t.id = audit_log.detail) WHERE event LIKE 'ticket\\_%' ESCAPE '\\' "
         "AND detail IN (SELECT '#' || id FROM tickets)",
     ]),
+    # The permissions Google granted a Calendar Integration connection (1.12.13): connections
+    # made before only allowed the calendar list, so they show "connect again" for the events.
+    ("calendar_links", "scopes", ["ALTER TABLE calendar_links ADD COLUMN scopes TEXT NOT NULL "
+                                  "DEFAULT ''"]),
 ]
 
 # Indexes and triggers on migrated columns: SCHEMA runs before the columns exist on an old

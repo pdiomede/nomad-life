@@ -51,7 +51,7 @@
     {% if not calendar_on and not calendar %}
     <p class="muted small">Calendar Integration is not set up on this server yet.</p>
     {% elif not calendar %}
-    <p class="muted small card-intro">Connect a Google Calendar that Nomad Life can add your stays to later. For now, Google is only asked for the list of your calendars.</p>
+    <p class="muted small card-intro">Connect a Google Calendar to see it next to your Nomad Life calendar on the dashboard. Google is asked for the list of your calendars and to see their events, read only: Nomad Life never changes them.</p>
     <form method="post" action="{{ url_for('calendar_connect') }}">
       {{ ui.csrf() }}
       <button class="btn btn-ghost" type="submit"><span class="btn-icon icon-connect" aria-hidden="true"></span>Connect Google Calendar</button>

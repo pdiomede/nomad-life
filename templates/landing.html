@@ -22,7 +22,9 @@
     <div class="row wrap gap-sm">
       <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">Launch app</a>
       <a class="btn btn-ghost btn-lg" href="#how-it-works">See how it works</a>
+      {# Hidden for now with the Plans section below (see "What's next" in CLAUDE.md).
       <a class="btn btn-ghost btn-lg" href="#pricing">Pricing</a>
+      #}
     </div>
   </div>
 
@@ -92,6 +94,7 @@
   </ol>
 </section>
 
+{# Plans: hidden for now (see "What's next" in CLAUDE.md); remove this comment to show it again.
 <section class="pricing" id="pricing" aria-labelledby="pricing-title">
   <h2 id="pricing-title" class="section-title">Plans</h2>
   <p class="muted center pricing-lead">Start free. Upgrade when your receipts need more room.</p>
@@ -104,6 +107,7 @@
   </div>
   <p class="muted small center">Prices in US dollars, paid yearly, before VAT or sales tax (added at checkout where it applies).{% if not billing_on %} Online payment is coming soon.{% endif %}</p>
 </section>
+#}
 
 <section class="guides-teaser" aria-labelledby="guides-title">
   <h2 id="guides-title" class="section-title">Guides</h2>

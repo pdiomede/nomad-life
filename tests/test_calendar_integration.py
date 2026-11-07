@@ -161,7 +161,8 @@ class ConnectTests(CalendarCase):
         params = self.start()
         self.assertEqual(params["client_id"], ["client-id.apps.googleusercontent.com"])
         self.assertEqual(params["redirect_uri"], ["https://nomad.example/settings/calendar/google/callback"])
-        self.assertEqual(params["scope"], [appmod.GOOGLE_SCOPE])
+        # The calendar list, and since 1.12.13 the chosen calendar's events (read only).
+        self.assertEqual(params["scope"], [f"{appmod.GOOGLE_SCOPE} {appmod.GOOGLE_EVENTS_SCOPE}"])
         self.assertEqual(params["access_type"], ["offline"])
         self.assertEqual(params["prompt"], ["consent"])
         self.assertEqual(params["code_challenge_method"], ["S256"])
