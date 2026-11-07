@@ -44,6 +44,8 @@ Copy the **Client ID** and **Client secret** into `config.env` as `GOOGLE_CLIENT
 2. Sign in with a test user and press **Continue**. Back in Settings, the calendars you can edit are listed, your main one first: choose one and press **Save calendar**.
 3. The chosen calendar shows as **Connected**; its **Disconnect** brings the list back to choose another one. **Disconnect Google account** removes the connection and Nomad Life's access: it disappears from https://myaccount.google.com/connections.
 
+A Google account in Google's **Advanced Protection Program** cannot connect an app that is not verified yet ("Access blocked: nomadlife.pro is not approved by Advanced Protection", error `policy_enforced`): test with another account until the verification is done. Google always shows its account chooser, so pick that account there.
+
 ## 6. Going public
 
 Calendar scopes are **sensitive**: before people outside the test users can connect, Google must verify the app (**Audience -> Publish app**, then the verification Google asks for: the privacy policy, a short video of the flow, and why the scope is needed). Until then, everyone else sees "Access blocked".

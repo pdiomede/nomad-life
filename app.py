@@ -2653,10 +2653,12 @@ GOOGLE_SCOPE = "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
 # needed to connect: without it the tab asks to connect again.
 GOOGLE_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly"
 GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/{}/events"
-GOOGLE_EVENTS_PAGES = 4  # of 2500 events each
+GOOGLE_EVENTS_PAGES = 10  # of 1000 events each (a page of 2500 could pass google_api's 1 MB)
+GOOGLE_EVENTS_PAGE_SIZE = 1000
 GOOGLE_TIMEOUT_SECONDS = 10
 GOOGLE_STATE_SECONDS = 600  # from Connect to Google's answer
 GOOGLE_CALENDARS_MAX = 250
+GOOGLE_LIST_PAGES = 10  # of 250 calendars each, read before the list is cut
 GOOGLE_NAME_MAX = 200
 GOOGLE_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 
@@ -2683,7 +2685,7 @@ def google_api(method, url, data=None, token=None):
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if has_request_context():
-        g.google_error = ""
+        g.google_error, g.google_status, g.google_reason = "", 0, ""
     where = url.split("?", 1)[0]  # never log the query
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
     try:
@@ -2697,11 +2699,15 @@ def google_api(method, url, data=None, token=None):
         except (ValueError, AttributeError):
             error = ""
         exc.close()
-        if isinstance(error, dict):  # the Calendar API: {"error": {"status": ..., ...}}
+        reason = ""
+        if isinstance(error, dict):  # the Calendar API: {"error": {"errors": [{"reason"}], ...}}
+            details = error.get("errors")
+            if isinstance(details, list) and details and isinstance(details[0], dict):
+                reason = details[0].get("reason") if isinstance(details[0].get("reason"), str) else ""
             error = error.get("status") or ""
         error = error if isinstance(error, str) else ""
         if has_request_context():
-            g.google_error = error
+            g.google_error, g.google_status, g.google_reason = error, exc.code, reason
         current_app.logger.warning("Google %s %s refused with HTTP %s: %s", method, where,
                                    exc.code, error)
     except Exception as exc:  # noqa: BLE001 - offline, slow or changed service
@@ -2726,13 +2732,13 @@ def google_revoke(refresh_token):
         google_api("POST", GOOGLE_REVOKE_URL, {"token": refresh_token})
 
 
-def google_calendars(access_token):
+def google_calendars(access_token, keep=None):
     """The calendars the Google account may edit (owner or writer: the ones stays can be added
     to later), primary first, then by name: [{id, name, color, primary}], or None when Google
     did not answer."""
-    found, page = [], None
-    while len(found) < GOOGLE_CALENDARS_MAX:
-        params = {"minAccessRole": "writer", "maxResults": 250,
+    found, page, seen = [], None, set()
+    for _page in range(GOOGLE_LIST_PAGES):  # bounded: Google could keep sending a token
+        params = {"minAccessRole": "writer", "maxResults": 250, "prettyPrint": "false",
                   "fields": "items(id,summary,summaryOverride,primary,backgroundColor),"
                             "nextPageToken"}
         if page:
@@ -2756,11 +2762,16 @@ def google_calendars(access_token):
                           and GOOGLE_COLOR.fullmatch(color) else "",
                           "primary": item.get("primary") is True})
         page = answer.get("nextPageToken")
-        if not isinstance(page, str) or not page:
+        if not isinstance(page, str) or not page or page in seen:
             break
-    found = found[:GOOGLE_CALENDARS_MAX]
+        seen.add(page)
+    # Sorted before the cut, so the primary calendar (the Google address) is always kept; so
+    # is the calendar already chosen.
     found.sort(key=lambda c: (not c["primary"], db.sort_fold(c["name"]), c["id"]))
-    return found
+    kept = found[:GOOGLE_CALENDARS_MAX]
+    if keep and keep not in {c["id"] for c in kept}:
+        kept += [c for c in found if c["id"] == keep][:1]
+    return kept
 
 
 def google_account(calendars):
@@ -2833,17 +2844,20 @@ def _event_day(value, end=False):
 
 
 def google_events(access_token, calendar_id, year):
-    """The chosen calendar's events of the year as stays [{id, title, start_date, end_date}]
-    (ISO dates, clipped to the year), or None when Google did not answer. The window reaches
-    a day past each end of the year, so no time zone loses its first or last day."""
+    """The chosen calendar's events of the year: ({"stays": [{id, title, start_date, end_date}],
+    "truncated": bool}), the dates real (google_year_calendar clips them to the year), or None
+    when Google did not answer (g.google_status says why). The window reaches a day past each
+    end of the year, so no time zone loses its first or last day. truncated: more events than
+    GOOGLE_EVENTS_PAGES pages, the rest left out."""
     first, last = date(year, 1, 1), date(year, 12, 31)
     url = GOOGLE_EVENTS_URL.format(quote(calendar_id, safe=""))
-    params = {"singleEvents": "true", "orderBy": "startTime", "maxResults": 2500,
+    params = {"singleEvents": "true", "orderBy": "startTime", "prettyPrint": "false",
+              "maxResults": GOOGLE_EVENTS_PAGE_SIZE,
               "timeMin": f"{first - timedelta(days=1)}T00:00:00Z",
               "timeMax": f"{last + timedelta(days=2)}T00:00:00Z",
               "fields": "items(id,summary,status,start,end),nextPageToken"}
-    stays = []
-    for _page in range(GOOGLE_EVENTS_PAGES):
+    stays, seen, truncated = [], set(), False
+    for n in range(GOOGLE_EVENTS_PAGES):
         answer = google_api("GET", f"{url}?{urlencode(params)}", token=access_token)
         if answer is None or not isinstance(answer.get("items", []), list):
             return None
@@ -2862,10 +2876,14 @@ def google_events(access_token, calendar_id, year):
             stays.append({"id": len(stays) + 1, "title": title[:GOOGLE_NAME_MAX] or "(No title)",
                           "start_date": start.isoformat(), "end_date": end.isoformat()})
         page = answer.get("nextPageToken")
-        if not isinstance(page, str) or not page:
+        if not isinstance(page, str) or not page or page in seen:
             break
+        if n == GOOGLE_EVENTS_PAGES - 1:
+            truncated = True  # Google has more: say so instead of showing "No event"
+            break
+        seen.add(page)
         params["pageToken"] = page
-    return stays
+    return {"stays": stays, "truncated": truncated}
 
 
 def google_year_calendar(year, stays):
@@ -2885,7 +2903,7 @@ def google_year_calendar(year, stays):
     by_id = {s["id"]: s for s in stays}
     counts, names = {}, {}
     for sid in owner.values():
-        key = fold(by_id[sid]["title"])
+        key = db.search_fold(by_id[sid]["title"])
         counts[key] = counts.get(key, 0) + 1
         names.setdefault(key, by_id[sid]["title"])
     order = sorted(counts, key=lambda k: (-counts[k], db.sort_fold(names[k])))
@@ -2899,7 +2917,7 @@ def google_year_calendar(year, stays):
         while d.month == month:
             sid = owner.get(d)
             if sid is not None:
-                key = fold(by_id[sid]["title"])
+                key = db.search_fold(by_id[sid]["title"])
                 color, where = colors[key], names[key]
             else:
                 color, where = "cal-none", "no event"
@@ -2911,11 +2929,16 @@ def google_year_calendar(year, stays):
     return {"months": months, "legend": legend, "not_logged": none}
 
 
+# 403 reasons that mean "slow down", not "no access".
+GOOGLE_RATE_REASONS = {"rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded",
+                       "dailyLimitExceeded"}
+
 # The Google tab's events, kept a short while per account, year and calendar: a reload or a
 # second click does not wait on Google again, and one person cannot spend the app's Google
 # quota by repeating it. Per process; never written anywhere.
 GOOGLE_EVENTS_CACHE_SECONDS = 60
 GOOGLE_EVENTS_CACHE_MAX = 500
+GOOGLE_EVENTS_CACHE_EVENTS = 50000  # events held in all, so memory stays bounded
 _events_cache = {}
 _events_cache_lock = threading.Lock()
 
@@ -2931,35 +2954,56 @@ def cached_events(link, year):
     return key, None
 
 
-def remember_events(key, stays):
+def remember_events(key, events):
+    size = len(events["stays"])
+    if size > GOOGLE_EVENTS_CACHE_EVENTS:
+        return  # too big to keep: read again next time
+    now = time.monotonic()
     with _events_cache_lock:
-        if len(_events_cache) >= GOOGLE_EVENTS_CACHE_MAX:
+        for k in [k for k, v in _events_cache.items()
+                  if now - v[0] >= GOOGLE_EVENTS_CACHE_SECONDS]:
+            del _events_cache[k]
+        held = sum(len(v[1]["stays"]) for v in _events_cache.values())
+        if len(_events_cache) >= GOOGLE_EVENTS_CACHE_MAX or held + size > GOOGLE_EVENTS_CACHE_EVENTS:
             _events_cache.clear()
-        _events_cache[key] = (time.monotonic(), stays)
+        _events_cache[key] = (now, events)
 
 
 def google_calendar_view(user_id, year):
-    """What the Google tab shows for a year: {"state": "ok" | "scope" | "broken" | "error" |
-    "off", "calendar": ..., "link": ...}. Reads the events from Google at every call (nothing
-    of them is stored)."""
+    """What the Google tab shows for a year: {"state": "ok" | "scope" | "broken" | "gone" |
+    "error" | "server_off" | "unchosen" | "off", "calendar": ..., "truncated": ..., "link": ...}.
+    The events are read from Google (kept a minute, never stored)."""
     link = calendar_link(user_id)
-    if not calendar_tabs_on(link):
-        return {"state": "broken" if link and link["broken"] else "off", "link": link}
+    if not google_calendar_on():
+        return {"state": "server_off", "link": link}
+    if not link:
+        return {"state": "off", "link": link}
+    if link["broken"]:
+        return {"state": "broken", "link": link}
+    if not link["calendar_id"]:
+        return {"state": "unchosen", "link": link}
     if not calendar_events_ok(link):
         return {"state": "scope", "link": link}
-    key, stays = cached_events(link, year)
-    if stays is not None:
-        return {"state": "ok", "link": link, "calendar": google_year_calendar(year, stays)}
+    key, events = cached_events(link, year)
+    if events is not None:
+        return {"state": "ok", "link": link, "truncated": events["truncated"],
+                "calendar": google_year_calendar(year, events["stays"])}
     token = google_access_token(link["refresh_token"])
     if token is None and g.get("google_error") == "invalid_grant":
         db.execute("UPDATE calendar_links SET broken = 1 WHERE user_id = ? AND "
                    "refresh_token = ?", (user_id, link["refresh_token"]))
         return {"state": "broken", "link": link}
-    stays = google_events(token, link["calendar_id"], year) if token else None
-    if stays is None:
+    events = google_events(token, link["calendar_id"], year) if token else None
+    if events is None:
+        status, reason = g.get("google_status", 0), g.get("google_reason", "")
+        if token and reason == "insufficientPermissions":
+            return {"state": "scope", "link": link}  # the events permission was taken back
+        if token and (status == 404 or (status == 403 and reason not in GOOGLE_RATE_REASONS)):
+            return {"state": "gone", "link": link}  # deleted, or no longer shared with them
         return {"state": "error", "link": link}
-    remember_events(key, stays)
-    return {"state": "ok", "link": link, "calendar": google_year_calendar(year, stays)}
+    remember_events(key, events)
+    return {"state": "ok", "link": link, "truncated": events["truncated"],
+            "calendar": google_year_calendar(year, events["stays"])}
 
 
 def revoke_after_answer(refresh_token, account):
@@ -3050,7 +3094,7 @@ def calendar_action(action, row):
         flash("Calendar Integration is not set up on this server.", "error")
         return
     token = google_access_token(link["refresh_token"])
-    calendars = google_calendars(token) if token else None
+    calendars = google_calendars(token, keep=link["calendar_id"]) if token else None
     if token is None and g.get("google_error") == "invalid_grant":
         db.execute("UPDATE calendar_links SET broken = 1 WHERE user_id = ? AND "
                    "refresh_token = ?", (row["id"], link["refresh_token"]))
@@ -5582,8 +5626,9 @@ def register_routes(app):
         params = {"client_id": current_app.config["GOOGLE_CLIENT_ID"],
                   "redirect_uri": google_redirect_uri(), "response_type": "code",
                   "scope": f"{GOOGLE_SCOPE} {GOOGLE_EVENTS_SCOPE}", "access_type": "offline",
-                  # consent every time, so Google always hands over a refresh token
-                  "prompt": "consent", "include_granted_scopes": "true", "state": state,
+                  # consent every time, so Google always hands over a refresh token, and the
+                  # account chooser, so someone signed in to Google can pick another account
+                  "prompt": "consent select_account", "include_granted_scopes": "true", "state": state,
                   "code_challenge": challenge, "code_challenge_method": "S256"}
         return redirect(f"{GOOGLE_AUTH_URL}?{urlencode(params)}", 303)
 
@@ -5630,12 +5675,15 @@ def register_routes(app):
             flash("Google was not allowed to show Nomad Life your calendars, so nothing was "
                   "connected. Connect again and leave that permission ticked.", "error")
             return redirect(url_for("settings"))
-        calendars = google_calendars(access)
+        known = calendar_link(current_user.id)
+        calendars = google_calendars(access, keep=known["calendar_id"] if known else None)
         if calendars is None:
             flash("Google did not send the list of your calendars, so nothing was connected. "
                   "Try again in a moment.", "error")
             return redirect(url_for("settings"))
-        account = google_account(calendars)
+        # The primary calendar names the Google account; kept from before if Google left it
+        # out, so a reconnect is never taken for another account.
+        account = google_account(calendars) or (known["account"] if known else "")
         with db.transaction() as conn:
             user = conn.execute("SELECT email FROM users WHERE id = ?",
                                 (current_user.id,)).fetchone()
@@ -5661,7 +5709,7 @@ def register_routes(app):
             return account_gone()
         # Another Google account's access is of no use any more. The same account's is the
         # same grant as the new token: revoking it would take the new one away too.
-        if old and old["account"] != account:
+        if old and account and old["account"] and old["account"] != account:
             revoke_after_answer(old["refresh_token"], old["account"])
         back = pending.get("back") if isinstance(pending.get("back"), str) else None
         if keep and back and safe_next(back) and back.startswith("/year/"):

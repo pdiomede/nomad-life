@@ -4,6 +4,7 @@
 {% set name = view.link.calendar_name if view.link else "" %}
 {% if view.state == "ok" %}
     <p class="muted small cal-source">Events of your Google calendar <strong dir="auto">{{ name }}</strong>, read from Google just now. Each title has its own color; a day shared by two events counts for the one that started later.</p>
+    {% if view.truncated %}<p class="small cal-notice">This calendar has more events in {{ y.year }} than Nomad Life can show at once; the latest ones are left out (shown as No event).</p>{% endif %}
     {% if not view.calendar.legend %}<p class="small cal-notice">No events in {{ y.year }} in this calendar.</p>{% endif %}
     {% with cal=view.calendar, empty_label="No event", flags=false %}{% include "_calendar_grid.html" %}{% endwith %}
 {% elif view.state == "scope" %}
@@ -17,6 +18,12 @@
     </div>
 {% elif view.state == "broken" %}
     <p class="small cal-notice">Google no longer lets Nomad Life see your calendar. <a href="{{ url_for('settings', _anchor='calendar') }}">Connect again in Settings</a>.</p>
+{% elif view.state == "gone" %}
+    <p class="small cal-notice">The calendar <strong dir="auto">{{ name }}</strong> is no longer available to this Google account (deleted, or no longer shared with it). <a href="{{ url_for('settings', _anchor='calendar') }}">Choose another one in Settings</a>.</p>
+{% elif view.state == "unchosen" %}
+    <p class="small cal-notice">No Google calendar is chosen. <a href="{{ url_for('settings', _anchor='calendar') }}">Choose one in Settings</a>.</p>
+{% elif view.state == "server_off" %}
+    <p class="small cal-notice">Calendar Integration is turned off on this server for now.</p>
 {% elif view.state == "error" %}
     <p class="small cal-notice">Google did not answer, so the calendar could not be shown. <a href="{{ url_for('dashboard', year=y.year, cal='google', _anchor='calendar') }}" data-cal-retry>Try again</a></p>
 {% else %}

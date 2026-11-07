@@ -34,6 +34,21 @@ Found in use:
 - A connection from before the events permission showed **Connect again** in the Google tab, as if it were broken: it now explains the one missing permission, with an **Allow events** button that brings you back to the tab.
 - **Refresh list** showed next to a chosen calendar; it now shows only while choosing.
 
+Found in a review of the whole Google Calendar integration and how events show (8 bugs):
+
+- A busy calendar could always show "Google did not answer": a page of 2500 events in Google's indented JSON passed the 1 MB the app reads. Pages are now compact (`prettyPrint=false`) and of 1000 events.
+- Event titles that differ only by a mark, such as Japanese ビザ (visa) and ピザ (pizza), counted as one, with one color and one name. Titles are grouped by case only now.
+- A chosen calendar that was deleted, or no longer shared, showed "Google did not answer, try again" forever. The tab now says the calendar is no longer available and to choose another in Settings; a permission taken back asks to **Allow events** again; only real outages and rate limits say to try again.
+- The minute's cache of events never dropped expired entries and could hold gigabytes per server process. It now drops them and holds at most 50,000 events in all.
+- Reading the calendar list could loop without end if Google kept sending a next page. It reads at most 10 pages and stops when a page comes back twice.
+- With more than 250 calendars the list was cut before it was sorted, so the main calendar (the Google address) or the chosen one could be left out, and a reconnect could then take the account for another one and revoke the new access. The list is read whole, sorted, then cut, keeping both, and the access is never revoked when the account is not known.
+- Past 10,000 events in a year the rest was left out silently, shown as "No event". The tab now says so.
+- With no calendar chosen (changed in another tab), or Calendar Integration turned off on the server, the Google tab said "Google Calendar is not connected". It names the real reason.
+
+Found in use:
+
+- Google picked the account already signed in to the browser without asking, so an account blocked by Google's Advanced Protection could not be swapped for another. Google now always shows its account chooser.
+
 ## [1.12.12] - 2026-11-07
 
 ### Added

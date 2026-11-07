@@ -165,7 +165,8 @@ class ConnectTests(CalendarCase):
         # The calendar list, and since 1.12.13 the chosen calendar's events (read only).
         self.assertEqual(params["scope"], [f"{appmod.GOOGLE_SCOPE} {appmod.GOOGLE_EVENTS_SCOPE}"])
         self.assertEqual(params["access_type"], ["offline"])
-        self.assertEqual(params["prompt"], ["consent"])
+        # The account chooser too: someone signed in to Google can pick another account.
+        self.assertEqual(params["prompt"], ["consent select_account"])
         self.assertEqual(params["code_challenge_method"], ["S256"])
         with self.client.session_transaction() as sess:
             pending = sess["gcal"]
@@ -453,13 +454,13 @@ class ReviewFixTests(CalendarCase):
                                             "calendar_id": "work@group.calendar.google.com"})
         real = appmod.google_calendars
 
-        def choose_meanwhile(token):
+        def choose_meanwhile(token, keep=None):
             conn = other_connection(self)
             conn.execute("UPDATE calendar_links SET calendar_id = 'trips@group.calendar.google.com', "
                          "calendar_name = 'Trips'")
             conn.commit()
             conn.close()
-            return real(token)
+            return real(token, keep=keep)
 
         with mock.patch.object(appmod, "google_calendars", side_effect=choose_meanwhile):
             html = self.client.post("/settings", data={"action": "calendar_refresh"},

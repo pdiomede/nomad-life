@@ -137,7 +137,7 @@ class EventDaysTests(AppTestCase):
     def days(self, events, year=2026):
         with self.app.test_request_context():
             with mock.patch.object(appmod, "google_api", return_value={"items": events}):
-                stays = appmod.google_events("t", "cal@x", year)
+                stays = appmod.google_events("t", "cal@x", year)["stays"]
         return [(s["title"], s["start_date"], s["end_date"]) for s in stays]
 
     def test_all_day_ends_are_exclusive(self):
@@ -197,7 +197,7 @@ class GoogleGridTests(AppTestCase):
         cal = self.grid([
             {"title": "Lisbon", "start_date": "2026-01-01", "end_date": "2026-01-10"},
             {"title": "Porto", "start_date": "2026-01-05", "end_date": "2026-01-06"},
-            {"title": "lisbón", "start_date": "2026-02-01", "end_date": "2026-02-01"}])
+            {"title": "LISBON", "start_date": "2026-02-01", "end_date": "2026-02-01"}])
         self.assertEqual(self.day(cal, "2026-01-05")["where"], "Porto")  # inside Lisbon
         self.assertEqual(self.day(cal, "2026-01-07")["where"], "Lisbon")
         self.assertEqual(self.day(cal, "2026-02-01")["color"], self.day(cal, "2026-01-01")["color"])
