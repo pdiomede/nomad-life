@@ -974,6 +974,11 @@ main:focus { outline: none; }
 .cal-choice input { flex: none; margin: 0; width: 18px; height: 18px; accent-color: var(--link); }
 .cal-choice input:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .cal-choice-color { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+.cal-chosen { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 48px; padding: 8px 8px 8px 14px; border: 1px solid var(--link); border-radius: 8px; background: var(--surface-2); font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.cal-chosen-name { font-weight: 600; }
+.cal-chosen .pill { margin: 0; align-self: center; }  /* .pill keeps to the top of a flex row */
+.cal-chosen-action { margin: 0 0 0 auto; }
+.cal-chosen + .muted { margin: 8px 0 0; }
 .cal-broken { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--warning-bg); color: var(--text); }
 .cal-link-actions { flex-wrap: wrap; margin-top: 14px; }
 .cal-link-actions form { margin: 0; }

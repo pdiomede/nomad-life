@@ -42,7 +42,7 @@ Copy the **Client ID** and **Client secret** into `config.env` as `GOOGLE_CLIENT
 
 1. Sign in, open **Settings > Calendar Integration** (or the gear next to the dashboard's Calendar title) and press **Connect Google Calendar**.
 2. Sign in with a test user and press **Continue**. Back in Settings, the calendars you can edit are listed, your main one first: choose one and press **Save calendar**.
-3. **Disconnect** removes the connection and Nomad Life's access: it disappears from https://myaccount.google.com/connections.
+3. The chosen calendar shows as **Connected**; its **Disconnect** brings the list back to choose another one. **Disconnect Google account** removes the connection and Nomad Life's access: it disappears from https://myaccount.google.com/connections.
 
 ## 6. Going public
 

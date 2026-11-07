@@ -81,7 +81,7 @@ Calendar Integration (Settings, or the gear next to the dashboard's Calendar tit
 
 5. Open Settings > Calendar Integration, press **Connect Google Calendar**, sign in with a test user, then choose a calendar and press **Save calendar**.
 
-Calendar permissions are sensitive for Google: before anyone outside the test users can connect, publish the app and pass Google's verification. Each connection is stored in the `calendar_links` table; **Disconnect** or deleting the account removes it and revokes the access at Google. Details are in [google_calendar.md](google_calendar.md).
+Calendar permissions are sensitive for Google: before anyone outside the test users can connect, publish the app and pass Google's verification. Each connection is stored in the `calendar_links` table; **Disconnect Google account** or deleting the account removes it and revokes the access at Google. Details are in [google_calendar.md](google_calendar.md).
 
 ## Operator commands
 

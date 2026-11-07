@@ -196,7 +196,9 @@ class ConnectTests(CalendarCase):
         self.assertEqual(html.count('type="radio" name="calendar_id"'), 3)
         self.assertIn('style="background: #9fe1e7"', html)
         self.assertNotIn("background-image", html)  # a color Google never sends is dropped
-        self.assertIn('<span class="pill pill-ok">Connected</span>', html)
+        # Connected to Google, no calendar chosen yet.
+        self.assertIn('<span class="pill pill-warn">Choose a calendar</span>', html)
+        self.assertIn("Disconnect Google account</button>", html)
         self.assertEqual(appmod_query(self, "SELECT event, detail FROM audit_log WHERE event = 'calendar_connected'")["detail"],
                          "ada@gmail.com")
 
@@ -293,7 +295,16 @@ class ChooseTests(CalendarCase):
         self.assertIn("Nomad Life will use the calendar Trips.", html)
         link = self.link()
         self.assertEqual((link["calendar_id"], link["calendar_name"]), ("trips@group.calendar.google.com", "Trips"))
-        self.assertIn('value="trips@group.calendar.google.com" required checked>', html)
+        # Saved: the calendar is shown as connected, with its own Disconnect, not the list.
+        self.assertNotIn('name="calendar_id"', html)
+        chosen = html[html.index('<div class="cal-chosen">'):]
+        chosen = chosen[:chosen.index("</div>")]
+        self.assertIn('<span class="cal-chosen-name" dir="auto">Trips</span>', chosen)
+        self.assertIn('<span class="pill pill-ok">Connected</span>', chosen)
+        self.assertIn('<input type="hidden" name="action" value="calendar_unchoose">', chosen)
+        self.assertIn('aria-label="Disconnect the calendar Trips">Disconnect</button>', chosen)
+        head = html[html.index('<h2 id="calendar-title">'):]
+        self.assertIn('<span class="pill pill-ok">Connected</span>', head[:head.index("</div>")])
         self.assertIn("Nomad Life uses <strong dir=\"auto\">Trips</strong>.", html)
         self.assertIn("Nothing changed.", self.choose("trips@group.calendar.google.com"))
 
@@ -486,3 +497,45 @@ class ReviewFixTests(CalendarCase):
         self.assertIn("font-size: 14px; color: var(--text); }", rule[:rule.index("\n")])
         self.connect()
         self.assertIn('<p class="small card-intro">Connected to', self.settings_html())
+
+
+class ChangeCalendarTests(CalendarCase):
+    """After saving, the chosen calendar shows as Connected with a Disconnect of its own, which
+    brings the list back to choose another one; the Google account stays connected."""
+
+    def test_disconnect_the_calendar_to_choose_another(self):
+        self.connect()
+        self.client.post("/settings", data={"action": "calendar_choose",
+                                            "calendar_id": "work@group.calendar.google.com"})
+        html = self.client.post("/settings", data={"action": "calendar_unchoose"},
+                                follow_redirects=True).get_data(as_text=True)
+        self.assertIn("Nomad Life no longer uses the calendar Work. Choose another one in the list.", html)
+        link = self.link()
+        self.assertEqual((link["calendar_id"], link["calendar_name"]), (None, ""))
+        self.assertEqual(link["refresh_token"], "refresh-1")  # still connected to Google
+        self.assertEqual(self.google.revoked(), [])
+        self.assertEqual(html.count('type="radio" name="calendar_id"'), 3)
+        self.assertNotIn('class="cal-chosen"', html)
+        html = self.client.post("/settings", data={"action": "calendar_choose",
+                                                   "calendar_id": "trips@group.calendar.google.com"},
+                                follow_redirects=True).get_data(as_text=True)
+        self.assertIn("Nomad Life will use the calendar Trips.", html)
+        events = [r[0] for r in other_connection(self).execute(
+            "SELECT event FROM audit_log WHERE event LIKE 'calendar_%' ORDER BY id")]
+        self.assertEqual(events, ["calendar_connected", "calendar_chosen", "calendar_unchosen",
+                                  "calendar_chosen"])
+
+    def test_nothing_chosen_or_gone(self):
+        self.connect()
+        html = self.client.post("/settings", data={"action": "calendar_unchoose"},
+                                follow_redirects=True).get_data(as_text=True)
+        self.assertIn("No calendar is chosen. Choose one in the list.", html)
+        self.client.post("/settings", data={"action": "calendar_disconnect"})
+        html = self.client.post("/settings", data={"action": "calendar_unchoose"},
+                                follow_redirects=True).get_data(as_text=True)
+        self.assertIn("Google Calendar was disconnected in the meantime.", html)
+
+    def test_the_chosen_row_styles(self):
+        css = read("static", "css", "style.css")
+        self.assertIn(".cal-chosen { display: flex; flex-wrap: wrap; align-items: center;", css)
+        self.assertIn(".cal-chosen-action { margin: 0 0 0 auto; }", css)

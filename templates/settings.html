@@ -47,7 +47,7 @@
 
   {# Google Calendar: connect, choose one calendar Nomad Life may edit, refresh, disconnect. #}
   <section class="card" id="calendar" aria-labelledby="calendar-title">
-    <div class="card-head"><h2 id="calendar-title">Calendar Integration</h2>{% if calendar and not calendar.broken %}<span class="pill pill-ok">Connected</span>{% elif calendar %}<span class="pill pill-warn">Connect again</span>{% endif %}</div>
+    <div class="card-head"><h2 id="calendar-title">Calendar Integration</h2>{% if calendar and calendar.broken %}<span class="pill pill-warn">Connect again</span>{% elif calendar and not calendar.calendar_id %}<span class="pill pill-warn">Choose a calendar</span>{% elif calendar %}<span class="pill pill-ok">Connected</span>{% endif %}</div>
     {% if not calendar_on and not calendar %}
     <p class="muted small">Calendar Integration is not set up on this server yet.</p>
     {% elif not calendar %}
@@ -66,6 +66,20 @@
       <button class="btn btn-primary" type="submit"><span class="btn-icon icon-connect" aria-hidden="true"></span>Connect again</button>
     </form>
     {% endif %}
+    {% elif calendar.calendar_id %}
+    {# The chosen calendar, with its own Disconnect: the list comes back to choose another. #}
+    {% set chosen = calendar.calendars | selectattr("id", "equalto", calendar.calendar_id) | first %}
+    <div class="cal-chosen">
+      <i class="cal-choice-color"{% if chosen and chosen.color %} style="background: {{ chosen.color }}"{% endif %} aria-hidden="true"></i>
+      <span class="cal-chosen-name" dir="auto">{{ calendar.calendar_name }}</span>{% if chosen and chosen.primary %} <span class="tag">Primary</span>{% endif %}
+      <span class="pill pill-ok">Connected</span>
+      <form method="post" class="cal-chosen-action">
+        {{ ui.csrf() }}
+        <input type="hidden" name="action" value="calendar_unchoose">
+        <button class="btn btn-ghost btn-sm" type="submit" aria-label="Disconnect the calendar {{ calendar.calendar_name }}">Disconnect</button>
+      </form>
+    </div>
+    <p class="muted small">To use another calendar, disconnect this one and choose again.</p>
     {% elif calendar.calendars %}
     <form method="post" class="stack">
       {{ ui.csrf() }}
@@ -96,7 +110,7 @@
       <form method="post">
         {{ ui.csrf() }}
         <input type="hidden" name="action" value="calendar_disconnect">
-        <button class="btn btn-ghost" type="submit">Disconnect</button>
+        <button class="btn btn-ghost" type="submit">Disconnect Google account</button>
       </form>
     </div>
     {% endif %}

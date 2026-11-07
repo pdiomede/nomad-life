@@ -1848,6 +1848,7 @@ AUDIT_LABELS = {
     "passkey_removed": "Passkey removed",
     "calendar_connected": "Google Calendar connected",
     "calendar_chosen": "Google Calendar chosen",
+    "calendar_unchosen": "Google Calendar choice removed",
     "calendar_disconnected": "Google Calendar disconnected",
     "account_deleted": "Account deleted",
     "admin_plan": "Plan changed by an admin",
@@ -2805,7 +2806,8 @@ CALENDAR_GONE = ("Google Calendar was disconnected in the meantime. Connect it a
 
 
 def calendar_action(action, row):
-    """The Calendar Integration buttons of Settings: choose, refresh the list, disconnect.
+    """The Calendar Integration buttons of Settings: choose a calendar, disconnect it (to
+    choose another), refresh the list, disconnect the Google account.
     Each write reads the row again under the write lock, so a choice, a list or a connection
     changed meanwhile (another tab) is never overwritten."""
     link = calendar_link(row["id"])
@@ -2828,6 +2830,23 @@ def calendar_action(action, row):
                   "your Google account.", "success")
         else:  # the same Google account is still connected to another Nomad Life account
             flash("Google Calendar was disconnected from this account.", "success")
+        return
+    if action == "calendar_unchoose":  # the Google account stays connected: choose another
+        with db.transaction() as conn:
+            now = conn.execute("SELECT calendar_id, calendar_name FROM calendar_links WHERE "
+                               "user_id = ?", (row["id"],)).fetchone()
+            if now and now["calendar_id"]:
+                conn.execute("UPDATE calendar_links SET calendar_id = NULL, calendar_name = '', "
+                             "updated_at = CURRENT_TIMESTAMP WHERE user_id = ?", (row["id"],))
+                audit("calendar_unchosen", row["id"], row["email"], now["calendar_name"],
+                      conn=conn)
+        if not now:
+            flash(CALENDAR_GONE, "info")
+        elif not now["calendar_id"]:
+            flash("No calendar is chosen. Choose one in the list.", "info")
+        else:
+            flash(f"Nomad Life no longer uses the calendar {now['calendar_name']}. Choose "
+                  "another one in the list.", "success")
         return
     if action == "calendar_choose":
         # Checked against the list as stored when writing: a refresh in another tab may have
@@ -5022,7 +5041,8 @@ def register_routes(app):
                     audit("passkey_renamed", row["id"], row["email"], name)
                     flash("The passkey was renamed.", "success")
                 return redirect(url_for("settings"))
-            if action in ("calendar_choose", "calendar_refresh", "calendar_disconnect"):
+            if action in ("calendar_choose", "calendar_unchoose", "calendar_refresh",
+                          "calendar_disconnect"):
                 # No password: these only pick from the stored list or take access away.
                 calendar_action(action, row)
                 return redirect(url_for("settings"))
