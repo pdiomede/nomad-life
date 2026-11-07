@@ -57,7 +57,7 @@
       <button class="btn btn-ghost" type="submit"><span class="btn-icon icon-connect" aria-hidden="true"></span>Connect Google Calendar</button>
     </form>
     {% else %}
-    <p class="small card-intro">Connected to <strong dir="auto">{{ calendar.account or "your Google account" }}</strong>{% if calendar.calendar_id %}. Nomad Life uses <strong dir="auto">{{ calendar.calendar_name }}</strong>.{% else %}.{% endif %}</p>
+    <p class="small card-intro">Connected to {% if calendar.account %}<strong dir="auto">{{ calendar.account }}</strong> Google account{% else %}your Google account{% endif %}{% if calendar.calendar_id %}. Nomad Life uses the Google calendar named "<strong dir="auto">{{ calendar.calendar_name }}</strong>".{% else %}.{% endif %}</p>
     {% if calendar.broken %}
     <p class="small cal-broken">Google no longer lets Nomad Life see your calendars. Connect again to keep using it.</p>
     {% if calendar_on %}

@@ -194,7 +194,7 @@ class ConnectTests(CalendarCase):
             {"id": "ada@gmail.com", "name": "Ada Lovelace", "color": "#9fe1e7", "primary": True},
             {"id": "trips@group.calendar.google.com", "name": "Trips", "color": "", "primary": False},
             {"id": "work@group.calendar.google.com", "name": "Work", "color": "#0b8043", "primary": False}])
-        self.assertIn("Connected to <strong dir=\"auto\">ada@gmail.com</strong>.", html)
+        self.assertIn("Connected to <strong dir=\"auto\">ada@gmail.com</strong> Google account.", html)
         self.assertIn('<legend>Choose one calendar</legend>', html)
         self.assertEqual(html.count('type="radio" name="calendar_id"'), 3)
         self.assertIn('style="background: #9fe1e7"', html)
@@ -308,7 +308,8 @@ class ChooseTests(CalendarCase):
         self.assertIn('aria-label="Disconnect the calendar Trips">Disconnect</button>', chosen)
         head = html[html.index('<h2 id="calendar-title">'):]
         self.assertIn('<span class="pill pill-ok">Connected</span>', head[:head.index("</div>")])
-        self.assertIn("Nomad Life uses <strong dir=\"auto\">Trips</strong>.", html)
+        self.assertIn("Connected to <strong dir=\"auto\">ada@gmail.com</strong> Google account. "
+                      "Nomad Life uses the Google calendar named \"<strong dir=\"auto\">Trips</strong>\".", html)
         self.assertIn("Nothing changed.", self.choose("trips@group.calendar.google.com"))
 
     def test_only_a_listed_calendar(self):
