@@ -84,7 +84,7 @@ class WidgetReviewTests(TabsCase):
     def test_4_only_the_newest_answer_changes_the_view(self):
         block = js_block()
         self.assertIn("var latest = 0;", block)
-        self.assertEqual(block.count("var mine = ++latest;"), 2)  # load and reload
+        self.assertEqual(block.count("var mine = ++latest;"), 3)  # load, reload and recolored (1.12.19)
         self.assertGreaterEqual(block.count("if (mine !== latest) return;"), 5)
 
     def test_6_refresh_is_a_button_with_a_live_status(self):

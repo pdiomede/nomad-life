@@ -50,7 +50,7 @@ class OptionalCityTests(AppTestCase):
         saved = self.add("Spain", start="2026-03-04", end="2026-03-08")  # shares 2 days
         self.assertIn("This stay shares days with Italy (2 days).", saved)
         page = self.client.get("/year/2026").get_data(as_text=True)
-        self.assertIn('data-tip="Wed 4 Mar 2026: \U0001F1EA\U0001F1F8 Spain"', page)
+        self.assertIn('data-tip="Wed 4 Mar 2026 \U0001F1EA\U0001F1F8 Spain"', page)
         self.assertIn('aria-label="Italy, 3 days">', page)  # no empty ": " for missing cities
         self.assertNotIn('<span class="map-tip-cities"></span>', page)
 

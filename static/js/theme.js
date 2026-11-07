@@ -993,7 +993,10 @@
   function setCalColor(el, color) {
     el.className = el.className.replace(CAL_COLOR, " ").replace(/\s+/g, " ").trim() + " " + color;
   }
-  document.querySelectorAll("[data-cal-color]").forEach(function (form) {
+  // With Google connected the picker is in the Google tab, whose view theme.js loads later:
+  // setupColorPicker runs again for each view it inserts (window.nlColorPickers).
+  function setupColorPicker(form) {
+    if (form.classList.contains("js-picker")) return;
     var btn = form.querySelector(".cal-color-btn");
     var menu = form.querySelector(".cal-color-menu");
     var status = document.querySelector("[data-cal-color-status]");
@@ -1021,6 +1024,7 @@
       if (!form.contains(e.relatedTarget)) btn.setAttribute("aria-expanded", "false");
     });
     document.addEventListener("mousedown", function (e) {
+      if (!form.isConnected) return;  // a Google view replaced since
       if (!form.contains(e.target) && btn.getAttribute("aria-expanded") === "true") setOpen(false);
     });
     form.addEventListener("submit", function (e) {
@@ -1034,12 +1038,13 @@
         .then(function (j) {
           Object.keys(j.colors || {}).forEach(function (key) {
             var color = j.colors[key];
-            document.querySelectorAll('td[data-c="' + (window.CSS && CSS.escape ? CSS.escape(key) : key) + '"]').forEach(function (td) { setCalColor(td, color); });
+            var safe = window.CSS && CSS.escape ? CSS.escape(key) : key;
+            document.querySelectorAll('td[data-c="' + safe + '"], [data-legend-key="' + safe + '"]').forEach(function (el) { setCalColor(el, color); });
             document.querySelectorAll("[data-cal-color]").forEach(function (f) {
               if (f.getAttribute("data-key") !== key) return;
               var b = f.querySelector(".cal-color-btn");
               setCalColor(b, color);
-              b.setAttribute("aria-label", "Color of " + f.querySelector('input[name="country"]').value + ": " + (j.names[color] || color));
+              b.setAttribute("aria-label", "Color of " + (b.getAttribute("data-label") || f.querySelector('input[name="country"]').value) + ": " + (j.names[color] || color));
               f.querySelectorAll(".cal-color-opt").forEach(function (o) {
                 if (o.value === color) o.setAttribute("aria-pressed", "true"); else o.removeAttribute("aria-pressed");
               });
@@ -1047,9 +1052,10 @@
           });
           setOpen(false);
           btn.focus();
-          var mine = (j.colors || {})[form.getAttribute("data-key")];
+          // An event that is no country of the year (Dentist) is not in the year's map.
+          var mine = (j.colors || {})[form.getAttribute("data-key")] || (j.color !== "auto" ? j.color : "");
           if (status) { status.textContent = ""; setTimeout(function () { status.textContent = j.country + " is now " + (j.names[mine] || "recolored") + "."; }, 60); }
-          document.dispatchEvent(new CustomEvent("nl:calcolors"));
+          document.dispatchEvent(new CustomEvent("nl:calcolors", { detail: { key: form.getAttribute("data-key") } }));
         })
         .catch(function () {
           // The plain post shows the server's message; submit() sends no button value.
@@ -1059,7 +1065,11 @@
           form.submit();
         });
     });
-  });
+  }
+  window.nlColorPickers = function (root) {
+    root.querySelectorAll("[data-cal-color]").forEach(setupColorPicker);
+  };
+  window.nlColorPickers(document);
 
   // Calendar card tabs (with a Google Calendar connected): Nomad Life and Google Calendar.
   // They are links (?cal=google renders the Google view on the server); here a click swaps
@@ -1102,6 +1112,27 @@
       // The server keeps its last read when Google does not answer a refresh, and says so.
       say(google.querySelector("[data-cal-refresh-failed]") ? "Could not refresh the calendar." : "Calendar refreshed.");
     }
+    function show(html) {
+      google.innerHTML = html;
+      window.nlColorPickers(google);  // the colors are chosen in this tab's legend
+    }
+    function recolored(key) {
+      // A color chosen in this tab's legend: the view is read again (Google's events are
+      // kept a minute, so no new call) and stays until the new one replaces it; the focus
+      // goes back to the same square.
+      var mine = ++latest;
+      var focused = google.contains(document.activeElement);
+      fetchView(false)
+        .then(function (html) {
+          if (mine !== latest) return;
+          show(html);
+          if (!focused || !key) return;
+          google.querySelectorAll("[data-cal-color]").forEach(function (f) {
+            if (f.getAttribute("data-key") === key) f.querySelector(".cal-color-btn").focus();
+          });
+        })
+        .catch(function () { /* the colors on screen stay; the next view shows the change */ });
+    }
     function reload() {
       // Refresh Calendar on a view already shown: it stays until the new one replaces it.
       var mine = ++latest;
@@ -1110,7 +1141,7 @@
       fetchView(true)
         .then(function (html) {
           if (mine !== latest) return;
-          google.innerHTML = html;
+          show(html);
           refreshed();
         })
         .catch(function () {
@@ -1144,7 +1175,7 @@
       fetchView(fresh)
         .then(function (html) {
           if (mine !== latest) return;
-          google.innerHTML = html;
+          show(html);
           google.removeAttribute("aria-busy");
           if (fresh) { spin(false); refreshed(); }
         })
@@ -1193,9 +1224,10 @@
       e.preventDefault();
       choose(tab);
     });
-    // A country's color changed: the Google view takes it the next time it shows.
-    document.addEventListener("nl:calcolors", function () {
-      if (!google.hidden) load(); else { loaded = false; google.textContent = ""; }
+    // A color changed: the Google view shown takes it at once, a hidden one when it shows.
+    document.addEventListener("nl:calcolors", function (e) {
+      if (!google.hidden && loaded) recolored(e.detail && e.detail.key);
+      else { loaded = false; google.textContent = ""; }
     });
     // Refresh Calendar is a button (role="button"): Space presses it too.
     nav.addEventListener("keydown", function (e) {

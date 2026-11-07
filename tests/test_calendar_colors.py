@@ -66,7 +66,7 @@ class ColorPickerTests(AppTestCase):
         self.assertEqual(answer["names"]["cal-9"], "Coral")
         html = self.html()
         self.assertEqual(legend_color(html, "Thailand"), "cal-9")
-        self.assertIn('class="cal-day cal-9" data-tip="Mon 18 Jan 2027: \U0001F1F9\U0001F1ED Thailand" data-c="thailand"', html)
+        self.assertIn('class="cal-day cal-9" data-tip="Mon 18 Jan 2027 \U0001F1F9\U0001F1ED Thailand" data-c="thailand"', html)
         self.new_year(2028, "Lisbon", "Portugal")
         self.add_movement(2028, "Chiang Mai", "Thailand", "2028-02-01", "2028-02-03")
         self.assertEqual(legend_color(self.html(2028), "Thailand"), "cal-9")
@@ -121,12 +121,12 @@ class ColorPickerTests(AppTestCase):
                       '.cal-color-btn[aria-expanded="true"] + .cal-color-menu { display: grid; }', css)
         self.assertIn(".cal-color.is-closed .cal-color-menu { display: none; }", css)
         js = read("static", "js", "theme.js")
-        block = js[js.index('document.querySelectorAll("[data-cal-color]")'):]
+        block = js[js.index("function setupColorPicker(form)"):]
         block = block[:block.index("  // Calendar card tabs")]
         self.assertIn("Object.keys(j.colors || {}).forEach", block)
         self.assertIn("td[data-c=", block)
         self.assertIn('if (e.key === "Escape")', block)
-        self.assertIn('document.dispatchEvent(new CustomEvent("nl:calcolors"));', block)
+        self.assertIn('document.dispatchEvent(new CustomEvent("nl:calcolors", { detail: { key: form.getAttribute("data-key") } }));', block)
         self.assertIn('field.name = "color"; field.value = choice.value;', block)
         self.assertIn('document.addEventListener("nl:calcolors"', js)
 
@@ -142,24 +142,31 @@ class GoogleColorsTests(TabsCase):
         return self.client.get("/year/2026/calendar/google").get_data(as_text=True)
 
     def google_color(self, html, title):
-        m = re.search(r'<li><i class="cal-swatch (cal-[a-z0-9]+)" aria-hidden="true"></i><span dir="auto">'
-                      + re.escape(title) + "</span>", html)
+        # Since 1.12.19 the Google legend has the picker (aria-label "Color of <title>...").
+        m = re.search(r'class="cal-swatch cal-color-btn (cal-[a-z0-9]+)" aria-haspopup="true" '
+                      r'aria-expanded="false" aria-label="Color of ' + re.escape(title) + r'[: (]', html)
+        return m.group(1) if m else None
+
+    def nomad_color(self, key):
+        # With Google connected the Nomad Life legend has plain squares that follow it.
+        m = re.search(r'<i class="cal-swatch (cal-[a-z0-9]+)" aria-hidden="true" data-legend-key="'
+                      + re.escape(key) + '"', self.dashboard())
         return m.group(1) if m else None
 
     def test_events_take_their_countrys_color(self):
         self.google.events = [ev("Thailand", "2026-02-01", "2026-02-03"), ev("Bangkok", "2026-03-01", "2026-03-02"),
                               ev("Lisbon", "2026-04-01", "2026-04-02"), ev("Dentist", "2026-05-01", "2026-05-01")]
         html = self.fragment()
-        nomad = legend_color(self.dashboard(), "Thailand")
+        nomad = self.nomad_color("thailand")
+        self.assertIsNotNone(nomad)
         self.assertEqual(self.google_color(html, "Thailand"), nomad)
         self.assertEqual(self.google_color(html, "Bangkok"), nomad)  # a city of the year's stays
         dentist = self.google_color(html, "Dentist")
-        self.assertNotIn(dentist, (nomad, "cal-base"))
-        self.assertNotIn("cal-color-btn", html)  # no picker in the Google legend
+        self.assertNotIn(dentist, (nomad, "cal-base", None))
 
     def test_a_country_code_matches_too(self):
         self.google.events = [ev("TH", "2026-02-01", "2026-02-03")]
-        self.assertEqual(self.google_color(self.fragment(), "TH"), legend_color(self.dashboard(), "Thailand"))
+        self.assertEqual(self.google_color(self.fragment(), "TH"), self.nomad_color("thailand"))
 
     def test_a_changed_color_shows_in_the_next_google_view(self):
         self.google.events = [ev("Thailand", "2026-02-01", "2026-02-03")]
@@ -176,7 +183,7 @@ class ColorReviewTests(ColorPickerTests):
         html = self.html()
         self.assertIn('aria-haspopup="true" aria-expanded="false" aria-label="Color of Thailand', html)
         js = read("static", "js", "theme.js")
-        block = js[js.index('document.querySelectorAll("[data-cal-color]")'):]
+        block = js[js.index("function setupColorPicker(form)"):]
         block = block[:block.index("  // Calendar card tabs")]
         self.assertIn('btn.addEventListener("click", function () { setOpen(btn.getAttribute("aria-expanded") !== "true"); });', block)
         self.assertNotIn('btn.addEventListener("focus", place)', block)  # focus alone no longer opens

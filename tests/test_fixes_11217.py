@@ -170,10 +170,10 @@ class GoogleTooltipFlagTests(TabsCase):
         self.google.events = [ev("Italy", "2026-02-01", "2026-02-01"), ev("Bangkok", "2026-03-01", "2026-03-01"),
                               ev("Dentist", "2026-05-01", "2026-05-01")]
         html = self.client.get("/year/2026/calendar/google").get_data(as_text=True)
-        self.assertIn('data-tip="Sun 1 Feb 2026: \U0001F1EE\U0001F1F9 Italy"', html)
-        self.assertIn('data-tip="Sun 1 Mar 2026: \U0001F1F9\U0001F1ED Bangkok"', html)  # a city of the stays
-        self.assertIn('data-tip="Fri 1 May 2026: Dentist"', html)
-        self.assertIn('data-tip="Mon 2 Feb 2026: no event"', html)
+        self.assertIn('data-tip="Sun 1 Feb 2026 \U0001F1EE\U0001F1F9 Italy"', html)
+        self.assertIn('data-tip="Sun 1 Mar 2026 \U0001F1F9\U0001F1ED Bangkok"', html)  # a city of the stays
+        self.assertIn('data-tip="Fri 1 May 2026 Dentist"', html)
+        self.assertIn('data-tip="Mon 2 Feb 2026 no event"', html)
 
 
 class SettingsReviewTests(AppTestCase):

@@ -67,8 +67,8 @@ class CalendarTests(AppTestCase):
         self.assertNotEqual(italy, spain)
         self.assertEqual(days["2030-03-11"][0], italy)  # one color per country
         self.assertEqual(days["2030-03-05"][0], spain)  # the travel day: the later stay
-        self.assertEqual(days["2030-03-05"][1], "Tue 5 Mar 2030: Spain")
-        self.assertEqual(days["2030-03-09"], ("cal-none", "Sat 9 Mar 2030: not logged"))
+        self.assertEqual(days["2030-03-05"][1], "Tue 5 Mar 2030 Spain")
+        self.assertEqual(days["2030-03-09"], ("cal-none", "Sat 9 Mar 2030 not logged"))
 
     def test_screen_readers_hear_where_each_day_counts(self):
         # The color alone tells them nothing, and the hover text is for a mouse only.
@@ -87,8 +87,8 @@ class CalendarTests(AppTestCase):
         self.add_movement(2020, "Lisbon", "Portugal", "2020-01-10", "2020-01-20")
         days = self.days(2020)
         self.assertEqual(len(days), 366)
-        self.assertEqual(days["2020-01-05"], ("cal-none", "Sun 5 Jan 2020: not logged"))
-        self.assertEqual(days["2020-01-15"], ("cal-base", "Wed 15 Jan 2020: Portugal"))
+        self.assertEqual(days["2020-01-05"], ("cal-none", "Sun 5 Jan 2020 not logged"))
+        self.assertEqual(days["2020-01-15"], ("cal-base", "Wed 15 Jan 2020 Portugal"))
         self.assertEqual(Counter(c for c, _ in days.values())["cal-none"], 366 - 10 - 11)
         self.assertIn("Not logged <span class=\"muted\">345 days</span>", self.page(2020))
 
@@ -157,8 +157,8 @@ class CalendarTooltipTests(AppTestCase):
         self.new_year(2027, "Lisbon", "Portugal")
         self.add_movement(2027, "Bangkok", "Thailand", "2027-01-18", "2027-01-30")
         html = self.client.get("/year/2027").get_data(as_text=True)
-        self.assertIn('data-tip="Sun 24 Jan 2027: \U0001F1F9\U0001F1ED Thailand"', html)
-        self.assertIn('data-tip="Mon 1 Feb 2027: not logged"', html)  # no flag where nothing counts
+        self.assertIn('data-tip="Sun 24 Jan 2027 \U0001F1F9\U0001F1ED Thailand"', html)
+        self.assertIn('data-tip="Mon 1 Feb 2027 not logged"', html)  # no flag where nothing counts
         self.assertNotIn('<td class="cal-day cal-1" title=', html)
         legend = html[html.index('<ul class="cal-legend'):]
         legend = legend[:legend.index("</ul>")]

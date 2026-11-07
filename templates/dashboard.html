@@ -187,7 +187,8 @@
       <span class="muted small fold-sub">Your {{ y.year }} day-by-day plan</span>
     </summary>
     <div class="cal-panel" data-cal-panel="local"{% if google_view %} hidden{% endif %}>
-    {% with cal=calendar, empty_label="Not logged", picker=true %}{% include "_calendar_grid.html" %}{% endwith %}
+    {# With Google connected the colors are chosen in the Google tab; these follow them. #}
+    {% with cal=calendar, empty_label="Not logged", picker=false, keyed=true %}{% include "_calendar_grid.html" %}{% endwith %}
     </div>
     <div class="cal-panel" data-cal-panel="google"{% if not google_view %} hidden{% endif %}>
     {% if google_view %}{% with view=google_view %}{% include "_google_calendar.html" %}{% endwith %}{% endif %}

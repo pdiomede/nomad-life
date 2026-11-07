@@ -6,7 +6,7 @@
     {% if view.refresh_failed %}<p class="small cal-notice" data-cal-refresh-failed>Google did not answer, so this is the calendar as it was read a moment ago. Try again in a moment.</p>{% endif %}
     {% if view.truncated %}<p class="small cal-notice">This calendar has more events in {{ y.year }} than Nomad Life can show at once; the latest ones are left out (shown as No event).</p>{% endif %}
     {% if not view.calendar.legend %}<p class="small cal-notice">No events in {{ y.year }} in this calendar.</p>{% endif %}
-    {% with cal=view.calendar, empty_label="No event", picker=false %}{% include "_calendar_grid.html" %}{% endwith %}
+    {% with cal=view.calendar, empty_label="No event", picker=true, tab="google" %}{% include "_calendar_grid.html" %}{% endwith %}
 {% elif view.state == "scope" %}
     <div class="cal-notice">
       <p class="small">Your Google Calendar <strong dir="auto">{{ name }}</strong> is connected. To show its events here, Google needs one more permission from you: to see events, read only. You are asked once; your calendar stays chosen and Google brings you back here.</p>

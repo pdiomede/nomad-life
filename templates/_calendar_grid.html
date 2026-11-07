@@ -1,22 +1,26 @@
 {# The legend and the 12 months of a dashboard calendar: Nomad Life's (year_calendar) or the
    chosen Google calendar's (google_year_calendar). cal: the calendar; empty_label: the grey
-   days' name ("Not logged", "No event"); picker: the Nomad Life legend, whose squares open
-   a color picker (POST /calendar/colors; a plain form without JavaScript, theme.js recolors
-   in place). The Google tab's legend has none: its colors follow the Nomad Life ones. #}
+   days' name ("Not logged", "No event"); picker: the legend's squares open a color picker
+   (POST /calendar/colors; a plain form without JavaScript, theme.js recolors in place). It is
+   the Google tab's legend when Google is connected (its colors drive both tabs), else the
+   Nomad Life one. keyed: a legend without a picker that still follows a choice in place
+   (data-c on the days, data-legend-key on the squares). tab: "local" or "google", where the
+   plain form comes back to. #}
 {% import "_macros.html" as ui with context %}
     <ul class="cal-legend small" aria-label="Colors">
       {% for c in cal.legend %}
-      <li>{% if picker %}<form class="cal-color" method="post" action="{{ url_for('calendar_color') }}" data-cal-color data-key="{{ c.key }}">
+      {% set saves = c.name if c.name is defined else c.country %}{% set label = c.label or c.country %}
+      <li>{% if picker and saves %}<form class="cal-color" method="post" action="{{ url_for('calendar_color') }}" data-cal-color data-key="{{ c.key }}">
         {{ ui.csrf() }}
-        <input type="hidden" name="country" value="{{ c.country }}">
+        <input type="hidden" name="country" value="{{ saves }}">
         <input type="hidden" name="year" value="{{ y.year }}">
-        <input type="hidden" name="back" value="{{ url_for('dashboard', year=y.year, cal='local', _anchor='calendar') }}">
-        <button type="button" class="cal-swatch cal-color-btn {{ c.color }}" aria-haspopup="true" aria-expanded="false" aria-label="Color of {{ c.country }}: {{ calendar_colors[c.color] }}"></button>
-        <div class="cal-color-menu" role="group" aria-label="Choose a color for {{ c.country }}">
+        <input type="hidden" name="back" value="{{ url_for('dashboard', year=y.year, cal=tab or 'local', _anchor='calendar') }}">
+        <button type="button" class="cal-swatch cal-color-btn {{ c.color }}" aria-haspopup="true" aria-expanded="false" aria-label="Color of {{ label }}: {{ calendar_colors[c.color] }}" data-label="{{ label }}"></button>
+        <div class="cal-color-menu" role="group" aria-label="Choose a color for {{ label }}">
           {% for key, name in calendar_colors.items() %}<button type="submit" name="color" value="{{ key }}" class="cal-color-opt {{ key }}" aria-label="{{ name }}" title="{{ name }}"{% if key == c.color %} aria-pressed="true"{% endif %}></button>{% endfor %}
           <button type="submit" name="color" value="auto" class="cal-color-auto">Automatic</button>
         </div>
-      </form>{% else %}<i class="cal-swatch {{ c.color }}" aria-hidden="true"></i>{% endif %}<span dir="auto">{{ c.country }}</span>{% if c.is_base %} <span class="tag">Base</span>{% endif %} <span class="muted">{{ c.days }} day{{ '' if c.days == 1 else 's' }}</span></li>
+      </form>{% else %}<i class="cal-swatch {{ c.color }}" aria-hidden="true"{% if keyed and c.key %} data-legend-key="{{ c.key }}"{% endif %}></i>{% endif %}<span dir="auto">{{ c.country }}</span>{% if c.is_base %} <span class="tag">Base</span>{% endif %} <span class="muted">{{ c.days }} day{{ '' if c.days == 1 else 's' }}</span></li>
       {% endfor %}
       {% if cal.not_logged %}
       <li><i class="cal-swatch cal-none" aria-hidden="true"></i>{{ empty_label }} <span class="muted">{{ cal.not_logged }} day{{ '' if cal.not_logged == 1 else 's' }}</span></li>
@@ -29,7 +33,7 @@
         <thead><tr>{% for short, full in [("M", "Monday"), ("T", "Tuesday"), ("W", "Wednesday"), ("T", "Thursday"), ("F", "Friday"), ("S", "Saturday"), ("S", "Sunday")] %}<th scope="col"><abbr title="{{ full }}">{{ short }}</abbr></th>{% endfor %}</tr></thead>
         <tbody>
           {% for week in ([none] * m.blanks + m.days) | batch(7) %}
-          <tr>{% for d in week %}{% if d %}<td class="cal-day {{ d.color }}{% if d.today %} cal-today{% endif %}" data-tip="{{ d.tip }}"{% if picker and d.key %} data-c="{{ d.key }}"{% endif %}{% if d.today %} aria-current="date"{% endif %}><time datetime="{{ d.iso }}">{{ d.day }}</time><span class="visually-hidden">, {{ d.where }}</span></td>{% else %}<td></td>{% endif %}{% endfor %}</tr>
+          <tr>{% for d in week %}{% if d %}<td class="cal-day {{ d.color }}{% if d.today %} cal-today{% endif %}" data-tip="{{ d.tip }}"{% if (picker or keyed) and d.key %} data-c="{{ d.key }}"{% endif %}{% if d.today %} aria-current="date"{% endif %}><time datetime="{{ d.iso }}">{{ d.day }}</time><span class="visually-hidden">, {{ d.where }}</span></td>{% else %}<td></td>{% endif %}{% endfor %}</tr>
           {% endfor %}
         </tbody>
       </table>

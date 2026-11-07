@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.19] - 2026-11-07
+
+### Changed
+
+- **Google Calendar drives the colors.** With Google Calendar connected, you choose colors in the Google Calendar tab's legend, and the Nomad Life tab follows: an event named after a country (Italy), or after a city of the year's stays (Rome, which says "Rome (Italy)"), sets that country's color in both tabs and every year. Any other event (a dentist appointment) can have its own color too, shown in the Google tab. Without Google, the colors are chosen in the Nomad Life legend as before. Colors already chosen keep working.
+- Both calendar legends (Nomad Life and Google Calendar) list the base country first, then the other countries by the most days.
+- The calendar tooltips read "Sat 23 Jan 2027 🇮🇹 Italy", without a colon after the date.
+
 ## [1.12.18] - 2026-11-07
 
 ### Fixed
