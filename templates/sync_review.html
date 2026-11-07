@@ -2,7 +2,8 @@
 {% import "_macros.html" as ui with context %}
 {# Turning a year to AUTO: what syncing with the Google calendar would change, each change
    with a checkbox (sync_review in app.py). Applying turns AUTO on. #}
-{% macro place(p) %}{{ ui.flag(p.country) }}<strong>{{ p.country }}</strong>{% if p.city %} <span class="loc-sep" aria-hidden="true">|</span> {{ p.city }}{% endif %}{% endmacro %}
+{# bdi: a right-to-left name (القاهرة) never pulls the dates after it into its direction. #}
+{% macro place(p) %}{{ ui.flag(p.country) }}<strong><bdi>{{ p.country }}</bdi></strong>{% if p.city %} <span class="loc-sep" aria-hidden="true">|</span> <bdi>{{ p.city }}</bdi>{% endif %}{% endmacro %}
 {% macro days(p) %}<span class="nowrap">{{ p.start_date | daydate }}</span> <span class="muted">to</span> <span class="nowrap">{{ p.end_date | daydate }}</span>{% endmacro %}
 {% block title %}Turn on AUTO for {{ y.year }} | Nomad Life{% endblock %}
 {% block content %}

@@ -20,7 +20,7 @@
           {% for key, name in calendar_colors.items() %}<button type="submit" name="color" value="{{ key }}" class="cal-color-opt {{ key }}" aria-label="{{ name }}" title="{{ name }}"{% if key == c.color %} aria-pressed="true"{% endif %}></button>{% endfor %}
           <button type="submit" name="color" value="auto" class="cal-color-auto">Automatic</button>
         </div>
-      </form>{% else %}<i class="cal-swatch {{ c.color }}" aria-hidden="true"{% if keyed and c.key %} data-legend-key="{{ c.key }}"{% endif %}></i>{% endif %}<span dir="auto">{{ c.country }}</span>{% if c.is_base %} <span class="tag">Base</span>{% endif %} <span class="muted">{{ c.days }} day{{ '' if c.days == 1 else 's' }}</span></li>
+      </form>{% else %}<i class="cal-swatch {{ c.color }}" aria-hidden="true"{% if keyed and c.key %} data-legend-key="{{ c.key }}"{% endif %}></i>{% endif %}<span dir="auto">{{ c.country }}</span> <span class="muted">{{ c.days }} day{{ '' if c.days == 1 else 's' }}</span></li>
       {% endfor %}
       {% if cal.not_logged %}
       <li><i class="cal-swatch cal-none" aria-hidden="true"></i>{{ empty_label }} <span class="muted">{{ cal.not_logged }} day{{ '' if cal.not_logged == 1 else 's' }}</span></li>

@@ -97,7 +97,7 @@
         </section>
         <section id="base" class="doc-sub" data-doc-title="Change your base or delete a year">
           <h3>Change your base or delete a year</h3>
-          <p>On the dashboard, <strong>Manage Base country</strong> (on the Base card) lets you change the base city and country, upload your rental contract, or delete the year. Deleting a year removes its movements and receipts and asks you to type the year to confirm.</p>
+          <p>On the dashboard, the gear at the top right of the Base card, <strong>Manage Base country</strong>, lets you change the base city and country, upload your rental contract, or delete the year. Deleting a year removes its movements and receipts and asks you to type the year to confirm.</p>
         </section>
         <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
@@ -204,7 +204,7 @@
 
         <section id="threshold" class="doc-sub" data-doc-title="The 183 day line">
           <h3>The {{ threshold }} day line</h3>
-          <p>Many countries treat you as a tax resident once you spend {{ threshold }} days or more there in a year. The <strong>Days in Base country</strong> card marks that line: it says <strong>At least {{ threshold }} days</strong>, or how many days you are short. In <strong>Days per country</strong> a bar turns red when another country reaches {{ threshold }} days.</p>
+          <p>Many countries treat you as a tax resident once you spend {{ threshold }} days or more there in a year. The <strong>Days in Base country</strong> card marks that line on its bar: with the marker on, point at the bar to read <strong>At least {{ threshold }} days</strong>, or how many days you are short. In <strong>Days per country</strong> a bar turns red when another country reaches {{ threshold }} days.</p>
           <p class="doc-note">Nomad Life counts days; it does not give tax advice. Rules differ by country (some count partial days or look at other ties), so check yours with an accountant. The guides on <a href="{{ url_for('guide', slug='183-day-rule') }}">the {{ threshold }} day rule</a> and <a href="{{ url_for('guide', slug='count-days-in-a-country') }}">counting your days</a> explain more.</p>
         </section>
         <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
@@ -212,12 +212,12 @@
 
       <section id="dashboard" class="doc-section" data-doc-title="Your dashboard">
         <h2>Your dashboard</h2>
-        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in Base country 290 of 365, with the 183 marker switch off; Days outside Base country 34; Year elapsed. Numbered markers point at + Year, + Add movement and Manage Base country', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
+        {{ shot('dashboard', 'The top of the 2026 dashboard: Base Lisbon, Portugal; Days in Base country 290 of 365, with the 183 marker switch off; Days outside Base country 34; Year elapsed. Numbered markers point at + Year, + Add movement and the Manage Base country gear', '1 Add a year, 2 add a movement, 3 manage your base and rental contract.') }}
         <section id="cards" class="doc-sub" data-doc-title="The four cards">
           <h3>The four cards</h3>
           <ul>
             <li><strong>Base</strong>: your base city and country, and the link to manage them.</li>
-            <li><strong>Days in Base country</strong>: days counted for your base, out of the days in the year, with the {{ threshold }} day marker. The marker and its message start hidden: turn on the <strong>Show {{ threshold }} marker</strong> switch, here or on Days per Country, to show them on both cards; this browser remembers it.</li>
+            <li><strong>Days in Base country</strong>: days counted for your base, out of the days in the year, with the {{ threshold }} day marker. The marker starts hidden: turn on the <strong>Show {{ threshold }} marker</strong> switch, here or on Days per Country, to show it on both cards; this browser remembers it. With the marker on, pointing at the bar says how far the line is. The gear at the top right of the Base card, <strong>Manage Base country</strong>, opens your base.</li>
             <li><strong>Days outside Base country</strong>: days counted for every other country.</li>
             <li><strong>Year elapsed</strong>: how far into the year today is.</li>
           </ul>

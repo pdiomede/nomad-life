@@ -31,8 +31,9 @@ class PaletteTests(AppTestCase):
                          ["Red", "Orange", "Yellow", "Lime", "Green", "Teal", "Cyan", "Blue", "Indigo",
                           "Purple", "Magenta", "Pink", "Raspberry", "Brown", "Slate"])
         css = read("static", "css", "style.css")
-        wanted = {"#D94848", "#F08935", "#D9B630", "#8CAE3A", "#2B9E62", "#169D91", "#28B7D2", "#448DD2",
-                  "#4756C4", "#7650BE", "#BC40B0", "#EC7AA2", "#A94169", "#A76A43", "#617988"}
+        # Red and brown a shade darker than given (#D94848, #A76A43): white day numbers need 4.5:1.
+        wanted = {"#CF4545", "#F08935", "#D9B630", "#8CAE3A", "#2B9E62", "#169D91", "#28B7D2", "#448DD2",
+                  "#4756C4", "#7650BE", "#BC40B0", "#EC7AA2", "#A94169", "#A36741", "#617988"}
         found = set()
         for key in appmod.CALENDAR_PALETTE:
             values = re.findall(rf"--{key}: (#[0-9A-F]{{6}});", css)

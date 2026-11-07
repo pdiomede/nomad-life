@@ -52,8 +52,7 @@ const SHOTS = [
       __callout("#country", 1); __type("#country", "ita");` },
   { name: "dashboard", path: "/year/2026", select: [".page-head", ".stats"], prep: `
       __callout(".year-tab.add", 1); __callout(".page-head .btn-primary", 2);
-      var link = document.querySelector(".stat-base a.small"); link.style.display = "inline-block";
-      __callout(".stat-base a.small", 3, "right");` },
+      __callout(".stat-base .stat-gear", 3, "left");` },
   { name: "movements-table", path: "/year/2026", select: ["#movements"], prep: `document.getElementById("movements").open = true;` },
   { name: "calendar", path: "/year/2026", wait: 300, select: [".cal-card"], prep: `document.querySelector(".cal-card").open = true;` },
   // The Google Calendar tab, as the server draws it with ?cal=google (the card opens on it).

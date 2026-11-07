@@ -161,9 +161,9 @@ class UiFixTests(SyncCase):
 
     def test_11_the_switch_tooltip_takes_no_room_while_hidden(self):
         css = open("static/css/style.css", encoding="utf-8").read()
-        self.assertIn(".sync-switch.switch-tip[data-tip]::after { display: none; left: 0; right: auto; "
-                      "white-space: normal; width: max-content; max-width: min(260px, calc(100vw - 32px)); }", css)
-        self.assertIn(".sync-switch.switch-tip[data-tip]:focus-visible::after { display: block; }", css)
+        # Since the UI review it hangs from the title line, with the chip's tooltip (test_1 there).
+        self.assertIn(".sync-chip[data-tip]::after, .year-title .sync-switch.switch-tip[data-tip]::after {\n"
+                      "  content: attr(data-tip); display: none;", css)
 
     def test_12_no_date_picker_on_a_read_only_date(self):
         js = open("static/js/theme.js", encoding="utf-8").read()
@@ -186,3 +186,111 @@ class UiFixTests(SyncCase):
         self.assertEqual(resp.headers["Location"], "/year/2026")
         resp = self.client.post("/year/2026/sync", data={"plan": "x", "change": []}, follow_redirects=True)
         self.assertIn("2026 is already in AUTO mode.", resp.get_data(as_text=True))
+
+
+def contrast(a, b):
+    def lum(h):
+        r, g, bl = (int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+        f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4  # noqa: E731
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(bl)
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+class LeftoverFixTests(SyncCase):
+    """Three bugs of the 2.0.0 bug hunt left over by its cap."""
+
+    def test_16_the_row_marks_explain_themselves(self):
+        self.events(gev("g1", "Rome, Italy", "2026-02-01", "2026-02-06"))
+        self.turn_auto()
+        mid = self.rows()[0]["id"]
+        self.add_receipt(mid)
+        self.events()
+        html = self.dashboard()
+        self.assertIn('class="sync-row-icon" title="From Google Calendar" aria-label="From Google Calendar" role="img"', html)
+        self.assertIn('Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar.', html)
+        self.assertIn("Its event is no longer in your Google calendar.", self.client.get(f"/movements/{mid}").get_data(as_text=True))
+        css = open("static/css/style.css", encoding="utf-8").read()
+        self.assertIn("@media (forced-colors: active) { .sync-row-icon { forced-color-adjust: none; background-color: CanvasText; } }", css)
+
+    def test_17_right_to_left_names_keep_the_dates_in_place(self):
+        self.events(gev("g1", "القاهرة, Egypt", "2026-02-01", "2026-02-05"))
+        self.assertIn("<bdi>القاهرة</bdi>", self.review())
+
+    def test_18_day_numbers_and_today_read_on_every_color(self):
+        import re
+        css = open("static/css/style.css", encoding="utf-8").read()
+        for key in appmod.CALENDAR_PALETTE:
+            bg = re.search(rf"--{key}: (#[0-9A-F]{{6}});", css).group(1)
+            fg = re.search(rf"\.{key} {{ background: var\(--{key}\); color: (#[0-9A-F]{{6}}); }}", css).group(1)
+            self.assertGreaterEqual(contrast(bg, fg), 4.5, key)
+        self.assertIn(".cal-today { box-shadow: inset 0 0 0 2px currentColor; font-weight: 700; }", css)
+
+
+class CardsAndLegendTests(SyncCase):
+    """The Base card's gear, the numbers in line, the bar's tooltip and the legend (2.0.0)."""
+
+    def test_no_base_tag_in_the_legend(self):
+        html = self.dashboard()
+        legend = html[html.index('class="cal-legend'):]
+        legend = legend[:legend.index("</ul>")]
+        self.assertNotIn('<span class="tag">Base</span>', legend)
+
+    def test_manage_base_country_is_a_gear(self):
+        html = self.dashboard()
+        self.assertIn('<a class="fold-gear stat-gear" href="/year/2026/base" data-tip="Manage Base country" '
+                      'aria-label="Manage Base country"></a>', html)
+        self.assertNotIn(">Manage Base country</a>", html)
+
+    def test_the_numbers_line_up(self):
+        html = self.dashboard()
+        stats = html[html.index('<section class="stats year-stats">'):html.index("</section>", html.index("year-stats"))]
+        self.assertEqual(stats.count('class="stat-value"'), 4)
+        self.assertEqual(stats.count('class="stat-foot"'), 4)
+        css = open("static/css/style.css", encoding="utf-8").read()
+        self.assertIn(".year-stats .stat { grid-row: span 3; display: grid; grid-template-rows: subgrid;", css)
+
+    def test_the_line_is_the_bars_tooltip(self):
+        html = self.dashboard()
+        self.assertIn('<div class="meter-tip is-short" data-tip="', html)
+        self.assertNotIn("pill-warn day-marker", html)
+        css = open("static/css/style.css", encoding="utf-8").read()
+        self.assertIn('[data-marker="off"] .meter-tip[data-tip]::after { display: none !important; }', css)
+
+
+class UiReviewTests(SyncCase):
+    """Found in a UI review of the recent features (after 2.0.0)."""
+
+    def css(self):
+        return open("static/css/style.css", encoding="utf-8").read()
+
+    def test_1_the_chip_tooltip_takes_no_room_and_its_text_is_read(self):
+        html = self.dashboard()
+        self.assertIn('MANUAL<span class="visually-hidden">: Movements are added manually</span></span>', html)
+        self.assertNotIn('aria-label="MANUAL', html)
+        css = self.css()
+        self.assertIn(".year-title { position: relative; display: flex;", css)
+        self.assertIn("width: max-content; max-width: min(320px, 100%); white-space: normal; text-align: left;", css)
+        self.assertIn(".sync-chip[data-tip]:focus::after, .year-title .sync-switch.switch-tip[data-tip]:focus::after { display: block; }", css)
+
+    def test_2_the_gear_tooltip_is_not_squeezed(self):
+        self.assertIn(".fold-gear.stat-gear[data-tip]::after { left: auto; right: 0; transform: translateY(-2px); }", self.css())
+
+    def test_3_stacked_cards_keep_their_space(self):
+        self.assertIn(".stats.year-stats > .stat { margin-bottom: 16px; }", self.css())
+
+    def test_4_the_switch_says_why_it_is_off(self):
+        other = self.app.test_client()
+        self.signup("b@example.com", client=other)
+        self.new_year(2026, client=other)
+        html = other.get("/year/2026").get_data(as_text=True)
+        self.assertIn('aria-describedby="sync-switch-tip"', html)
+        self.assertIn('<span class="visually-hidden" id="sync-switch-tip">Connect Google Calendar in Settings to turn on AUTO</span>', html)
+
+    def test_5_city_country_events_share_their_countrys_color(self):
+        self.add_movement(2026, "Lisbon", "Portugal", "2026-02-01", "2026-02-05")
+        self.events(gev("g1", "Lisbon, Portugal", "2026-02-01", "2026-02-06"))
+        html = self.client.get("/year/2026/calendar/google").get_data(as_text=True)
+        self.assertIn('<input type="hidden" name="country" value="Portugal">', html)
+        self.assertIn('class="cal-swatch cal-color-btn cal-base" aria-haspopup="true" aria-expanded="false" '
+                      'aria-label="Color of Lisbon, Portugal:', html)

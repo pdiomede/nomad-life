@@ -22,8 +22,8 @@
   /* Calendar day colors */
   --cal-text: #1B2030; --cal-none: #ECEDF1; --cal-base: #EC7AA2;
   --cal-1: #448DD2; --cal-2: #F08935; --cal-3: #2B9E62; --cal-4: #7650BE;
-  --cal-5: #D9B630; --cal-6: #169D91; --cal-7: #D94848; --cal-8: #4756C4;
-  --cal-9: #8CAE3A; --cal-10: #BC40B0; --cal-11: #28B7D2; --cal-12: #A76A43;
+  --cal-5: #D9B630; --cal-6: #169D91; --cal-7: #CF4545; --cal-8: #4756C4;
+  --cal-9: #8CAE3A; --cal-10: #BC40B0; --cal-11: #28B7D2; --cal-12: #A36741;
   --cal-13: #A94169; --cal-14: #617988;
   --accent-1: #B6509E;
   --accent-2: #2EBAC6;
@@ -71,8 +71,8 @@
   /* Calendar day colors */
   --cal-text: #F1F3F8; --cal-none: #343A4F; --cal-base: #EC7AA2;
   --cal-1: #448DD2; --cal-2: #F08935; --cal-3: #2B9E62; --cal-4: #7650BE;
-  --cal-5: #D9B630; --cal-6: #169D91; --cal-7: #D94848; --cal-8: #4756C4;
-  --cal-9: #8CAE3A; --cal-10: #BC40B0; --cal-11: #28B7D2; --cal-12: #A76A43;
+  --cal-5: #D9B630; --cal-6: #169D91; --cal-7: #CF4545; --cal-8: #4756C4;
+  --cal-9: #8CAE3A; --cal-10: #BC40B0; --cal-11: #28B7D2; --cal-12: #A36741;
   --cal-13: #A94169; --cal-14: #617988;
   --success-bg: rgba(70, 188, 75, 0.14);
   --warning-bg: rgba(242, 164, 58, 0.14);
@@ -112,8 +112,8 @@
     /* Calendar day colors */
     --cal-text: #F1F3F8; --cal-none: #343A4F; --cal-base: #EC7AA2;
     --cal-1: #448DD2; --cal-2: #F08935; --cal-3: #2B9E62; --cal-4: #7650BE;
-    --cal-5: #D9B630; --cal-6: #169D91; --cal-7: #D94848; --cal-8: #4756C4;
-    --cal-9: #8CAE3A; --cal-10: #BC40B0; --cal-11: #28B7D2; --cal-12: #A76A43;
+    --cal-5: #D9B630; --cal-6: #169D91; --cal-7: #CF4545; --cal-8: #4756C4;
+    --cal-9: #8CAE3A; --cal-10: #BC40B0; --cal-11: #28B7D2; --cal-12: #A36741;
     --cal-13: #A94169; --cal-14: #617988;
     --success-bg: rgba(70, 188, 75, 0.14);
     --warning-bg: rgba(242, 164, 58, 0.14);
@@ -331,6 +331,22 @@ main:focus { outline: none; }
 /* Cards in a row share one height: the title stays at the top and the content sits at the
    bottom, so a card with less to show has its gap under the title, not under the content. */
 .year-stats .stat > .stat-label + *, .year-stats .stat > .stat-head + * { margin-top: auto; }
+/* Each card is its title, its number and what is under it (.stat-foot). A shared grid puts the
+   numbers of the cards in a row on one line, whatever is under them (a bar, a sentence). */
+.stat-foot { display: flex; flex-direction: column; gap: 6px; }
+@supports (grid-template-rows: subgrid) {
+  .year-stats { grid-auto-rows: 1fr auto auto; row-gap: 0; margin-bottom: -12px; }  /* the cards' own 16px below */
+  .year-stats .stat { grid-row: span 3; display: grid; grid-template-rows: subgrid; row-gap: 6px; }
+  .stats.year-stats > .stat { margin-bottom: 16px; }  /* over .stats > .card's 0 */
+  .year-stats .stat > .stat-label + *, .year-stats .stat > .stat-head + * { margin-top: 0; align-self: end; }
+  .year-stats .stat > .stat-head, .year-stats .stat > .stat-label { align-self: start; }
+  .year-stats .stat > .stat-foot { align-self: start; }
+}
+/* Manage Base country: a gear at the top right of the Base card, its tooltip opening inward. */
+.stat-gear { margin: -4px -6px -4px 0; }
+.fold-gear.stat-gear[data-tip]::after { left: auto; right: 0; transform: translateY(-2px); }
+@media (hover: hover) { .fold-gear.stat-gear[data-tip]:hover::after { transform: none; } }
+.fold-gear.stat-gear[data-tip]:focus-visible::after { transform: none; }
 /* The switch with only a tooltip (its name is the aria-label), opening toward the card. */
 .switch-tip[data-tip] { position: relative; }
 .switch-tip[data-tip]::after {
@@ -359,37 +375,50 @@ main:focus { outline: none; }
 @media (prefers-reduced-motion: reduce) { .switch-track, .switch-thumb { transition: none; } }
 @media (forced-colors: active) { .switch-track { border: 1px solid CanvasText; } .switch-thumb { forced-color-adjust: none; background: CanvasText; } }
 [data-marker="off"] .day-marker { display: none !important; }
+/* The Days in Base country bar: with the 183 marker on, pointing at it tells how far the line
+   is. The hover area reaches a few pixels around the thin bar; hidden, the tooltip takes no
+   room (an invisible one would widen phones). */
+.meter-tip { position: relative; padding: 6px 0; margin: -6px 0; }
+.meter-tip[data-tip]::after {
+  content: attr(data-tip); display: none; position: absolute; top: calc(100% + 2px); left: 0; z-index: 30; padding: 5px 9px; border-radius: 6px;
+  width: max-content; max-width: min(260px, calc(100vw - 32px)); white-space: normal;
+  background: var(--primary); color: var(--primary-text); font-size: 12px; font-weight: 600; line-height: 1.3; box-shadow: var(--shadow);
+}
+@media (hover: hover) { .meter-tip[data-tip]:hover::after { display: block; } }
+[data-marker="off"] .meter-tip[data-tip]::after { display: none !important; }
 
 /* AUTO / MANUAL next to the year (2.0.0): the chip says how the year's movements are kept, the
    switch beside it changes it (AUTO goes through the review first). Without a Google
    connection the switch is aria-disabled: still focusable, its tooltip says why. */
-.year-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.sync-chip { position: relative; display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; border: 1px solid var(--border); cursor: default; }
+/* The chip's and the switch's tooltips hang from the title line (position: relative here, the
+   two static): they start at its left edge and never run past the screen. Hidden, they take no
+   room (an invisible one widened phones). */
+.year-title { position: relative; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sync-chip { position: static; display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; border: 1px solid var(--border); cursor: default; }
 .sync-chip.is-auto { background: var(--success-bg); color: var(--success-text); border-color: transparent; }
 .sync-chip.is-manual { background: var(--surface-2); color: var(--muted); }
-.sync-chip[data-tip]::after {
-  content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; padding: 5px 9px; border-radius: 6px; width: max-content; max-width: min(320px, 80vw); white-space: normal;
+.sync-chip[data-tip]::after, .year-title .sync-switch.switch-tip[data-tip]::after {
+  content: attr(data-tip); display: none; position: absolute; top: calc(100% + 8px); left: 0; right: auto; z-index: 30; padding: 5px 9px; border-radius: 6px;
+  width: max-content; max-width: min(320px, 100%); white-space: normal; text-align: left;
   background: var(--primary); color: var(--primary-text); font-size: 12px; font-weight: 600; letter-spacing: 0; line-height: 1.35; box-shadow: var(--shadow);
-  opacity: 0; transform: translateY(-2px); pointer-events: none; transition: opacity 0.12s ease, transform 0.12s ease;
+  opacity: 1; transform: none; pointer-events: none;
 }
-@media (hover: hover) { .sync-chip[data-tip]:hover::after { opacity: 1; transform: none; } }
-.sync-chip[data-tip]:focus-visible::after { opacity: 1; transform: none; }
+@media (hover: hover) { .sync-chip[data-tip]:hover::after, .year-title .sync-switch.switch-tip[data-tip]:hover::after { display: block; } }
+/* :focus, not only :focus-visible: a tap on a phone focuses the chip and shows it too. */
+.sync-chip[data-tip]:focus::after, .year-title .sync-switch.switch-tip[data-tip]:focus::after { display: block; }
+.year-title .sync-switch.switch-tip[data-tip], .sync-switch-form { position: static; }
 .sync-chip:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .sync-switch-form { display: inline-flex; }
 .sync-switch { margin-left: 0; }
-/* Hidden, the tooltip takes no room (an invisible one past the edge made phones scroll
-   sideways); shown, it wraps within the screen. */
-.sync-switch.switch-tip[data-tip]::after { display: none; left: 0; right: auto; white-space: normal; width: max-content; max-width: min(260px, calc(100vw - 32px)); }
-@media (hover: hover) { .sync-switch.switch-tip[data-tip]:hover::after { display: block; } }
-.sync-switch.switch-tip[data-tip]:focus-visible::after { display: block; }
 .sync-switch[aria-disabled="true"] { cursor: not-allowed; opacity: 0.55; }
 .sync-problem { margin: 6px 0 0; color: var(--error-text); }
-@media (prefers-reduced-motion: reduce) { .sync-chip[data-tip]::after { transition: none; } }
 @media (forced-colors: active) { .sync-chip { border: 1px solid CanvasText; } }
 .tag-warn { background: var(--warning-bg); color: var(--text); border-color: var(--warning); }
 .sync-row-icon { display: inline-block; width: 14px; height: 14px; margin-left: 6px; vertical-align: -2px; border-radius: 3px; background: var(--muted);
   -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><rect x='3.5' y='5' width='17' height='15.5' rx='2'/><path d='M3.5 10h17M8 3v4M16 3v4'/><path d='M9.5 15.5l2 2 3.5-4'/></svg>") center / contain no-repeat; mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><rect x='3.5' y='5' width='17' height='15.5' rx='2'/><path d='M3.5 10h17M8 3v4M16 3v4'/><path d='M9.5 15.5l2 2 3.5-4'/></svg>") center / contain no-repeat; }
 .mv-sync-note, .sync-note { margin: 0 0 10px; }
+/* High contrast forces backgrounds to Canvas: the mask icon is drawn in the text color. */
+@media (forced-colors: active) { .sync-row-icon { forced-color-adjust: none; background-color: CanvasText; } }
 .sync-group { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px 12px; margin: 0; }
 .sync-group legend { padding: 0 6px; font-weight: 600; }
 .sync-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -622,7 +651,8 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .cal-month th { font-weight: 500; font-size: 11px; color: var(--muted); padding: 0 0 2px; }
 .cal-month abbr { text-decoration: none; }
 .cal-day { position: relative; height: 28px; text-align: center; border-radius: 5px; color: var(--cal-text); font-variant-numeric: tabular-nums; cursor: default; }
-.cal-today { box-shadow: inset 0 0 0 2px var(--text); font-weight: 700; }
+/* Today's ring in the day number's own color: readable on every one of the 15 colors. */
+.cal-today { box-shadow: inset 0 0 0 2px currentColor; font-weight: 700; }
 /* A day's tooltip (date, flag and country, or the event): CSS, shown on hover; it exists only
    while shown, so it never widens the page. Edge columns open inward. */
 .cal-day[data-tip]:hover::after {

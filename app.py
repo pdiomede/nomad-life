@@ -54,7 +54,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -3039,8 +3039,11 @@ def google_year_calendar(year, stays, palette=None, places=None, chosen=None, ba
     for k in counts:
         title = names[k]
         country = normalize_country(title)
-        if COUNTRY_CODES.get(country):
-            saved[k] = country  # Italy, IT
+        place = event_place(title)
+        if place:
+            saved[k] = place[1]  # Italy, IT, Rome, Italy (the titles AUTO reads)
+        elif COUNTRY_CODES.get(country):
+            saved[k] = country
         elif fold(title) in places:
             saved[k] = places[fold(title)]  # Bangkok: Thailand
         elif fold(country) in palette:
@@ -3056,14 +3059,16 @@ def google_year_calendar(year, stays, palette=None, places=None, chosen=None, ba
     for k in order:
         title = names[k]
         country = normalize_country(title)
-        color = (chosen.get(fold(saved[k])) or palette.get(fold(country))
+        color = (chosen.get(fold(saved[k])) or palette.get(fold(saved[k]))
+                 or palette.get(fold(country))
                  or palette.get(fold(title)))
         if not color:
             color, n = spare[n % len(spare)], n + 1
         colors[k] = color
         # The tooltip's flag, as on the Nomad Life tab: an event named after a country (Italy,
         # IT), or after a city of the year's stays (Bangkok).
-        flags[k] = country_flag(title) or country_flag(places.get(fold(title)))
+        flags[k] = (country_flag(title) or country_flag(places.get(fold(title)))
+                    or country_flag(saved[k]))
     legend = []
     for k in order:
         name = saved[k]
@@ -3071,7 +3076,7 @@ def google_year_calendar(year, stays, palette=None, places=None, chosen=None, ba
                        "color": colors[k], "key": fold(name),
                        # What the picker saves (none for a title too long to be a place).
                        "name": name if name and len(name) <= PLACE_MAX else "",
-                       "label": names[k] if fold(name) == fold(names[k])
+                       "label": names[k] if fold(name) == fold(names[k]) or event_place(names[k])
                        else f"{names[k]} ({name})"})
     today, months, none = user_today(), [], 0
     for month in range(1, 13):

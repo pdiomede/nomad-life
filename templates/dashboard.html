@@ -8,13 +8,15 @@
     <div class="year-title">
       <h1>{{ y.year }}</h1>
       {% set tip = ('Movements are added automatically from the connected Google Calendar named "' ~ sync.name ~ '"') if sync.auto else 'Movements are added manually' %}
-      <span class="sync-chip {{ 'is-auto' if sync.auto else 'is-manual' }}" data-tip="{{ tip }}" tabindex="0" aria-label="{{ 'AUTO' if sync.auto else 'MANUAL' }}: {{ tip }}">{{ 'AUTO' if sync.auto else 'MANUAL' }}</span>
+      <span class="sync-chip {{ 'is-auto' if sync.auto else 'is-manual' }}" data-tip="{{ tip }}" tabindex="0">{{ 'AUTO' if sync.auto else 'MANUAL' }}<span class="visually-hidden">: {{ tip }}</span></span>
       <form method="post" action="{{ url_for('sync_mode', year=y.year) }}" class="sync-switch-form" data-sync-switch>
         {{ ui.csrf() }}
         <input type="hidden" name="mode" value="{{ 'manual' if sync.auto else 'auto' }}">
+        {% set switch_tip = ('Switch ' ~ y.year ~ ' to MANUAL') if sync.auto else ('Switch ' ~ y.year ~ ' to AUTO: review the changes first') if sync.can else 'Connect Google Calendar in Settings to turn on AUTO' %}
         <button type="submit" class="switch switch-tip sync-switch" role="switch" aria-checked="{{ 'true' if sync.auto else 'false' }}"
-                aria-label="Add movements automatically from Google Calendar"
-                data-tip="{{ ('Switch ' ~ y.year ~ ' to MANUAL') if sync.auto else ('Switch ' ~ y.year ~ ' to AUTO: review the changes first') if sync.can else 'Connect Google Calendar in Settings to turn on AUTO' }}"{% if not sync.can and not sync.auto %} aria-disabled="true"{% endif %}><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
+                aria-label="Add movements automatically from Google Calendar" aria-describedby="sync-switch-tip"
+                data-tip="{{ switch_tip }}"{% if not sync.can and not sync.auto %} aria-disabled="true"{% endif %}><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
+        <span class="visually-hidden" id="sync-switch-tip">{{ switch_tip }}</span>
       </form>
     </div>
     {% if sync.problem %}<p class="small sync-problem">{{ sync.problem }}</p>{% endif %}
@@ -32,10 +34,12 @@
 
 <section class="stats year-stats">
   <div class="card stat stat-base">
-    <p class="stat-label">Base</p>
+    <div class="stat-head">
+      <p class="stat-label">Base</p>
+      <a class="fold-gear stat-gear" href="{{ url_for('base', year=y.year) }}" data-tip="Manage Base country" aria-label="Manage Base country"></a>
+    </div>
     <p class="stat-value">{{ y.base_city }}</p>
-    <p class="muted">{{ ui.flag(y.base_country) }}{{ y.base_country }}</p>
-    <a class="small" href="{{ url_for('base', year=y.year) }}">Manage Base country</a>
+    <div class="stat-foot"><p class="muted">{{ ui.flag(y.base_country) }}{{ y.base_country }}</p></div>
   </div>
   <div class="card stat">
     <div class="stat-head">
@@ -46,25 +50,28 @@
       <button type="button" class="switch switch-tip" role="switch" aria-checked="false" aria-label="Show {{ stats.threshold }} marker" data-tip="Show {{ stats.threshold }} marker" data-marker-switch hidden><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
     </div>
     <p class="stat-value">{{ stats.base_days }} <span class="muted stat-of">/ {{ stats.total }}</span></p>
-    <div class="meter" aria-hidden="true">
-      <span style="width: {{ (stats.base_days * 100 / stats.total) | round(1) }}%"></span>
-      <i class="day-marker" style="left: {{ (stats.threshold * 100 / stats.total) | round(1) }}%"></i>
+    {# With the marker on, the bar says how far the line is, in a tooltip (pointer) and in
+       hidden text (screen readers); with it off, neither. #}
+    {% set marker_text = ('At least ' ~ stats.threshold ~ ' days') if stats.base_ok else ((stats.threshold - stats.base_days) ~ ' day' ~ ('' if stats.threshold - stats.base_days == 1 else 's') ~ ' short of ' ~ stats.threshold) %}
+    <div class="stat-foot">
+    <div class="meter-tip {{ 'is-ok' if stats.base_ok else 'is-short' }}" data-tip="{{ marker_text }}">
+      <div class="meter" aria-hidden="true">
+        <span style="width: {{ (stats.base_days * 100 / stats.total) | round(1) }}%"></span>
+        <i class="day-marker" style="left: {{ (stats.threshold * 100 / stats.total) | round(1) }}%"></i>
+      </div>
     </div>
-    {% if stats.base_ok %}
-      <p class="pill pill-ok day-marker">At least {{ stats.threshold }} days</p>
-    {% else %}
-      <p class="pill pill-warn day-marker">{{ stats.threshold - stats.base_days }} day{{ '' if stats.threshold - stats.base_days == 1 else 's' }} short of {{ stats.threshold }}</p>
-    {% endif %}
+    <p class="visually-hidden day-marker">{{ marker_text }}</p>
+    </div>
   </div>
   <div class="card stat">
     <p class="stat-label">Days outside Base country</p>
     <p class="stat-value">{{ stats.abroad_days }}</p>
-    <p class="muted">{{ abroad_movements }} stay{{ '' if abroad_movements == 1 else 's' }} outside Base country</p>
+    <div class="stat-foot"><p class="muted">{{ abroad_movements }} stay{{ '' if abroad_movements == 1 else 's' }} outside Base country</p></div>
   </div>
   <div class="card stat">
     <p class="stat-label">Year elapsed</p>
     <p class="stat-value">{{ stats.elapsed }} <span class="muted stat-of">/ {{ stats.total }}</span></p>
-    <div class="meter" aria-hidden="true"><span style="width: {{ (stats.elapsed * 100 / stats.total) | round(1) }}%"></span></div>
+    <div class="stat-foot"><div class="meter" aria-hidden="true"><span style="width: {{ (stats.elapsed * 100 / stats.total) | round(1) }}%"></span></div></div>
   </div>
 </section>
 
@@ -106,7 +113,7 @@
           {% for m in pager.rows %}
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
             <td class="dates"><time class="nowrap" datetime="{{ m.start_date }}">{{ m.start_date | daydate }}</time> <span class="muted">to</span> <time class="nowrap" datetime="{{ m.end_date }}">{{ m.end_date | daydate }}</time></td>
-            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a>{% if m.google_event_id %} <span class="sync-row-icon" data-tip="From Google Calendar" aria-label="From Google Calendar" role="img"></span>{% endif %}{% if m.sync_missing %} <span class="tag tag-warn" data-tip="The event is no longer in Google Calendar. The movement is kept for its receipts: delete it when you no longer need it.">Not in Google Calendar</span>{% endif %}</td>
+            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a>{% if m.google_event_id %} <span class="sync-row-icon" title="From Google Calendar" aria-label="From Google Calendar" role="img"></span>{% endif %}{% if m.sync_missing %} <span class="tag tag-warn" title="The event is no longer in Google Calendar. The movement is kept for its receipts: delete it when you no longer need it.">Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar. The movement is kept for its receipts; delete it when you no longer need it.</span></span>{% endif %}</td>
             {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
             {% set counted = stats.counted.get(m.id, 0) %}
             <td class="num">{{ length }}{% if counted != length %}<div class="muted small" title="A day shared with another stay counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest)">{{ counted }} counted</div>{% endif %}</td>

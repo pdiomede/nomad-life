@@ -19,7 +19,8 @@ class MarkerSwitchTests(AppTestCase):
 
     def card(self, year):
         html = self.client.get(f"/year/{year}").get_data(as_text=True)
-        start = html.index('<div class="stat-head">')
+        # The Days in Base country card (the Base card has a head of its own since 2.0.0).
+        start = html.index('<div class="stat-head">', html.index('<p class="stat-label">Days in Base country</p>') - 40)
         return html, html[start:html.index('<div class="card stat">', start)]
 
     def test_the_card_has_the_switch_and_marks_what_it_hides(self):
@@ -31,7 +32,10 @@ class MarkerSwitchTests(AppTestCase):
                       f'aria-label="Show {threshold} marker" data-tip="Show {threshold} marker" '
                       'data-marker-switch hidden>', card)
         self.assertIn('<i class="day-marker" style="left:', card)
-        self.assertIn('<p class="pill pill-warn day-marker">', card)
+        # 2.0.0: the line's distance is the bar's tooltip, and hidden text, both with the marker.
+        self.assertIn('<div class="meter-tip is-short" data-tip="', card)
+        self.assertIn('<p class="visually-hidden day-marker">', card)
+        self.assertNotIn("pill-warn", card)
         self.assertIn('<p class="stat-label">Days outside Base country</p>', html)
         # The same switch on Days per Country, one setting for both.
         self.assertEqual(html.count(f'data-marker-switch hidden><span class="switch-label">Show {threshold} marker</span>'), 1)
@@ -54,7 +58,8 @@ class MarkerSwitchTests(AppTestCase):
         self.new_year(2020)
         self.add_movement(2020, "Lisbon", "Portugal", "2020-01-01", "2020-07-01")  # 183 days at the base
         _, card = self.card(2020)
-        self.assertIn('<p class="pill pill-ok day-marker">At least', card)
+        self.assertIn(f'<div class="meter-tip is-ok" data-tip="At least {appmod.RESIDENCE_THRESHOLD} days">', card)
+        self.assertIn('<p class="visually-hidden day-marker">At least', card)
 
 
 class CountryMarkerTests(AppTestCase):

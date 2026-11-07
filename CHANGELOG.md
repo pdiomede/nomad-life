@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.0.1] - 2026-11-07
+
+### Changed
+
+- The calendar legends no longer show the Base tag.
+- The Base card's **Manage Base country** link is a gear at the card's top right, with a tooltip.
+- Turning the 183 marker on adds only the marker: "N days short of 183" (or "At least 183 days") is now a tooltip on the Days in Base country bar, and screen readers still hear it.
+- The four top cards keep their numbers on one line, whatever is under them (a bar or a sentence).
+- Two of the 15 colors are a shade darker so white day numbers read well on them: red #CF4545 (was #D94848) and brown #A36741 (was #A76A43). Today's ring takes each day's number color, so it is clear on every color.
+
+### Fixed
+
+The three bugs of the 2.0.0 bug hunt left over by its cap:
+
+- The Google icon of synced movements and the "Not in Google Calendar" tag had explanations nobody could reach, and the icon vanished in Windows high contrast. They have a tooltip and text for screen readers; a flagged movement's page explains it too.
+- Right-to-left city names (Arabic, Hebrew) jumbled the dates next to them on the review page.
+- Red and brown day numbers, and today's ring on several colors, were below the contrast for reading.
+
+Found in a review of the recent UI (5 of 7; the other two are a hover-only tooltip, as asked, and older browsers without subgrid):
+
+- The AUTO label's hidden tooltip made every phone page scroll sideways. Its text is now read by screen readers too.
+- The Manage Base country tooltip was squeezed to one letter.
+- Stacked top cards touched each other, and the space under them shrank to 4 pixels.
+- The AUTO switch's tooltip ran off phone screens, and screen readers never heard why the switch is off.
+- Google Calendar events named "City, Country" did not take, nor set, their country's color.
+
 ## [2.0.0] - 2026-11-07
 
 ### Added
