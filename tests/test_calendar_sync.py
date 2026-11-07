@@ -63,7 +63,8 @@ class EventPlaceTests(SyncCase):
         self.assertEqual(appmod.event_place("IT"), ("", "Italy"))
         self.assertEqual(appmod.event_place("Rome, Italy"), ("Rome", "Italy"))
         self.assertEqual(appmod.event_place("New York, USA"), ("New York", "United States"))
-        for title in ("Dentist", "Paris, Texas", "No", "in", "Rome", "", "Team call, 10:00"):
+        self.assertEqual(appmod.event_place("Paris, Texas"), ("Paris", "United States"))  # a US state
+        for title in ("Dentist", "No", "in", "Rome", "", "Team call, 10:00"):
             self.assertIsNone(appmod.event_place(title), title)
 
 
@@ -207,7 +208,7 @@ class AutoSyncTests(SyncCase):
         html = self.dashboard()
         self.assertEqual(len(self.rows()), 1)
         self.assertIn("is-manual", html)
-        self.assertIn("2026 is back to MANUAL: Google Calendar is no longer connected to it", html)
+        self.assertIn("2026 is back to MANUAL: Google no longer lets Nomad Life see your calendars", html)
         self.assertEqual(self.mode(), "manual")
 
     def test_google_not_answering_keeps_the_movements(self):
@@ -225,7 +226,8 @@ class AutoSyncTests(SyncCase):
                              [(year_id,)] * (appmod.MOVEMENTS_MAX - 1))
         self.events(gev("g1", "Rome, Italy", "2026-02-01", "2026-02-06"),
                     gev("g2", "Spain", "2026-10-01", "2026-10-02"))
-        self.assertIn("1 event left out: a year holds at most", self.dashboard())
+        self.assertIn("1 event of your Google calendar is left out: a year holds at most 1,000 movements.",
+                      self.dashboard())
 
     def test_two_syncs_at_once_add_once(self):
         self.events(gev("g1", "Rome, Italy", "2026-02-01", "2026-02-06"), gev("g2", "Spain", "2026-03-01", "2026-03-02"))
@@ -251,7 +253,8 @@ class AssetsTests(SyncCase):
     def test_switch_and_review_scripts(self):
         js = open("static/js/theme.js", encoding="utf-8").read()
         self.assertIn('if (btn.getAttribute("aria-disabled") === "true") e.preventDefault();', js)
-        self.assertIn('if (r.headers.get("X-Nomad-Synced")) {', js)
+        self.assertIn('if (r.headers.get("X-Nomad-Synced") && !r.redirected) {', js)
+        self.assertIn("loadPage(googleTab.href);", js)
         self.assertIn('form.querySelectorAll(\'input[name="change"]\').forEach(function (box) { box.checked = on; });', js)
         css = open("static/css/style.css", encoding="utf-8").read()
         self.assertIn(".sync-chip.is-auto {", css)

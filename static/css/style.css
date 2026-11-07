@@ -334,6 +334,9 @@ main:focus { outline: none; }
 /* Each card is its title, its number and what is under it (.stat-foot). A shared grid puts the
    numbers of the cards in a row on one line, whatever is under them (a bar, a sentence). */
 .stat-foot { display: flex; flex-direction: column; gap: 6px; }
+/* Browsers without subgrid (before about 2023): every foot is at least one line of text high,
+   so a bar and a sentence under the numbers leave them on one line. */
+@supports not (grid-template-rows: subgrid) { .year-stats .stat-foot { min-height: 1.5em; } }
 @supports (grid-template-rows: subgrid) {
   .year-stats { grid-auto-rows: 1fr auto auto; row-gap: 0; margin-bottom: -12px; }  /* the cards' own 16px below */
   .year-stats .stat { grid-row: span 3; display: grid; grid-template-rows: subgrid; row-gap: 6px; }
@@ -385,6 +388,9 @@ main:focus { outline: none; }
   background: var(--primary); color: var(--primary-text); font-size: 12px; font-weight: 600; line-height: 1.3; box-shadow: var(--shadow);
 }
 @media (hover: hover) { .meter-tip[data-tip]:hover::after { display: block; } }
+/* Focusable with the marker on (theme.js): Tab, or a tap on a phone, shows it too. */
+.meter-tip[data-tip]:focus::after { display: block; }
+.meter-tip:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 4px; }
 [data-marker="off"] .meter-tip[data-tip]::after { display: none !important; }
 
 /* AUTO / MANUAL next to the year (2.0.0): the chip says how the year's movements are kept, the

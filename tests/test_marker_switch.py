@@ -34,7 +34,7 @@ class MarkerSwitchTests(AppTestCase):
         self.assertIn('<i class="day-marker" style="left:', card)
         # 2.0.0: the line's distance is the bar's tooltip, and hidden text, both with the marker.
         self.assertIn('<div class="meter-tip is-short" data-tip="', card)
-        self.assertIn('<p class="visually-hidden day-marker">', card)
+        self.assertIn('<p class="visually-hidden day-marker" data-marker-text>', card)
         self.assertNotIn("pill-warn", card)
         self.assertIn('<p class="stat-label">Days outside Base country</p>', html)
         # The same switch on Days per Country, one setting for both.
@@ -59,7 +59,7 @@ class MarkerSwitchTests(AppTestCase):
         self.add_movement(2020, "Lisbon", "Portugal", "2020-01-01", "2020-07-01")  # 183 days at the base
         _, card = self.card(2020)
         self.assertIn(f'<div class="meter-tip is-ok" data-tip="At least {appmod.RESIDENCE_THRESHOLD} days">', card)
-        self.assertIn('<p class="visually-hidden day-marker">At least', card)
+        self.assertIn('<p class="visually-hidden day-marker" data-marker-text>At least', card)
 
 
 class CountryMarkerTests(AppTestCase):

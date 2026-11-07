@@ -9,7 +9,7 @@
       <h1>{{ y.year }}</h1>
       {% set tip = ('Movements are added automatically from the connected Google Calendar named "' ~ sync.name ~ '"') if sync.auto else 'Movements are added manually' %}
       <span class="sync-chip {{ 'is-auto' if sync.auto else 'is-manual' }}" data-tip="{{ tip }}" tabindex="0">{{ 'AUTO' if sync.auto else 'MANUAL' }}<span class="visually-hidden">: {{ tip }}</span></span>
-      <form method="post" action="{{ url_for('sync_mode', year=y.year) }}" class="sync-switch-form" data-sync-switch>
+      <form method="post" action="{{ url_for('sync_mode', year=y.year) }}" class="sync-switch-form" data-sync-switch data-submit-once>
         {{ ui.csrf() }}
         <input type="hidden" name="mode" value="{{ 'manual' if sync.auto else 'auto' }}">
         {% set switch_tip = ('Switch ' ~ y.year ~ ' to MANUAL') if sync.auto else ('Switch ' ~ y.year ~ ' to AUTO: review the changes first') if sync.can else 'Connect Google Calendar in Settings to turn on AUTO' %}
@@ -60,7 +60,7 @@
         <i class="day-marker" style="left: {{ (stats.threshold * 100 / stats.total) | round(1) }}%"></i>
       </div>
     </div>
-    <p class="visually-hidden day-marker">{{ marker_text }}</p>
+    <p class="visually-hidden day-marker" data-marker-text>{{ marker_text }}</p>
     </div>
   </div>
   <div class="card stat">
@@ -113,7 +113,7 @@
           {% for m in pager.rows %}
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
             <td class="dates"><time class="nowrap" datetime="{{ m.start_date }}">{{ m.start_date | daydate }}</time> <span class="muted">to</span> <time class="nowrap" datetime="{{ m.end_date }}">{{ m.end_date | daydate }}</time></td>
-            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a>{% if m.google_event_id %} <span class="sync-row-icon" title="From Google Calendar" aria-label="From Google Calendar" role="img"></span>{% endif %}{% if m.sync_missing %} <span class="tag tag-warn" title="The event is no longer in Google Calendar. The movement is kept for its receipts: delete it when you no longer need it.">Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar. The movement is kept for its receipts; delete it when you no longer need it.</span></span>{% endif %}</td>
+            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a>{% if m.google_event_id %} <span class="sync-row-icon" title="From Google Calendar" aria-label="From Google Calendar" role="img"></span>{% endif %}{% if m.sync_missing and sync.auto %} <span class="tag tag-warn" title="The event is no longer in Google Calendar. The movement is kept for its receipts: delete it when you no longer need it.">Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar. The movement is kept for its receipts; delete it when you no longer need it.</span></span>{% endif %}</td>
             {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
             {% set counted = stats.counted.get(m.id, 0) %}
             <td class="num">{{ length }}{% if counted != length %}<div class="muted small" title="A day shared with another stay counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest)">{{ counted }} counted</div>{% endif %}</td>

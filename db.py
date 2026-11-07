@@ -541,6 +541,22 @@ def query(sql, args=(), one=False):
 
 
 @contextmanager
+def snapshot():
+    """Several reads that see one state of the database, without the write lock: a deferred
+    BEGIN (WAL keeps readers and the writer apart), rolled back at the end. For page views
+    that must never wait for, or fail behind, another request's write."""
+    db = get_db()
+    if db.in_transaction:
+        db.commit()
+    db.execute("BEGIN")
+    try:
+        yield db
+    finally:
+        if db.in_transaction:
+            db.rollback()
+
+
+@contextmanager
 def transaction():
     """Run several statements atomically. BEGIN IMMEDIATE takes the write lock up front, so a
     check followed by an insert cannot interleave with another request doing the same."""

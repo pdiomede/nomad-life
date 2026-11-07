@@ -25,6 +25,20 @@
   var syncMarkerSwitches = function () {
     var on = root.getAttribute("data-marker") === "off" ? "false" : "true";
     markerSwitches.forEach(function (sw) { sw.setAttribute("aria-checked", on); });
+    // With the marker on, the Days in Base country bar can be focused (Tab, or a tap on a
+    // phone) to show its tooltip, named by it for screen readers instead of the hidden text.
+    document.querySelectorAll(".meter-tip[data-tip]").forEach(function (bar) {
+      var text = bar.parentNode.querySelector("[data-marker-text]");
+      if (on === "true") {
+        bar.setAttribute("tabindex", "0");
+        bar.setAttribute("role", "img");
+        bar.setAttribute("aria-label", bar.getAttribute("data-tip"));
+        if (text) text.setAttribute("aria-hidden", "true");
+      } else {
+        ["tabindex", "role", "aria-label"].forEach(function (a) { bar.removeAttribute(a); });
+        if (text) text.removeAttribute("aria-hidden");
+      }
+    });
   };
   // A page brought back by the Back button (back/forward cache) keeps the theme and marker it
   // had then, although they may have been changed on another page since: apply the saved ones
@@ -1094,6 +1108,18 @@
     });
   });
 
+  // Go to url as a new page load: setting location.href to the address the page already has
+  // (or to it with another #anchor) only scrolls, so then the page is reloaded instead.
+  function loadPage(url) {
+    var target = new URL(url, window.location.href);
+    if (target.pathname + target.search === window.location.pathname + window.location.search) {
+      if (target.hash !== window.location.hash) history.replaceState(history.state, "", target.href);
+      window.location.reload();
+    } else {
+      window.location.assign(target.href);
+    }
+  }
+
   // Calendar card tabs (with a Google Calendar connected): Nomad Life and Google Calendar.
   // They are links (?cal=google renders the Google view on the server); here a click swaps
   // the two views in place, opens the card when it is folded, and loads the Google view once
@@ -1127,13 +1153,13 @@
     function fetchView(fresh) {
       return fetch(googleTab.getAttribute("data-src") + (fresh ? "?refresh=1" : ""), { credentials: "same-origin", headers: { Accept: "text/html" } })
         .then(function (r) {
-          if (!r.ok || r.redirected) throw new Error("not loaded");  // a sign in page, an error
-          if (r.headers.get("X-Nomad-Synced")) {
-            // An AUTO year's movements changed with this read: the whole page shows them,
-            // opened on the Google tab, with the server's "Synced" message.
-            window.location.href = googleTab.href;
+          if (r.headers.get("X-Nomad-Synced") && !r.redirected) {
+            // An AUTO year's movements changed with this read (or it went back to MANUAL):
+            // the whole page shows them, opened on the Google tab, with the server's message.
+            loadPage(googleTab.href);
             return new Promise(function () {});  // the page is going away
           }
+          if (!r.ok || r.redirected) throw new Error("not loaded");  // a sign in page, an error
           return r.text();
         });
     }
@@ -1212,7 +1238,7 @@
           if (mine !== latest) return;
           if (fresh) spin(false);
           if (googleTab.getAttribute("aria-current") === "page") {
-            window.location.href = googleTab.href;
+            loadPage(googleTab.href);
           } else {
             loaded = false;  // Nomad Life was chosen meanwhile: load again on the next click
             google.textContent = "";

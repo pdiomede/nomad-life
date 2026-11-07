@@ -20,13 +20,33 @@ The three bugs of the 2.0.0 bug hunt left over by its cap:
 - Right-to-left city names (Arabic, Hebrew) jumbled the dates next to them on the review page.
 - Red and brown day numbers, and today's ring on several colors, were below the contrast for reading.
 
-Found in a review of the recent UI (5 of 7; the other two are a hover-only tooltip, as asked, and older browsers without subgrid):
+Found in a review of the recent UI (7; the last two were fixed later in this release, see below):
 
 - The AUTO label's hidden tooltip made every phone page scroll sideways. Its text is now read by screen readers too.
 - The Manage Base country tooltip was squeezed to one letter.
 - Stacked top cards touched each other, and the space under them shrank to 4 pixels.
 - The AUTO switch's tooltip ran off phone screens, and screen readers never heard why the switch is off.
 - Google Calendar events named "City, Country" did not take, nor set, their country's color.
+
+Found in a bug hunt of switching a year between MANUAL and AUTO (12 bugs; the 10 most serious first, then the 2 left over by the cap):
+
+- Turning AUTO on again never matched movements still linked to events of another calendar, or to events made again under a new id: the review removed them and added them again, losing their notes, and a movement with receipts was silently flagged and doubled. They are now matched like typed movements, and one with receipts is listed unticked instead of flagged.
+- "City, ST" titles became another country: "Chicago, IL" counted for Israel, "Boston, MA" for Morocco, "Los Angeles, CA" for Canada. A city with its US state, Canadian province or Australian state now counts for that country ("Austin, Texas", "New York, NY", "Toronto, ON", "Sydney, NSW"); a state code that is also a country's is left out rather than guessed; "Atlanta, Georgia" is in the United States, "Tbilisi, Georgia" in Georgia.
+- Disconnecting Google, clearing the chosen calendar, choosing another one or Google taking the access back left AUTO years stored as AUTO: meanwhile they worked as MANUAL, and choosing the calendar again resumed AUTO without a review, doubling movements typed meanwhile or silently undoing edits. Every AUTO year now goes back to MANUAL at that moment, with a message, and only the review turns it on again.
+- Opening the review page took the database's write lock and could fail behind another request. It reads without it.
+- Events past the limit of movements a year were retried at every view: each one took the write lock, showed "left out" again and made the Google tab reload the page. They are a note under the year, and the review says which additions will not fit.
+- The page did not reload after a sync when it was already on the Google tab's address (the second Refresh Calendar spun forever), nor when a refresh Google did not answer had put the year back to MANUAL.
+- A deleted or unshared calendar, a permission taken back or a server without Google keys all said "Google Calendar is no longer connected, or another calendar was chosen", and the review said "Try again in a moment" forever. Each case now says what happened and what to do.
+- A movement page opened in MANUAL and saved after the year turned AUTO said "Movement updated." while its new dates were dropped. It says only the notes were saved.
+- "Not in Google Calendar" stayed on movements after the year went back to MANUAL, where nothing checks it any more. It shows in AUTO only.
+- An older copy of Google's events, cached by another server process, took the write lock at every view for up to a minute. It is skipped before.
+- A double click on the switch, or on the review's button without JavaScript, gave the same message twice, or "is in AUTO mode" and then "is already in AUTO mode". Each is said once.
+- A year deleted in another tab while its review was applied said "changed meanwhile, check the changes again" before "no longer exists". It only says it no longer exists.
+
+The two left over by the cap of the UI review above:
+
+- The "days short of 183" tooltip of the Days in Base country bar only opened on mouse hover. With the marker on, the bar can be focused with Tab or a tap, which shows it, and screen readers read it as the bar's name.
+- In browsers without CSS subgrid (before about 2023), the four top numbers were 14 pixels out of line. Each card's foot is at least one line high, so they line up there too.
 
 ## [2.0.0] - 2026-11-07
 

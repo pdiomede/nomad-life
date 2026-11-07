@@ -13,7 +13,7 @@
 
   <section class="card">
     <div class="card-head"><h2>Details</h2></div>
-    {% if m and m.sync_missing %}<p class="small card-intro sync-note"><span class="tag tag-warn">Not in Google Calendar</span> Its event is no longer in your Google calendar. The movement is kept for its receipts: delete it below when you no longer need it.</p>
+    {% if synced and m.sync_missing %}<p class="small card-intro sync-note"><span class="tag tag-warn">Not in Google Calendar</span> Its event is no longer in your Google calendar. The movement is kept for its receipts: delete it below when you no longer need it.</p>
     {% elif synced %}<p class="small card-intro sync-note">This movement comes from your Google calendar: its place and dates follow the event there. Your notes and receipts stay yours.</p>{% endif %}
     <form method="post" class="stack" enctype="multipart/form-data" data-submit-once>
       {{ ui.csrf() }}

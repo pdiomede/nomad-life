@@ -335,7 +335,7 @@ class AssetTests(AppTestCase):
         self.assertIn("card.open = true;", block)
         self.assertIn('fetch(googleTab.getAttribute("data-src")', block)
         self.assertIn("if (!r.ok || r.redirected)", block)
-        self.assertIn("window.location.href = googleTab.href;", block)
+        self.assertIn("loadPage(googleTab.href);", block)  # 2.0.1: a real reload on the same address
         self.assertIn("history.replaceState(", block)
         self.assertNotIn("innerHTML = '", block)  # only the server's fragment goes in as HTML
 

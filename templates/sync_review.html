@@ -18,6 +18,7 @@
   <div class="card-head"><h2 id="sync-title">Changes from Google Calendar</h2></div>
   <p class="small card-intro">In AUTO mode the movements of {{ y.year }} follow your Google calendar &ldquo;<strong dir="auto">{{ link.calendar_name }}</strong>&rdquo;, and Google Calendar wins any difference. Events named after a place count: a country (&ldquo;Italy&rdquo;) or a city and its country (&ldquo;Rome, Italy&rdquo;). Choose the changes to make now; your notes and receipts are kept on every movement that stays.</p>
   {% if ignored %}<p class="muted small">{{ ignored }} other event{{ '' if ignored == 1 else 's' }} in {{ y.year }} {{ 'is' if ignored == 1 else 'are' }} not named after a place, so {{ 'it is' if ignored == 1 else 'they are' }} left out.</p>{% endif %}
+  {% if left_out %}<p class="small cal-notice">A year holds at most {{ '{:,}'.format(movements_max) }} movements: {{ left_out }} of the additions below will not fit and are left out.</p>{% endif %}
   {% if truncated %}<p class="small cal-notice">This calendar has more events in {{ y.year }} than Nomad Life can read at once; the latest ones are left out.</p>{% endif %}
   <form method="post" class="stack" data-submit-once data-sync-review>
     {{ ui.csrf() }}
