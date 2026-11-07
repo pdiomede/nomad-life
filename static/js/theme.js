@@ -947,6 +947,17 @@
     });
   });
 
+  // Movements folds and starts folded: a link to #movements (Back from a movement, the
+  // pager without JavaScript's help) opens it, also when the address changes in place.
+  var movementsCard = document.getElementById("movements");
+  function openMovements() {
+    if (movementsCard && movementsCard.tagName === "DETAILS" && window.location.hash === "#movements") {
+      movementsCard.open = true;
+    }
+  }
+  openMovements();
+  window.addEventListener("hashchange", openMovements);
+
   // Calendar card tabs (with a Google Calendar connected): Nomad Life and Google Calendar.
   // They are links (?cal=google renders the Google view on the server); here a click swaps
   // the two views in place, opens the card when it is folded, and loads the Google view once

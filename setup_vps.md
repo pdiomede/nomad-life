@@ -551,6 +551,7 @@ A server set up from an older copy of this guide lacks `--graceful-timeout 120` 
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
 
+- **1.12.15** needs nothing beyond the usual upgrade steps.
 - **1.12.14** needs nothing beyond the usual upgrade steps.
 - **1.12.13** adds the `scopes` column to `calendar_links` on start. In Google Cloud, add the scope `calendar.events.readonly` to the consent screen (Data access, see google_calendar.md); each user who connected before presses **Allow events** once in the dashboard's Google Calendar tab.
 - **1.12.12** creates the `calendar_links` table on start. Calendar Integration stays off until `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are in `config.env` (see google_calendar.md); then restart the service.

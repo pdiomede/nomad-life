@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.15] - 2026-11-07
+
+### Added
+
+- **Sortable Movements table.** Click **Dates**, **Location**, **Days** or **Docs** to sort by it and again to reverse it; Location starts A to Z, the others newest or largest first. The newest dates come first by default, and the choice stays while you use the app, in the page links and when coming back from a movement.
+- **Movements folds** like the Calendar and the Map and starts folded, with "9 movements in 2026" in its head. Links to the table (Back from a movement, its pages, sorting, page size) and deleting a movement open it.
+
+### Changed
+
+- The Movements table writes dates as **18-Jan-2027 to 30-Jan-2027**, and the place as its flag, the **country** in bold, a bar and the city (the city on its own line on phones). The overlap report uses the same dates.
+- Pointing at a day of the Nomad Life calendar shows a tooltip in the app's style with the date and the country with its flag; the Google tab's days show the event. The calendar legends no longer show flags.
+- The receipt type list of a movement is wide enough for **Hotel / Home rent** on one line.
+- The documentation's Movements, calendar and receipts screenshots show the new table, tooltips and type list.
+
+### Fixed
+
+Found in a review of the Movements widget and its new sorting (7 bugs):
+
+- The sort lived only in the session, so another tab (or Back to an older page) could change the order between two pages: rows shown twice, others never. The order now travels with the page links, the page size links, Back links and the row Delete button.
+- Deleting a movement brought you back to a folded table. It stays open.
+- A test read the wrong CSS rule after the overlap triangle moved into the folding head.
+- The column headers dropped the calendar tab chosen with a link, which the pager kept.
+- The place's hidden comma for screen readers was copied with the table ("Spain |, Madrid"). Screen readers get "Spain, Madrid" from the link's label instead.
+- The documentation's screenshot still showed the old table.
+- The overlap report wrote dates as 2027-01-18 next to a table that shows 18-Jan-2027.
+
 ## [1.12.14] - 2026-11-07
 
 ### Added

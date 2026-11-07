@@ -86,10 +86,8 @@ class TabsReviewTests(TabsCase):
         legend = html[html.index('<ul class="cal-legend'):html.index("</ul>")]
         self.assertNotIn('class="flag', legend)
         self.assertIn('<span dir="auto">PT</span>', legend)
-        self.add_movement(2026, "Lisbon", "Portugal", "2026-02-01", "2026-02-05")
-        local = self.dashboard()
-        local = local[local.index('data-cal-panel="local"'):]
-        self.assertIn('class="flag', local[:local.index("</ul>")])  # Nomad Life keeps its flags
+        # Since 1.12.15 no legend has flags: the Nomad Life days' tooltips name the country
+        # with its flag instead (tests/test_calendar.py, CalendarTooltipTests).
 
     def test_9_a_click_between_the_tabs_does_not_fold_the_card(self):
         self.assertIn(".fold-tools .cal-tabs { pointer-events: auto; }", read("static", "css", "style.css"))

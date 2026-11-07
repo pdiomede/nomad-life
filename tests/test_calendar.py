@@ -8,8 +8,10 @@ import app as appmod
 from tests.helpers import AppTestCase
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DAY = re.compile(r'<td class="cal-day (cal-[a-z0-9]+)( cal-today)?" title="([^"]*)"'
+DAY = re.compile(r'<td class="cal-day (cal-[a-z0-9]+)( cal-today)?" data-tip="([^"]*)"'
                  r'(?: aria-current="date")?><time datetime="(\d{4}-\d{2}-\d{2})">')
+# The country's flag in a day's tooltip (1.12.15): two regional indicator letters and a space.
+FLAG = re.compile("[\U0001F1E6-\U0001F1FF]{2} ")
 
 
 class CalendarTests(AppTestCase):
@@ -22,7 +24,7 @@ class CalendarTests(AppTestCase):
 
     def days(self, year):
         """{iso date: (color class, hover text)} for every day cell of the year's page."""
-        return {m.group(4): (m.group(1), m.group(3)) for m in DAY.finditer(self.page(year))}
+        return {m.group(4): (m.group(1), FLAG.sub("", m.group(3))) for m in DAY.finditer(self.page(year))}
 
     def test_the_card_is_folded_between_movements_and_map(self):
         self.new_year(2027)
@@ -144,3 +146,23 @@ class CalendarStyleTests(AppTestCase):
         self.assertIn("@media (max-width: 1000px) { .cal-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }", css)
         self.assertIn("@media (max-width: 640px) { .cal-grid { grid-template-columns: repeat(2, minmax(0, 1fr));", css)
         self.assertIn("@media (max-width: 400px) { .cal-grid { grid-template-columns: minmax(0, 1fr); } }", css)
+
+
+class CalendarTooltipTests(AppTestCase):
+    """A day's tooltip is CSS and names the country with its flag; the legend has no flags."""
+
+    def test_the_tooltip_has_the_flag_and_the_legend_has_none(self):
+        self.signup()
+        self.new_year(2027, "Lisbon", "Portugal")
+        self.add_movement(2027, "Bangkok", "Thailand", "2027-01-18", "2027-01-30")
+        html = self.client.get("/year/2027").get_data(as_text=True)
+        self.assertIn('data-tip="Sun 24 Jan 2027: \U0001F1F9\U0001F1ED Thailand"', html)
+        self.assertIn('data-tip="Mon 1 Feb 2027: not logged"', html)  # no flag where nothing counts
+        self.assertNotIn('<td class="cal-day cal-1" title=', html)
+        legend = html[html.index('<ul class="cal-legend'):]
+        legend = legend[:legend.index("</ul>")]
+        self.assertNotIn('class="flag', legend)
+        css = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "static", "css", "style.css"), encoding="utf-8").read()
+        self.assertIn(".cal-day[data-tip]:hover::after {", css)
+        self.assertIn('font-family: "Twemoji Country Flags", "Inter", system-ui, sans-serif;', css)

@@ -546,6 +546,16 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .cal-month abbr { text-decoration: none; }
 .cal-day { position: relative; height: 28px; text-align: center; border-radius: 5px; color: var(--cal-text); font-variant-numeric: tabular-nums; cursor: default; }
 .cal-today { box-shadow: inset 0 0 0 2px var(--text); font-weight: 700; }
+/* A day's tooltip (date, flag and country, or the event): CSS, shown on hover; it exists only
+   while shown, so it never widens the page. Edge columns open inward. */
+.cal-day[data-tip]:hover::after {
+  content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; z-index: 30;
+  transform: translateX(-50%); padding: 5px 9px; border-radius: 6px; white-space: nowrap;
+  background: var(--primary); color: var(--primary-text); box-shadow: var(--shadow); pointer-events: none;
+  font-family: "Twemoji Country Flags", "Inter", system-ui, sans-serif; font-size: 12px; font-weight: 600; line-height: 1.3;
+}
+.cal-month td:first-child:hover::after { left: 0; transform: none; }
+.cal-month td:last-child:hover::after { left: auto; right: 0; transform: none; }
 .cal-base { background: var(--cal-base); }
 .cal-none { background: var(--cal-none); color: var(--muted); }
 .cal-1 { background: var(--cal-1); } .cal-2 { background: var(--cal-2); } .cal-3 { background: var(--cal-3); } .cal-4 { background: var(--cal-4); }
@@ -607,9 +617,13 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .table tr.current td { background: var(--info-bg); }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .loc-link { color: var(--text); overflow-wrap: anywhere; }
+.loc-sep { margin: 0 4px; color: var(--muted); }  /* flag, country | city in the Movements table */
+.loc-city { font-weight: 400; }
 
 /* Pagination: square page numbers under the movements table */
 #movements { scroll-margin-top: 16px; }
+.mv-alert-space { width: 30px; height: 30px; }  /* the overlap triangle's place in the folding head */
+.fold-tools .overlap-alert { pointer-events: auto; }
 .table-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--border); }
 .pager { display: flex; flex-wrap: wrap; gap: 6px; }
 .pager a, .pager span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 6px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -635,7 +649,7 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .doc-main { flex: 1; min-width: 0; }
 .doc-main a { font-weight: 600; overflow-wrap: anywhere; }
 .upload { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; padding-top: 16px; border-top: 1px dashed var(--border); }
-.upload .field:first-of-type { width: 190px; }
+.upload .field:first-of-type { width: 240px; }  /* "Hotel / Home rent" on one line */
 
 .danger-zone { border-color: rgba(242, 90, 90, 0.35); }
 .danger-zone h2 { color: var(--error-text); margin-bottom: 4px; }
@@ -738,6 +752,7 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .select-btn[aria-expanded="true"]::after { transform: rotate(180deg); }
 .select-btn:focus-visible { outline: 2px solid var(--link); outline-offset: -1px; border-color: transparent; }
 .select-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.select-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .select-list li.is-active { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--link), inset 0 0 0 1px var(--input-border); }
 .select-list li[aria-selected="true"] { box-shadow: none; font-weight: 600; }
 .select-list li[aria-selected="true"].is-active { box-shadow: inset 3px 0 0 var(--link), inset 0 0 0 1px var(--input-border); }
@@ -959,6 +974,8 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
   /* A slightly smaller table on the smallest phones keeps place names like "Amsterdam" whole. */
   #movements .table { font-size: 13px; }
   #movements .table .small { font-size: 12px; }
+  #movements .loc-sep { display: none; }  /* phones: the city on its own line, no bar at a line end */
+  #movements .loc-city { display: block; }
 }
 @media (max-width: 319px) {
   .brand { font-size: 15px; }

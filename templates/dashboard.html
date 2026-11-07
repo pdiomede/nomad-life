@@ -58,31 +58,42 @@
 
 <div class="grid-main">
   <div class="main-col">
-  <section class="card" id="movements" aria-labelledby="movements-title">
-    <div class="card-head">
-      <div class="movements-title">
-        <h2 id="movements-title" class="title-icon icon-plane">Movements</h2>
-        {% if overlaps %}
-        {# Shown by theme.js, which opens the report; without JavaScript the "N counted" notes
-           in the table still tell which movements share days. #}
-        <button type="button" class="overlap-alert" data-overlap-open data-overlap-key="{{ overlap_key }}" aria-haspopup="dialog" aria-controls="overlap-dialog" data-tip="Overlapping movements" hidden
-                aria-label="Overlapping movements ({{ overlap_total }}): show the report">
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12 3.2 1.8 20.6h20.4z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 9.5v5.2" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="17.6" r="1.25" fill="#FFFFFF"/></svg>
-        </button>
-        {% endif %}
-      </div>
-    </div>
+  {# Movements folds like the Calendar and the Map, starting folded; it opens for the links
+     that land on it (page, sort and page size, and #movements through theme.js). The overlap
+     triangle lies over the head from outside the <details>, like the Calendar's gear: a
+     button inside a <summary> is announced badly. #}
+  <div class="fold-wrap">
+  {% if overlaps %}
+  <div class="fold-tools">
+    <span class="fold-ghost title-icon icon-plane" aria-hidden="true">Movements</span>
+    {# Shown by theme.js, which opens the report; without JavaScript the "N counted" notes
+       in the table still tell which movements share days. #}
+    <button type="button" class="overlap-alert" data-overlap-open data-overlap-key="{{ overlap_key }}" aria-haspopup="dialog" aria-controls="overlap-dialog" data-tip="Overlapping movements" hidden
+            aria-label="Overlapping movements ({{ overlap_total }}): show the report">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12 3.2 1.8 20.6h20.4z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 9.5v5.2" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="17.6" r="1.25" fill="#FFFFFF"/></svg>
+    </button>
+  </div>
+  {% endif %}
+  <details class="card fold-card mv-card" id="movements"{% if movements_open %} open{% endif %}>
+    <summary class="card-head fold-summary">
+      <h2 id="movements-title" class="title-icon icon-plane">Movements</h2>
+      {% if overlaps %}<span class="fold-gear-space mv-alert-space" aria-hidden="true"></span>{% endif %}
+      <span class="muted small">{{ movements | length }} movement{{ '' if movements | length == 1 else 's' }} in {{ y.year }}</span>
+    </summary>
     {% if movements %}
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>Dates</th><th>Location</th><th class="num">Days</th><th class="num hide-sm">Docs</th><th class="hide-sm"></th></tr>
+          {# Sortable: newest dates first by default; the choice stays for the session. #}
+          {% set cal_arg = request.args.get('cal') if request.args.get('cal') in ('local', 'google') else none %}
+          {% macro mv_sort_href(key, dir) %}{{ url_for('dashboard', year=y.year, sort=key, dir=dir, cal=cal_arg, _anchor='movements') }}{% endmacro %}
+          <tr>{{ ui.sort_th(movement_order, 'dates', 'Dates', mv_sort_href) }}{{ ui.sort_th(movement_order, 'location', 'Location', mv_sort_href, first='asc') }}{{ ui.sort_th(movement_order, 'days', 'Days', mv_sort_href, 'num') }}{{ ui.sort_th(movement_order, 'docs', 'Docs', mv_sort_href, 'num hide-sm') }}<th class="hide-sm"><span class="visually-hidden">Actions</span></th></tr>
         </thead>
         <tbody>
           {% for m in pager.rows %}
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
-            <td class="dates"><span class="nowrap">{{ m.start_date }}</span> <span class="muted">to</span> <span class="nowrap">{{ m.end_date }}</span></td>
-            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"><strong>{{ m.city or m.country }}</strong></a>{% if m.city %}<div class="muted small">{{ ui.flag(m.country) }}{{ m.country }}</div>{% endif %}</td>
+            <td class="dates"><time class="nowrap" datetime="{{ m.start_date }}">{{ m.start_date | daydate }}</time> <span class="muted">to</span> <time class="nowrap" datetime="{{ m.end_date }}">{{ m.end_date | daydate }}</time></td>
+            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a></td>
             {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
             {% set counted = stats.counted.get(m.id, 0) %}
             <td class="num">{{ length }}{% if counted != length %}<div class="muted small" title="A day shared with another stay counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest)">{{ counted }} counted</div>{% endif %}</td>
@@ -91,7 +102,7 @@
               <div class="row-actions">
                 <a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}" aria-label="Edit movement to {{ m | place }}">Edit</a>
                 {% set receipts = '' if not m.doc_count else ' and its receipt' if m.doc_count == 1 else ' and its ' ~ m.doc_count ~ ' receipts' %}
-                {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete', 'page': pager.page}, aria_label='Delete movement to ' ~ (m | place)) }}
+                {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete', 'page': pager.page, 'sort': movement_order.sort, 'dir': movement_order.dir}, aria_label='Delete movement to ' ~ (m | place)) }}
               </div>
             </td>
           </tr>
@@ -116,7 +127,8 @@
         <a class="btn btn-primary btn-sm" href="{{ url_for('movement_new', year=y.year) }}">Log your first trip</a>
       </div>
     {% endif %}
-  </section>
+  </details>
+  </div>
 
   {% if overlaps %}
   <dialog class="overlap-dialog" id="overlap-dialog" aria-labelledby="overlap-title" aria-describedby="overlap-text">

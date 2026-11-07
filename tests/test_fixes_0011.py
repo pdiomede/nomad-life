@@ -50,7 +50,8 @@ class FormTests(AppTestCase):
     def test_cancel_returns_to_the_movement_page_of_the_list(self):
         ids = [self.add_movement(2025, f"C{i:02d}", "Spain", f"2025-{1 + i // 4:02d}-{1 + (i % 4) * 7:02d}",
                                  f"2025-{1 + i // 4:02d}-{3 + (i % 4) * 7:02d}") for i in range(12)]
-        html = self.client.get(f"/movements/{ids[11]}").data.decode()
+        # Newest dates first (1.12.15): the oldest movement is on page 2.
+        html = self.client.get(f"/movements/{ids[0]}").data.decode()
         self.assertIn('href="/year/2025?page=2#movements">Cancel</a>', html)
 
     def test_notes_are_limited(self):

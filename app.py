@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.14"
+APP_VERSION = "1.12.15"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -802,6 +802,7 @@ def create_app(overrides=None):
                 if current_user.is_authenticated else 0}
 
     app.add_template_filter(parse_date, "todate")
+    app.add_template_filter(day_date, "daydate")
     app.add_template_filter(format_size, "filesize")
     app.add_template_filter(local_date, "localdate")
     app.add_template_filter(local_datetime, "localdatetime")
@@ -2932,7 +2933,8 @@ def google_year_calendar(year, stays):
                 color, where = "cal-none", "no event"
                 none += 1
             days.append({"day": d.day, "iso": d.isoformat(), "color": color, "where": where,
-                         "title": f"{d:%a} {d.day} {d:%b} {year}: {where}", "today": d == today})
+                         "title": f"{d:%a} {d.day} {d:%b} {year}: {where}",
+                         "tip": f"{d:%a} {d.day} {d:%b} {year}: {where}", "today": d == today})
             d += timedelta(days=1)
         months.append({"name": f"{start:%B}", "blanks": start.weekday(), "days": days})
     return {"months": months, "legend": legend, "not_logged": none}
@@ -3310,7 +3312,12 @@ def year_calendar(year_row, movements, stats):
             # The place is in the hover text and, for screen readers, in the cell itself: the
             # color alone would tell them nothing.
             days.append({"day": d.day, "iso": d.isoformat(), "color": color, "where": where,
-                         "title": f"{d:%a} {d.day} {d:%b} {y}: {where}", "today": d == today})
+                         "title": f"{d:%a} {d.day} {d:%b} {y}: {where}",
+                         # the CSS tooltip: the country with its flag (none for "not logged")
+                         "tip": f"{d:%a} {d.day} {d:%b} {y}: "
+                                + (f"{country_flag(where)} " if mid is not None and country_flag(where) else "")
+                                + where,
+                         "today": d == today})
             d += timedelta(days=1)
         months.append({"name": f"{start:%B}", "blanks": start.weekday(), "days": days})
     return {"months": months, "legend": legend, "not_logged": none}
@@ -3336,6 +3343,16 @@ def favorite_countries():
     names = {r["country"] for r in db.query("SELECT country FROM favorite_countries WHERE "
                                             "user_id = ?", (current_user.id,))}
     return [c for c in COUNTRIES if c in names]
+
+
+def day_date(value):
+    """A stored date (or a date) for people: 2027-01-18 as 18-Jan-2027, in the Movements table
+    and the overlap report (English month names). Text that is not a date is shown as it is."""
+    d = parse_date(value) if isinstance(value, str) else value
+    return f"{d.day:02d}-{MONTH_ABBR[d.month - 1]}-{d.year}" if isinstance(d, date) else value
+
+
+MONTH_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
 def place_label(city, country):
@@ -3452,14 +3469,14 @@ def overlap_report(year, pairs, movements, counted, total=None):
     def place(m):  # the full place in the report: "Sidney, Australia", or the country alone
         return f"{m['city']}, {m['country']}" if m["city"] else m["country"]
 
-    def span(m):
-        return f"{m['start_date']} to {m['end_date']}"
+    def span(m):  # as the Movements table shows them: 18-Jan-2027
+        return f"{day_date(m['start_date'])} to {day_date(m['end_date'])}"
 
     lines = [f"Overlapping movements in {year} ({total})"]
     for n, p in enumerate(pairs, 1):
         a, b = p["a"], p["b"]
-        shared = (p["first"].isoformat() if p["days"] == 1
-                  else f"{p['first'].isoformat()} to {p['last'].isoformat()}")
+        shared = (day_date(p["first"]) if p["days"] == 1
+                  else f"{day_date(p['first'])} to {day_date(p['last'])}")
         owners = sorted(p["owners"].items(), key=lambda kv: (-kv[1], kv[0]))
         if len(owners) == 1:
             goes = place(by_id[owners[0][0]])
@@ -3586,10 +3603,48 @@ def paged(total, page, per_page, url):
     }
 
 
-def movement_page(year_id, movement_id, per_page=MOVEMENTS_PER_PAGE):
-    """Dashboard page that shows a movement, using the dashboard's ordering."""
-    ids = [r["id"] for r in db.query("SELECT id FROM movements WHERE year_id = ? "
-                                     "ORDER BY start_date, end_date DESC, id", (year_id,))]
+# Sortable columns of the dashboard's Movements table (?sort=, ?dir=; remembered for the
+# session like the page size). Newest dates first by default.
+MOVEMENT_SORTS = ("dates", "location", "days", "docs")
+MOVEMENT_SORT_DEFAULT = ("dates", "desc")
+
+
+def movement_sort():
+    """The Movements table's order as {"sort", "dir"}: a ?sort / ?dir choice is remembered for
+    the session, so opening a movement and coming back keeps it."""
+    asked = request.values  # links (?sort=) and the row delete form (hidden fields)
+    if asked.get("sort") in MOVEMENT_SORTS:
+        direction = "asc" if asked.get("dir") == "asc" else "desc"
+        session["movement_sort"] = [asked["sort"], direction]
+    chosen = session.get("movement_sort")
+    if (isinstance(chosen, list) and len(chosen) == 2 and chosen[0] in MOVEMENT_SORTS
+            and chosen[1] in ("asc", "desc")):
+        return {"sort": chosen[0], "dir": chosen[1]}
+    return {"sort": MOVEMENT_SORT_DEFAULT[0], "dir": MOVEMENT_SORT_DEFAULT[1]}
+
+
+def sort_movements(movements, order):
+    """The Movements table's rows in the chosen order. Ties keep a fixed order (dates, then
+    the newest entry), so a page never shows a row twice or skips one."""
+    def length(m):
+        return stay_length(m)
+    keys = {
+        "dates": lambda m: (m["start_date"], m["end_date"], m["id"]),
+        "location": lambda m: (db.sort_fold(normalize_country(m["country"])),
+                               db.sort_fold(m["city"] or ""), m["start_date"], m["id"]),
+        "days": lambda m: (length(m), m["start_date"], m["id"]),
+        "docs": lambda m: (m["doc_count"], m["start_date"], m["id"]),
+    }
+    return sorted(movements, key=keys[order["sort"]], reverse=order["dir"] == "desc")
+
+
+def movement_page(year_id, movement_id, per_page=MOVEMENTS_PER_PAGE, order=None):
+    """Dashboard page that shows a movement, in the table's order (movement_sort())."""
+    rows = db.query(
+        "SELECT m.*, (SELECT COUNT(*) FROM documents d WHERE d.movement_id = m.id) AS doc_count "
+        "FROM movements m WHERE m.year_id = ?", (year_id,))
+    order = order or {"sort": MOVEMENT_SORT_DEFAULT[0], "dir": MOVEMENT_SORT_DEFAULT[1]}
+    ids = [r["id"] for r in sort_movements(rows, order)]
     return ids.index(movement_id) // per_page + 1 if movement_id in ids else 1
 
 
@@ -3599,8 +3654,13 @@ def dashboard_url(year, page=1, per_page=MOVEMENTS_PER_PAGE, anchor=True):
     size is left out only when the dashboard would pick it anyway."""
     remembered = per_page_arg(session.get("per_page"))
     explicit = per_page != MOVEMENTS_PER_PAGE or per_page != remembered
+    # The table's order travels with the link (another tab may change the session's), left
+    # out when it is the default.
+    order = movement_sort() if has_request_context() else None
+    custom = order and (order["sort"], order["dir"]) != MOVEMENT_SORT_DEFAULT
     return url_for("dashboard", year=year, page=page if page > 1 else None,
                    per_page=per_page if explicit else None,
+                   sort=order["sort"] if custom else None, dir=order["dir"] if custom else None,
                    # The calendar tab chosen with a link (no JavaScript) stays for the pager.
                    cal=calendar_choice() if has_request_context()
                    and request.endpoint == "dashboard" else None,
@@ -3610,7 +3670,8 @@ def dashboard_url(year, page=1, per_page=MOVEMENTS_PER_PAGE, anchor=True):
 def back_to_movement(year_row, movement_id):
     """Dashboard link to the page of the movements table that shows a movement."""
     per_page = page_size()
-    return dashboard_url(year_row["year"], movement_page(year_row["id"], movement_id, per_page),
+    return dashboard_url(year_row["year"],
+                         movement_page(year_row["id"], movement_id, per_page, movement_sort()),
                          per_page)
 
 
@@ -4966,9 +5027,10 @@ def register_routes(app):
         years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year",
                          (current_user.id,))
         base_docs = documents_for(year_row["id"])
-        # Stats always use every movement; only the table is paginated.
-        pager = paginate(movements, request.args.get("page"), page_size(),
-                         lambda n, size: dashboard_url(year, n, size))
+        # Stats always use every movement; only the table is sorted and paginated.
+        order = movement_sort()
+        pager = paginate(sort_movements(movements, order), request.args.get("page"),
+                         page_size(), lambda n, size: dashboard_url(year, n, size))
         stats = compute_stats(year_row, movements)
         # Every movement of the year, not only this page of the table.
         overlaps, overlap_total = movement_overlaps(movements, stats["day_owner"])
@@ -4985,6 +5047,11 @@ def register_routes(app):
                        if cal == "google" else None)
         g.calendar_forms = cal_tabs  # CALENDAR_CSP: the Google tab's Connect again
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
+                               movement_order=order,
+                               # Movements starts folded; a link to a page, an order or a page
+                               # size of its table opens it (#movements does, in theme.js).
+                               movements_open=session.pop("movements_open", False)
+                               or any(k in request.args for k in ("page", "per_page", "sort")),
                                cal_link=link if cal_tabs else None, google_view=google_view,
                                cal_open=cal is not None,
                                cal_web=google_calendar_web_url(link, year) if cal_tabs else None,
@@ -5221,13 +5288,14 @@ def register_routes(app):
                 # the page that showed this movement; the dashboard clamps it if it is now empty.
                 per_page = page_size()
                 page = to_int(request.form.get("page"), 0) or movement_page(
-                    year_row["id"], movement_id, per_page)
+                    year_row["id"], movement_id, per_page, movement_sort())
                 with db.transaction() as conn:  # see the year delete
                     docs = conn.execute("SELECT * FROM documents WHERE movement_id = ?",
                                         (movement_id,)).fetchall()
                     conn.execute("DELETE FROM movements WHERE id = ?", (movement_id,))
                 remove_files(docs)
                 flash("Movement deleted.", "info")
+                session["movements_open"] = True  # back on the dashboard, the table stays open
                 return redirect(dashboard_url(m["year"], page, per_page, anchor=False))
             return redirect(url_for("movement_edit", movement_id=movement_id))
         return render_template("movement.html", y=year_row, m=m, form=m,

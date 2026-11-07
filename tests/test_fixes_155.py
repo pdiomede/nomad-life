@@ -344,7 +344,7 @@ class DashboardFixTests(AppTestCase):
     def test_overlap_triangle_and_long_off_map_places(self):
         with open(os.path.join(ROOT, "static", "css", "style.css"), encoding="utf-8") as fh:
             css = fh.read()
-        rule = css[css.index(".overlap-alert {"):]
+        rule = css[css.index("\n.overlap-alert {"):]
         # --danger is not lightened in the dark theme: 2.5:1 on the card, too faint.
         self.assertIn("color: var(--error-text);", rule[:rule.index("}")])
         self.assertIn(".map-off { overflow-wrap: anywhere; }", css)

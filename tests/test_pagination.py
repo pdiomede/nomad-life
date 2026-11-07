@@ -62,7 +62,9 @@ class DashboardPaginationTests(AppTestCase):
     def add_many(self, n):
         ids = []
         for i in range(n):
-            start = date(2025, 1, 1) + timedelta(days=i * 6)
+            # City01 has the latest dates: the table lists the newest first (1.12.15), so the
+            # pages read City01, City02, ...
+            start = date(2025, 1, 1) + timedelta(days=(n - 1 - i) * 6)
             ids.append(self.add_movement(2025, f"City{i + 1:02d}", "Spain", start.isoformat(),
                                          (start + timedelta(days=3)).isoformat()))
         self.assertEqual(len(set(ids)), n, "every movement should be saved")
@@ -75,7 +77,7 @@ class DashboardPaginationTests(AppTestCase):
 
     @staticmethod
     def cities(html):
-        return re.findall(r"<strong>(City\d+)</strong>", html)
+        return re.findall(r'<span class="loc-city">(City\d+)</span>', html)
 
     @staticmethod
     def pager_links(html):
@@ -140,7 +142,7 @@ class DashboardPaginationTests(AppTestCase):
         self.add_movement(2025, "Edge", "France", "2025-06-01", "2025-06-05")
         self.add_movement(2025, "Next", "Italy", "2025-06-05", "2025-06-08")
         html = self.get("/year/2025")
-        self.assertIn("<strong>Edge</strong>", html)
+        self.assertIn('<span class="loc-city">Edge</span>', html)
         self.assertNotIn("<strong>Next</strong>", html)
         self.assertIn("4 counted", html)
 

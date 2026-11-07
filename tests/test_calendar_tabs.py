@@ -459,7 +459,9 @@ class LandingShotTests(AppTestCase):
         self.assertIn('<h2 id="calendar-shot-title" class="section-title">Your whole year at a glance</h2>', section)
         self.assertIn('class="doc-shot doc-shot-light" src="/static/img/docs/calendar-light.webp', section)
         self.assertIn('class="doc-shot doc-shot-dark" src="/static/img/docs/calendar-dark.webp', section)
-        self.assertIn('width="1120" height="926"', section)
+        import json
+        size = json.loads(read("static", "img", "docs", "shots.json"))["calendar"]
+        self.assertIn(f'width="{size[0]}" height="{size[1]}"', section)  # the screenshot's own size
         self.assertLess(html.index('class="landing-shot"'), html.index('id="how-it-works"'))
 
     def test_the_docs_show_the_google_tab(self):

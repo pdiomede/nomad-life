@@ -34,7 +34,9 @@ class OptionalCityTests(AppTestCase):
     def test_a_city_still_shows_with_its_country(self):
         self.add("Italy", "Rome")
         page = self.client.get("/year/2026").get_data(as_text=True)
-        self.assertIn("<strong>Rome</strong></a>", page)
+        # Flag, the country in bold, then the city (1.12.15).
+        self.assertIn('<strong>Italy</strong> <span class="loc-sep" aria-hidden="true">|</span> '
+                      '<span class="loc-city">Rome</span></a>', page)
         self.assertIn('data-confirm-delete="the movement to Rome"', page)
 
     def test_the_country_is_still_required(self):
@@ -48,7 +50,7 @@ class OptionalCityTests(AppTestCase):
         saved = self.add("Spain", start="2026-03-04", end="2026-03-08")  # shares 2 days
         self.assertIn("This stay shares days with Italy (2 days).", saved)
         page = self.client.get("/year/2026").get_data(as_text=True)
-        self.assertIn('title="Wed 4 Mar 2026: Spain"', page)
+        self.assertIn('data-tip="Wed 4 Mar 2026: \U0001F1EA\U0001F1F8 Spain"', page)
         self.assertIn('aria-label="Italy, 3 days">', page)  # no empty ": " for missing cities
         self.assertNotIn('<span class="map-tip-cities"></span>', page)
 

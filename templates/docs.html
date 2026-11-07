@@ -208,8 +208,8 @@
         </section>
         <section id="movements-table" class="doc-sub" data-doc-title="The Movements table">
           <h3>The Movements table</h3>
-          {{ shot('movements-table', 'The Movements table: Lisbon, then Madrid, Spain, 4 days with "3 counted" under it, then Rome, Lisbon, Tokyo and the rest of the year', 'A movement that shares a day shows how many of its days count.') }}
-          <p>Movements are listed by start date; the one you are in today is highlighted. A blinking red triangle next to the title means some movements overlap (see <a href="#counting">How days are counted</a>). Long lists are split into pages; choose {{ per_page_options | join(', ') }} rows with <strong>Show</strong> under the table.</p>
+          {{ shot('movements-table', 'The Movements table, newest dates first: Thailand | Bangkok in November, then Portugal | Lisbon, France | Paris, Japan | Tokyo, Italy | Rome and Spain | Madrid, 4 days with "3 counted" under it, each with dates such as 03-Mar-2026', 'A movement that shares a day shows how many of its days count.') }}
+          <p>Movements are listed with the newest dates first, each as its flag, country and city, with its dates written like 18-Jan-2027; the one you are in today is highlighted. Click <strong>Dates</strong>, <strong>Location</strong>, <strong>Days</strong> or <strong>Docs</strong> to sort by it, and again to reverse it; your choice stays while you use the app. A blinking red triangle next to the title means some movements overlap (see <a href="#counting">How days are counted</a>). Long lists are split into pages; choose {{ per_page_options | join(', ') }} rows with <strong>Show</strong> under the table.</p>
         </section>
         <section id="days-per-country" class="doc-sub" data-doc-title="Days per country">
           <h3>Days per country</h3>
@@ -222,7 +222,7 @@
             <li>The calendar starts folded: click <strong>Calendar</strong> to open it, and again to fold it. It shows the year of the tab you are on.</li>
             <li>Each day has the color of the country it counts for, the same days as in Days per Country: a day shared by two stays has the color of the stay that started later.</li>
             <li>Grey days have no movement: they count for no country until you add one, at your base too.</li>
-            <li>Point at a day to see its date and country; screen readers read them with each day. Today has an outline.</li>
+            <li>Point at a day to see its date and its country with the flag; screen readers read them with each day. Today has an outline.</li>
             <li>The gear next to the title, <strong>Calendar Integration</strong>, opens the part of Settings where you connect a Google Calendar (see <a href="#calendar-integration">Calendar integration</a>).</li>
             <li>With a Google Calendar connected and chosen, two tabs sit in the middle of the head: <strong>Nomad Life</strong> (this calendar) and <strong>Google Calendar</strong>, which shows the chosen Google calendar's events on the same months, read from Google when you open it. Events with the same title share a color, a day shared by two events goes to the one that started later, and days without an event are grey ("No event"). The round arrow next to the tab, <strong>Refresh Calendar</strong>, reads the calendar from Google again after you change it there, and the arrow out of a box opens that calendar in Google Calendar in a new tab. Both show only on the Google Calendar tab.</li>
           </ul>
