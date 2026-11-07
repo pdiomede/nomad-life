@@ -47,7 +47,7 @@
   <div class="card stat">
     <p class="stat-label">Days outside Base country</p>
     <p class="stat-value">{{ stats.abroad_days }}</p>
-    <p class="muted">{{ movements|length }} movement{{ '' if movements|length == 1 else 's' }} logged</p>
+    <p class="muted">{{ abroad_movements }} stay{{ '' if abroad_movements == 1 else 's' }} outside Base country</p>
   </div>
   <div class="card stat">
     <p class="stat-label">Year elapsed</p>
@@ -292,10 +292,10 @@
     </div>
     <p class="stat-value">{{ storage.left | filesize('down') }} <span class="muted stat-of">left</span></p>
     <div class="meter {% if storage.over or storage.low %}meter-hot{% endif %}" role="img"
-         aria-label="{{ storage.used | filesize('down') }} used of {{ storage.quota | filesize('down') }}">
+         aria-label="{{ storage.used | usedsize(storage.quota) }} used of {{ storage.quota | filesize('down') }}">
       <span style="width: {{ storage.pct }}%"></span>
     </div>
-    <p class="muted small">{{ storage.used | filesize('down') }} used of {{ storage.quota | filesize('down') }} across all years. Max {{ max_receipt_label }} per receipt.</p>
+    <p class="muted small">{{ storage.used | usedsize(storage.quota) }} used of {{ storage.quota | filesize('down') }} across all years. Max {{ max_receipt_label }} per receipt.</p>
   </section>
 
   <section class="card package-card" aria-labelledby="package-title">

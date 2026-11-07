@@ -128,8 +128,8 @@ class NameUsageTests(AppTestCase):
         self.new_year(2025)
         data = self.client.get("/year/2025/package").data
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            readme = zf.read("NomadLife-2025-accountant-package/README.txt").decode()
-        self.assertIn("Prepared for: Ada Lovelace (a@example.com)", readme)
+            readme = zf.read("NomadLife-2025-accountant-package/ReadMe.md").decode()
+        self.assertIn("**Prepared for:** Ada Lovelace (a@example.com)", readme)
         with self.app.test_request_context():
             year_row = appmod.db.query("SELECT * FROM years", one=True)
             text = appmod.package.summary_text(appmod.build_package_data(year_row, False))
@@ -141,8 +141,8 @@ class NameUsageTests(AppTestCase):
         self.set_plan("pro")
         self.new_year(2025)
         with zipfile.ZipFile(io.BytesIO(self.client.get("/year/2025/package").data)) as zf:
-            readme = zf.read("NomadLife-2025-accountant-package/README.txt").decode()
-        self.assertIn("Prepared for: a@example.com", readme)
+            readme = zf.read("NomadLife-2025-accountant-package/ReadMe.md").decode()
+        self.assertIn("**Prepared for:** a@example.com", readme)
 
 
 class TwoFactorKeyTests(AppTestCase):

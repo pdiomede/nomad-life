@@ -217,11 +217,11 @@ class EmailChangeFixTests(AppTestCase):
 
     def test_a_disabled_pending_account_keeps_its_address(self):
         self.signup()
-        with self.db() as conn:  # blocked by an admin before it was confirmed
+        link = self.change_email("bad@example.com")
+        with self.db() as conn:  # signed up meanwhile, blocked by an admin before confirming
             conn.execute("INSERT INTO users (email, password_hash, disabled) "
                          "VALUES ('bad@example.com', 'x', 1)")
-        html = self.client.post(self.change_email("bad@example.com"),
-                               follow_redirects=True).get_data(as_text=True)
+        html = self.client.post(link, follow_redirects=True).get_data(as_text=True)
         self.assertIn("Another account started using this email address", html)
         with self.db() as conn:
             self.assertEqual([tuple(r) for r in conn.execute(

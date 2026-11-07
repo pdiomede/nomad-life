@@ -1,4 +1,5 @@
 """Nomad Life: track your yearly movements and keep your receipts in one place."""
+import array
 import base64
 import csv
 import functools
@@ -35,7 +36,7 @@ from webauthn.helpers.structs import (AuthenticatorSelectionCriteria, Authentica
                                       UserVerificationRequirement)
 from dotenv import load_dotenv
 from flask import (Flask, Response, abort, after_this_request, current_app, flash, g,
-                   has_request_context, redirect, render_template, request, send_file,
+                   get_flashed_messages, has_request_context, redirect, render_template, request, send_file,
                    send_from_directory, session, stream_with_context, url_for)
 from markupsafe import escape
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
@@ -52,7 +53,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.16"
+APP_VERSION = "1.12.17"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -75,11 +76,14 @@ FOLD_SPACES = {ord(ch): " " for ch in "-\u2010\u2011\u2012\u2013\u2014\u2015"}
 
 
 def fold(value):
-    """Search key: no accents, no case, single spaces, a hyphen as a space and "&" as "and"
-    ("Côte d’Ivoire" -> "cote d'ivoire", "Trinidad & Tobago" -> "trinidad and tobago")."""
+    """Search key: no accents, no case, single spaces, a hyphen as a space, "&" as "and" and no
+    dots ("Côte d’Ivoire" -> "cote d'ivoire", "Trinidad & Tobago" -> "trinidad and tobago",
+    "U.S.A." -> "usa")."""
     value = unicodedata.normalize("NFKD", value.replace("\u2019", "'"))
     value = "".join(ch for ch in value if not unicodedata.combining(ch))
-    return " ".join(value.translate(FOLD_SPACES).replace("&", " and ").casefold().split())
+    # Dots go ("U.S.A." is "usa", "St. Lucia" is "st lucia"), as in theme.js.
+    return " ".join(value.translate(FOLD_SPACES).replace("&", " and ").replace(".", "")
+                    .casefold().split())
 
 
 # Canonical names win over codes, and codes over aliases, when keys collide.
@@ -378,12 +382,24 @@ BLANK_LETTERS = {"\u115f", "\u1160", "\u3164", "\uffa0", "\u2800"}
 JOINERS = {"\u200c", "\u200d"}
 
 
+def hidden_char(ch):
+    """A control (Cc), invisible format (Cf, such as U+202E) or surrogate character, or a
+    noncharacter: removed from typed text. Characters this server's Unicode version does not
+    know yet (Cn: the newest emoji, sent by phones a year before Python learns them) and
+    private use ones are kept."""
+    cat = unicodedata.category(ch)
+    if cat == "Cn":
+        cp = ord(ch)
+        return 0xFDD0 <= cp <= 0xFDEF or (cp & 0xFFFE) == 0xFFFE
+    return cat in ("Cc", "Cf", "Cs")
+
+
 def visible(text):
     """Text holds something one can read: a character that is not a space, an invisible
     format or control character, a blank letter, or only a mark (a variation selector or
     combining grapheme joiner alone draws nothing)."""
-    return any(unicodedata.category(ch)[0] not in "MZC" and ch not in BLANK_LETTERS
-               for ch in text)
+    return any(unicodedata.category(ch)[0] not in "MZ" and not hidden_char(ch)
+               and ch not in BLANK_LETTERS for ch in text)
 
 
 def clean_name(value):
@@ -392,7 +408,7 @@ def clean_name(value):
     same name always compares equal. "" when nothing visible is left."""
     value = unicodedata.normalize("NFC", value or "")
     kept = "".join(ch for ch in value if ch not in BLANK_LETTERS
-                   and (unicodedata.category(ch)[0] != "C" or ch.isspace() or ch in JOINERS))
+                   and (not hidden_char(ch) or ch.isspace() or ch in JOINERS))
     name = " ".join(kept.split())
     return name if visible(name) else ""
 
@@ -571,6 +587,31 @@ class DbIntConverter(IntegerConverter):
         super().__init__(url_map, *args, **kwargs)
 
 
+def cross_site_request():
+    """A request made by another site: Sec-Fetch-Site says so (a sibling subdomain included),
+    or else the Origin header names another site. Browsers without either header count as
+    this site (a stale page of ours)."""
+    fetch_site = request.headers.get("Sec-Fetch-Site")
+    if fetch_site:
+        return fetch_site not in ("same-origin", "none")
+    origin = request.headers.get("Origin")
+    if not origin:
+        return False
+    ours = {request.host_url.rstrip("/")}
+    base = current_app.config.get("APP_BASE_URL") or ""
+    if base:
+        parts = urlsplit(base)
+        ours.add(f"{parts.scheme}://{parts.netloc}")
+    return origin.rstrip("/") not in ours
+
+
+def form_id(name):
+    """A row id from the form: None for anything SQLite cannot store (a 25 digit value would
+    raise OverflowError, a 500), like DbIntConverter for URLs."""
+    value = request.form.get(name, type=int)
+    return value if value is not None and 0 < value < 2 ** 63 else None
+
+
 def safe_next(value):
     """Only same site paths are allowed after sign in. Browsers and URL parsers drop tabs and
     newlines, so "/<tab>/evil.com" would become "//evil.com": refuse any control character."""
@@ -665,7 +706,12 @@ def create_app(overrides=None):
     def remembered(_app, user):
         session["nl_remember"] = True  # signed in again from the "Remember me" cookie
     login_manager.login_view = "login"
+    login_manager.login_message = "Please sign in to see this page."  # "Sign in" everywhere
     login_manager.login_message_category = "info"
+    # An auth page showing an error puts no autofocus on a field: screen readers would read
+    # the field and never the error (role="alert"), such as "Invalid email or password."
+    app.add_template_global(lambda: bool(get_flashed_messages(category_filter=["error"])),
+                            "error_shown")
 
     @login_manager.unauthorized_handler
     def unauthorized():
@@ -804,6 +850,7 @@ def create_app(overrides=None):
     app.add_template_filter(parse_date, "todate")
     app.add_template_filter(day_date, "daydate")
     app.add_template_filter(format_size, "filesize")
+    app.add_template_filter(used_size, "usedsize")
     app.add_template_filter(local_date, "localdate")
     app.add_template_filter(local_datetime, "localdatetime")
     app.add_template_filter(utc_datetime, "utcdatetime")
@@ -824,6 +871,11 @@ def create_app(overrides=None):
 
     @app.errorhandler(CSRFError)
     def csrf_error(_e):
+        if cross_site_request():
+            # Another site posted here (its form carries no token): answer without touching
+            # the session. A message or a sign out would send a new session cookie, which
+            # the browser keeps in place of this one: any site could sign people out.
+            return redirect(url_for("index"))
         if request.endpoint == "logout":
             # Never leave someone signed in because the page they signed out from was stale.
             sign_out()
@@ -1333,11 +1385,22 @@ def device_for(email):
         data = serializer("device").loads(raw, max_age=DEVICE_MAX_AGE)
     except BadSignature:
         return None
-    return data.get("d") if data.get("e") == email else None
+    return data.get("d") if data.get("e") == device_email_tag(email) else None
+
+
+def device_email_tag(email):
+    """What the device cookie keeps of the email: a keyed hash. The cookie is signed but
+    readable and stays after Sign out, so on a shared computer the address would tell the
+    next person who used it. (Cookies from before 1.12.17 hold the address: they count per
+    account until the next sign in.)"""
+    key = current_app.secret_key
+    key = key.encode() if isinstance(key, str) else key
+    return hmac.new(key, b"device:" + email.encode(), "sha256").hexdigest()[:32]
 
 
 def remember_device(resp, email):
-    token = serializer("device").dumps({"e": email, "d": device_for(email) or uuid.uuid4().hex})
+    token = serializer("device").dumps({"e": device_email_tag(email),
+                                        "d": device_for(email) or uuid.uuid4().hex})
     resp.set_cookie(DEVICE_COOKIE, token, max_age=DEVICE_MAX_AGE, httponly=True,
                     samesite="Lax", secure=current_app.config.get("SESSION_COOKIE_SECURE", False))
     return resp
@@ -1385,11 +1448,15 @@ def totp_setup_secret(user_id, create=True):
     sid = getattr(current_user, "sid", None)
     if not sid:
         return None
-    if create:
-        db.execute("UPDATE user_sessions SET totp_setup = ? WHERE id = ? AND user_id = ? "
-                   "AND totp_setup IS NULL", (new_totp_secret(), sid, user_id))
     found = db.query("SELECT totp_setup FROM user_sessions WHERE id = ? AND user_id = ?",
                      (sid, user_id), one=True)
+    if create and found and found["totp_setup"] is None:
+        # Written once, on the first view: every later view only reads, so Settings never
+        # waits for the write lock behind another request.
+        db.execute("UPDATE user_sessions SET totp_setup = ? WHERE id = ? AND user_id = ? "
+                   "AND totp_setup IS NULL", (new_totp_secret(), sid, user_id))
+        found = db.query("SELECT totp_setup FROM user_sessions WHERE id = ? AND user_id = ?",
+                         (sid, user_id), one=True)
     return found["totp_setup"] if found else None
 
 
@@ -1707,7 +1774,7 @@ def clean_ticket_body(value):
     characters removed, surrounding blank space dropped."""
     value = unicodedata.normalize("NFC", value or "").replace("\r\n", "\n").replace("\r", "\n")
     value = "".join(ch for ch in value if ch not in BLANK_LETTERS and (
-        ch in "\n\t" or unicodedata.category(ch)[0] != "C" or ch in JOINERS)).strip()
+        ch in "\n\t" or not hidden_char(ch) or ch in JOINERS)).strip()
     return value if visible(value) else ""  # only spaces, joiners or marks: nothing to read
 
 
@@ -1801,6 +1868,13 @@ def chat_rows(messages, admin_view, owner_name=""):
 DUPLICATE_SECONDS = 60  # the same ticket or message sent again this soon: a double submit
 
 
+# The same new ticket by the same account within DUPLICATE_SECONDS (a double submit).
+DUPLICATE_TICKET_SQL = (
+    "SELECT t.* FROM tickets t JOIN ticket_messages m ON m.ticket_id = t.id "
+    "WHERE t.user_id = ? AND t.kind = ? AND t.subject = ? AND m.body = ? "
+    "AND t.created_at >= datetime('now', ?) ORDER BY t.id DESC LIMIT 1")
+
+
 def duplicate_message(conn, ticket_id, author_id, from_admin, body):
     """The same text by the same author on this ticket within DUPLICATE_SECONDS: one form sent
     twice (a double click, a retried request). Call inside the write transaction."""
@@ -1860,6 +1934,7 @@ AUDIT_LABELS = {
     "admin_delete": "Account deleted by an admin",
     "admin_delete_fake": "Suspected fake account deleted",
     "admin_fake_cleanup": "Suspected fake accounts deleted (bulk)",
+    "admin_purge": "Security activity purged by an admin",
     "admin_price": "Plan prices changed",
 }
 
@@ -2175,6 +2250,12 @@ def local_datetime(utc_timestamp):
     return dt.astimezone().strftime("%Y-%m-%d %H:%M")
 
 
+def used_size(used, quota):
+    """The storage used, as shown next to its quota: rounded down, but up once over the quota,
+    so an account over it never reads "500 MB used of 500 MB"."""
+    return format_size(used, "up" if quota is not None and used > quota else "down")
+
+
 def format_size(size, rounding="nearest"):
     """Human readable size. Round capacities ("left", limits) down and offending file sizes up,
     so a message never reads like "10 MB is larger than the 10 MB limit"."""
@@ -2432,6 +2513,10 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
     ext = file_ext(name)
     if ext not in ALLOWED_EXTENSIONS:
         return "Unsupported file type. Allowed: " + ", ".join(sorted(ALLOWED_EXTENSIONS))
+    if not visible(stem(name)):
+        # ".pdf" or a name of blank letters would list as the extension alone, a name that
+        # Rename refuses: give it one.
+        name = f"receipt.{ext}"
     if kind not in DOCUMENT_KINDS:
         kind = "other"
 
@@ -2536,6 +2621,9 @@ def shrink_photo(data, ext):
                 if width * height <= PHOTO_MAX_AREA and len(data) <= PHOTO_SHRINK_BYTES:
                     return None
                 target = photo_target(width, height)
+                # A photo carrying EXIF or XMP (a phone's location) is always re-saved, even
+                # when the JPEG comes out a little bigger: the docs promise the location goes.
+                metadata = any(img.info.get(key) for key in ("exif", "xmp", "XML:com.adobe.xmp"))
                 if img.format == "JPEG":
                     img.draft("RGB", target)  # decode at a reduced size, much less memory
                 if img.getexif().get(0x0112) in (5, 6, 7, 8):  # shown turned by 90 degrees
@@ -2565,7 +2653,7 @@ def shrink_photo(data, ext):
             current_app.logger.warning("Photo kept unshrunk: %s", exc)
             return None
     smaller = out.getvalue()
-    return smaller if len(smaller) < len(data) else None
+    return smaller if metadata or len(smaller) < len(data) else None
 
 
 # Characters Windows cannot have in a file name: the receipt must extract everywhere.
@@ -2577,6 +2665,8 @@ def zip_member_name(name, ext):
     name = name.translate(UNSAFE_NAME_CHARS).strip()
     if name in ("", ".", "..") or name.startswith("."):
         name = f"receipt.{ext}"
+    if name.split(".")[0].strip().upper() in package.WINDOWS_RESERVED:
+        name = "_" + name  # CON.pdf or nul.jpg cannot be extracted on Windows
     return name
 
 
@@ -2897,13 +2987,14 @@ def google_events(access_token, calendar_id, year):
     return {"stays": stays, "truncated": truncated}
 
 
-def google_year_calendar(year, stays, palette=None):
+def google_year_calendar(year, stays, palette=None, places=None):
     """The Google tab of the dashboard calendar, in the shape of year_calendar(): each day in
     the color of the event it belongs to (the same rule as stays: a shared day goes to the
     event that started later, then the shorter one), one color per title. palette
     (calendar_palette()): an event named after a country (Thailand, TH) or a city of the
     year's movements (Bangkok) takes that country's Nomad Life color; others take colors no
-    country of the year uses."""
+    country of the year uses. places (calendar_places()): the country of each city of the
+    year's movements, for the flag in the tooltip of an event named after that city."""
     # assign_days() on the year's part of each event, in the order of the real dates (an event
     # that began in December still started before one that began on January 1).
     first, last = date(year, 1, 1), date(year, 12, 31)
@@ -2924,16 +3015,20 @@ def google_year_calendar(year, stays, palette=None):
     palette = palette or {}
     used = set(palette.values())
     spare = [c for c in CALENDAR_PALETTE[1:] if c not in used] or list(CALENDAR_PALETTE[1:])
-    colors, n = {}, 0
+    places = places or {}
+    colors, flags, n = {}, {}, 0
     for k in order:
         title = names[k]
         color = palette.get(fold(normalize_country(title))) or palette.get(fold(title))
         if not color:
             color, n = spare[n % len(spare)], n + 1
         colors[k] = color
+        # The tooltip's flag, as on the Nomad Life tab: an event named after a country (Italy,
+        # IT), or after a city of the year's stays (Bangkok).
+        flags[k] = country_flag(title) or country_flag(places.get(fold(title)))
     legend = [{"country": names[k], "days": counts[k], "is_base": False, "color": colors[k]}
               for k in order]
-    today, months, none = date.today(), [], 0
+    today, months, none = user_today(), [], 0
     for month in range(1, 13):
         start = date(year, month, 1)
         days, d = [], start
@@ -2941,13 +3036,15 @@ def google_year_calendar(year, stays, palette=None):
             sid = owner.get(d)
             if sid is not None:
                 key = db.search_fold(by_id[sid]["title"])
-                color, where = colors[key], names[key]
+                color, where, flag = colors[key], names[key], flags[key]
             else:
-                color, where = "cal-none", "no event"
+                color, where, flag = "cal-none", "no event", ""
                 none += 1
             days.append({"day": d.day, "iso": d.isoformat(), "color": color, "where": where,
                          "title": f"{d:%a} {d.day} {d:%b} {year}: {where}",
-                         "tip": f"{d:%a} {d.day} {d:%b} {year}: {where}", "today": d == today})
+                         "tip": f"{d:%a} {d.day} {d:%b} {year}: " + (f"{flag} " if flag else "")
+                                + where,
+                         "today": d == today})
             d += timedelta(days=1)
         months.append({"name": f"{start:%B}", "blanks": start.weekday(), "days": days})
     return {"months": months, "legend": legend, "not_logged": none}
@@ -3017,7 +3114,7 @@ def recently_failed(key):
     return at is not None and time.monotonic() - at < GOOGLE_REFRESH_MIN_SECONDS
 
 
-def google_calendar_view(user_id, year, fresh=False, palette=None):
+def google_calendar_view(user_id, year, fresh=False, palette=None, places=None):
     """What the Google tab shows for a year: {"state": "ok" | "scope" | "broken" | "gone" |
     "error" | "server_off" | "unchosen" | "off", "calendar": ..., "truncated": ..., "link": ...}.
     The events are read from Google (kept a minute, never stored); fresh: the Refresh
@@ -3037,7 +3134,7 @@ def google_calendar_view(user_id, year, fresh=False, palette=None):
                                 max_age=GOOGLE_REFRESH_MIN_SECONDS if fresh else None)
     if events is not None:
         return {"state": "ok", "link": link, "truncated": events["truncated"],
-                "calendar": google_year_calendar(year, events["stays"], palette)}
+                "calendar": google_year_calendar(year, events["stays"], palette, places)}
 
     def failed(called=True):
         """Google did not answer: a refresh keeps the read it has (the minute's copy) and
@@ -3050,7 +3147,7 @@ def google_calendar_view(user_id, year, fresh=False, palette=None):
             if kept is not None:
                 return {"state": "ok", "link": link, "truncated": kept["truncated"],
                         "refresh_failed": True,
-                        "calendar": google_year_calendar(year, kept["stays"], palette)}
+                        "calendar": google_year_calendar(year, kept["stays"], palette, places)}
         return {"state": "error", "link": link}
 
     if recently_failed(key):
@@ -3070,7 +3167,7 @@ def google_calendar_view(user_id, year, fresh=False, palette=None):
         return failed()
     remember_events(key, events)
     return {"state": "ok", "link": link, "truncated": events["truncated"],
-            "calendar": google_year_calendar(year, events["stays"], palette)}
+            "calendar": google_year_calendar(year, events["stays"], palette, places)}
 
 
 def revoke_after_answer(refresh_token, account):
@@ -3323,18 +3420,25 @@ def year_colors(stats, chosen):
     return colors
 
 
-def calendar_palette(movements, colors):
-    """The Nomad Life colors the Google tab matches its events with: each country's key, and
-    each city of the year's movements under its country's color."""
-    palette, cities = dict(colors), {}
+def calendar_places(movements):
+    """{fold(city): country} for each city of the year's movements. A city of two countries
+    (Santiago) names neither, whatever the movements' order."""
+    cities = {}
     for m in movements:
         city = fold(m["city"] or "")
         if city:
-            cities.setdefault(city, set()).add(fold(normalize_country(m["country"])))
-    for city, countries in cities.items():
-        # A city of two countries (Santiago) names neither; whatever the movements' order.
-        if len(countries) == 1 and city not in palette:
-            color = colors.get(next(iter(countries)))
+            country = normalize_country(m["country"])
+            cities.setdefault(city, {}).setdefault(fold(country), country)
+    return {city: next(iter(found.values())) for city, found in cities.items() if len(found) == 1}
+
+
+def calendar_palette(movements, colors):
+    """The Nomad Life colors the Google tab matches its events with: each country's key, and
+    each city of the year's movements under its country's color."""
+    palette = dict(colors)
+    for city, country in calendar_places(movements).items():
+        if city not in palette:
+            color = colors.get(fold(country))
             if color:
                 palette[city] = color
     return palette
@@ -3354,7 +3458,7 @@ def year_calendar(year_row, movements, stats, chosen=None):
             legend.append({"country": r["country"], "days": r["days"], "is_base": r["is_base"],
                            "color": colors[key], "key": key})
     names = {fold(r["country"]): r["country"] for r in stats["rows"]}
-    today, owner = date.today(), stats["day_owner"]
+    today, owner = user_today(), stats["day_owner"]
     months, none = [], 0
     for month in range(1, 13):
         start = date(y, month, 1)
@@ -4006,7 +4110,7 @@ def build_package_data(year_row, include_notes):
     movements = db.query("SELECT * FROM movements WHERE year_id = ? "
                          "ORDER BY start_date, end_date DESC, id", (year_row["id"],))
     stats = compute_stats(year_row, movements)
-    today = date.today()
+    today = user_today()
     status = "past" if today > period.end else "future" if today < period.start else "current"
     iso = lambda name: COUNTRY_CODES.get(normalize_country(name), "")
     base_name = normalize_country(year_row["base_country"])
@@ -4044,7 +4148,8 @@ def build_package_data(year_row, include_notes):
                  for r in stats["rows"]]
     return package.PackageData(
         period=period, base_city=year_row["base_city"], base_country=base_name,
-        base_iso=iso(base_name), generated_at=datetime.now(), app_version=APP_VERSION,
+        base_iso=iso(base_name), generated_at=datetime.now(timezone.utc).replace(tzinfo=None),  # UTC
+        app_version=APP_VERSION,
         status=status, as_of=today, total_days=stats["total"], elapsed=stats["elapsed"],
         base_days=stats["base_days"], abroad_days=stats["abroad_days"], base_so_far=base_so_far,
         abroad_so_far=sum(r["so_far"] for r in stats["rows"] if not r["is_base"]),
@@ -4061,6 +4166,33 @@ def package_holder(user_id):
         return ""
     name = full_name(row)
     return f"{name} ({row['email']})" if name else row["email"]
+
+
+TZ_COOKIE = "nl_tz"
+TZ_NAME = re.compile(r"[A-Za-z0-9_+\-]+(?:/[A-Za-z0-9_+\-]+){0,3}")
+
+
+@functools.lru_cache(maxsize=256)
+def zone_named(name):
+    """The time zone of an IANA name (Europe/Rome), or None for anything else."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    if len(name) > 64 or not TZ_NAME.fullmatch(name):
+        return None
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        return None
+
+
+def user_today():
+    """Today where the person is: the browser's time zone (theme-init.js keeps it in the nl_tz
+    cookie), else the server's date. Year elapsed, the "so far" days, today's stay and the
+    calendar's today follow it, so a user east or west of the server is not a day off."""
+    if has_request_context():
+        zone = zone_named(request.cookies.get(TZ_COOKIE, ""))
+        if zone is not None:
+            return datetime.now(zone).date()
+    return date.today()
 
 
 def compute_stats(year_row, movements):
@@ -4082,7 +4214,7 @@ def compute_stats(year_row, movements):
     assigned_mv = assign_days(movements)
     assigned = {d: keys[mid] for d, mid in assigned_mv.items()}
 
-    today = date.today()
+    today = user_today()
     elapsed_end = min(today, last) if today >= first else first - timedelta(days=1)
 
     counted = {}  # days each movement actually contributes after overlaps
@@ -4106,7 +4238,7 @@ def compute_stats(year_row, movements):
              "pct": round(n * 100 / total, 1), "is_base": c == base,
              "over_threshold": n >= RESIDENCE_THRESHOLD}
             for c, n in per_country.items()]
-    rows.sort(key=lambda r: (-r["days"], r["country"]))
+    rows.sort(key=lambda r: (-r["days"], db.sort_fold(r["country"])))  # ties A to Z
     base_days = per_country[base]
     counted_days = sum(per_country.values())
     return {"total": total, "rows": rows, "base_days": base_days, "counted": counted,
@@ -4365,6 +4497,9 @@ def register_routes(app):
             "UPDATE users SET last_login_at = CURRENT_TIMESTAMP, last_login_ip = ? "
             "WHERE id = ? AND disabled = 0", (client_ip(), row["id"]))
         if not gone:
+            # A new form token with the new session: one planted before sign in (by a sibling
+            # subdomain that can set cookies) must not stay valid for the signed in account.
+            session.pop("csrf_token", None)
             try:
                 sign_in_user(row, remember)
             except db.IntegrityError:  # deleted between the two writes
@@ -5107,7 +5242,7 @@ def register_routes(app):
         palette = calendar_palette(movements, year_colors(stats, chosen))
         google_view = (google_calendar_view(current_user.id, year,
                                             fresh=request.args.get("refresh") == "1",
-                                            palette=palette)
+                                            palette=palette, places=calendar_places(movements))
                        if cal == "google" else None)
         g.calendar_forms = cal_tabs  # CALENDAR_CSP: the Google tab's Connect again
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
@@ -5130,7 +5265,11 @@ def register_routes(app):
                                years=years, stats=stats,
                                base_docs=base_docs, map=map_pins(year_row, movements, stats),
                                calendar=year_calendar(year_row, movements, stats, chosen),
-                               today=date.today().isoformat())
+                               # stays outside the base (the card's line; the base is logged too)
+                               abroad_movements=sum(
+                                   1 for m in movements if fold(normalize_country(m["country"]))
+                                   != fold(normalize_country(year_row["base_country"]))),
+                               today=user_today().isoformat())
 
     @app.route("/year/<int:year>/calendar/google")
     @login_required
@@ -5144,7 +5283,8 @@ def register_routes(app):
                              "ORDER BY start_date, end_date DESC, id", (year_row["id"],))
         stats = compute_stats(year_row, movements)
         palette = calendar_palette(movements, year_colors(stats, country_colors(current_user.id)))
-        view = google_calendar_view(current_user.id, year, fresh=fresh, palette=palette)
+        view = google_calendar_view(current_user.id, year, fresh=fresh, palette=palette,
+                                    places=calendar_places(movements))
         html = render_template("_google_calendar.html", y=year_row, view=view)
         # A refresh Google did not answer, with no earlier read to keep: 503, so the page
         # keeps the calendar it shows and says the refresh failed.
@@ -5526,7 +5666,7 @@ def register_routes(app):
                     flash(f"A passkey name can be at most {NAME_MAX} characters.", "error")
                 elif not db.execute_rowcount(
                         "UPDATE passkeys SET name = ? WHERE id = ? AND user_id = ?",
-                        (name, request.form.get("passkey_id", type=int), row["id"])):
+                        (name, form_id("passkey_id"), row["id"])):
                     flash("This passkey was removed in the meantime.", "info")
                 else:
                     audit("passkey_renamed", row["id"], row["email"], name)
@@ -5568,8 +5708,9 @@ def register_routes(app):
                     audit("password_changed", row["id"], row["email"])
                     security_alert(row["email"], "The password of your Nomad Life account was "
                                    "changed.")
-                    flash("Your password has been changed. Other devices have been signed out.",
-                          "success")
+                    flash("Your password has been changed. Other devices have been signed out."
+                          + (f" Your change of email to {row['pending_email']} was cancelled: ask "
+                             "for it again." if row["pending_email"] else ""), "success")
             elif action == "email":
                 new = request.form.get("email", "").strip().lower()
                 if err:
@@ -5583,8 +5724,9 @@ def register_routes(app):
                               "longer works.", "success")
                     else:
                         flash("That is already your email address.", "error")
-                # An address used by another account gets the link too (confirming it then
-                # explains the problem), so this form cannot tell who has an account.
+                # An address used by another account answers the same (its owner gets the
+                # account_exists email instead of a link that could never work), so this form
+                # cannot tell who has an account.
                 elif not email_allowed(row["id"]):
                     flash("We just sent you an email. Please wait a minute and try again.", "info")
                 else:
@@ -5606,12 +5748,23 @@ def register_routes(app):
                         {"uid": row["id"], "email": new, "old": row["email"],
                          "h": password_fingerprint(row["password_hash"])})
                     # The new address can be anyone's until confirmed: no text typed by the
-                    # account holder goes to it.
-                    if send_template_email(new, "Confirm your new Nomad Life email", "change_email",
-                                           first_name="",
-                                           link=email_link("confirm_email", token=token),
-                                           old_email=row["email"],
-                                           hours=EMAIL_CHANGE_MAX_AGE // 3600):
+                    # account holder goes to it. A confirmed account already there would make
+                    # the link fail on Confirm: its owner hears that someone tried instead (an
+                    # account waiting for confirmation gives way, so it gets the link).
+                    taken = db.query("SELECT verified_at, disabled FROM users WHERE email = ? "
+                                     "AND id != ?", (new, row["id"]), one=True)
+                    if taken and (taken["verified_at"] is not None or taken["disabled"]):
+                        sent = taken["disabled"] or send_template_email(
+                            new, "You already have a Nomad Life account", "account_exists",
+                            email=new, change=True, link=email_link("login"),
+                            forgot_link=email_link("forgot"))
+                    else:
+                        sent = send_template_email(new, "Confirm your new Nomad Life email",
+                                                   "change_email", first_name="",
+                                                   link=email_link("confirm_email", token=token),
+                                                   old_email=row["email"],
+                                                   hours=EMAIL_CHANGE_MAX_AGE // 3600)
+                    if sent:
                         flash(f"We sent a confirmation link to {new}. Your email changes when you "
                               "press Confirm my new email on the page it opens.", "info")
                     else:
@@ -5668,7 +5821,10 @@ def register_routes(app):
                 if err:
                     flash(err, "error")
                 elif not row["totp_secret"]:
-                    flash("Two-factor sign in is already off.", "info")
+                    # Removed in another tab: passkeys may still keep two-factor on.
+                    flash("The authenticator app was already removed." + (
+                        " Your passkeys still ask for a second step." if user_passkeys(row["id"])
+                        else " Two-factor sign in is off."), "info")
                 elif (wait := take_attempt("code", row["email"]))[0]:
                     flash(too_many_message(wait[0], wait[1], "wrong codes"), "error")
                 elif step is None or not use_totp_step(row["id"], step):
@@ -5779,8 +5935,7 @@ def register_routes(app):
                 else:
                     with db.transaction() as conn:
                         key = conn.execute("SELECT * FROM passkeys WHERE id = ? AND user_id = ?",
-                                           (request.form.get("passkey_id", type=int),
-                                            row["id"])).fetchone()
+                                           (form_id("passkey_id"), row["id"])).fetchone()
                         if key:
                             conn.execute("DELETE FROM passkeys WHERE id = ?", (key["id"],))
                     if not key:
@@ -6426,7 +6581,10 @@ def register_routes(app):
     def csv_download(body, filename):
         """A CSV attachment (BOM, so Excel reads accents), never cached; sets the nl_download
         cookie when the page sent a dl token, so it knows the download started."""
-        resp = Response(body, mimetype="text/csv")
+        if hasattr(body, "read"):  # a temporary file: sent in blocks, closed after
+            resp = send_file(body, mimetype="text/csv", etag=False, conditional=False)
+        else:
+            resp = Response(body, mimetype="text/csv")
         resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
         resp.headers["Cache-Control"] = "private, no-store"
         token = request.values.get("dl", "")
@@ -6480,26 +6638,62 @@ def register_routes(app):
             return redirect(back)
         where, params = audit_range_sql(range_key)
         last = db.query("SELECT COALESCE(MAX(id), 0) AS n FROM audit_log", one=True)["n"]
-        rows = db.query(f"SELECT * FROM audit_log WHERE id <= ? AND {where} ORDER BY id",
-                        (last, *params))
-        if not rows:
+        # Read in chunks, as the export does, into a temporary file (on disk past a few MB):
+        # a year of bot sign in failures must not be held in memory. ids and offsets: each
+        # row's id and where its line starts, to keep only what the delete took.
+        out = tempfile.SpooledTemporaryFile(max_size=4 * 1024 * 1024)
+        out.write(("\ufeff" + audit_csv_lines([], header=True)).encode("utf-8"))
+        ids, offsets, after = array.array("q"), array.array("q"), 0
+        while True:
+            rows = db.query(f"SELECT * FROM audit_log WHERE id > ? AND id <= ? AND {where} "
+                            "ORDER BY id LIMIT ?", (after, last, *params, AUDIT_EXPORT_CHUNK))
+            if not rows:
+                break
+            for r in rows:
+                ids.append(r["id"])
+                offsets.append(out.tell())
+                out.write(audit_csv_lines([r]).encode("utf-8"))
+            after = rows[-1]["id"]
+        if not ids:
+            out.close()
             flash("There was no security activity to purge.", "info")
             return redirect(back)
+        offsets.append(out.tell())
+        gone = None
         with db.transaction() as conn:
-            # The ids read under the same write lock as the delete are exactly what goes, so
-            # the file lists only those (another admin may have purged some meanwhile).
-            gone = {r[0] for r in conn.execute(
-                f"SELECT id FROM audit_log WHERE id <= ? AND {where}", (last, *params))}
-            conn.execute(f"DELETE FROM audit_log WHERE id <= ? AND {where}", (last, *params))
-        rows = [r for r in rows if r["id"] in gone]
-        if not rows:
+            count = conn.execute(f"SELECT COUNT(*) FROM audit_log WHERE id <= ? AND {where}",
+                                 (last, *params)).fetchone()[0]
+            if count != len(ids):
+                # Fewer than read: another admin purged some meanwhile. The ids read under the
+                # same write lock as the delete are exactly what goes, so the file lists only
+                # those.
+                gone = {r[0] for r in conn.execute(
+                    f"SELECT id FROM audit_log WHERE id <= ? AND {where}", (last, *params))}
+            if count:
+                conn.execute(f"DELETE FROM audit_log WHERE id <= ? AND {where}", (last, *params))
+                # The purge itself stays on record: who emptied the log, and when.
+                what = f"last {AUDIT_EXPORT_DAYS} days" if range_key == "30" else "all"
+                audit("admin_purge", None, "", f"{plural(count, 'event')}, {what}",
+                      current_user.email, conn=conn)
+        if not count:
+            out.close()
             flash("This security activity was already purged meanwhile.", "info")
             return redirect(back)
-        body = "\ufeff" + audit_csv_lines(rows, header=True)
+        if gone is not None:
+            kept = tempfile.SpooledTemporaryFile(max_size=4 * 1024 * 1024)
+            out.seek(0)
+            kept.write(out.read(offsets[0]))  # the header
+            for i, event_id in enumerate(ids):
+                if event_id in gone:
+                    out.seek(offsets[i])
+                    kept.write(out.read(offsets[i + 1] - offsets[i]))
+            out.close()
+            out = kept
+        out.seek(0)
         what = (f"of the last {AUDIT_EXPORT_DAYS} days" if range_key == "30" else "")
-        flash(f"Purged {plural(len(rows), 'event')} of security activity {what}".rstrip()
+        flash(f"Purged {plural(count, 'event')} of security activity {what}".rstrip()
               + ". The CSV of what was deleted is in your downloads.", "success")
-        return csv_download(body, audit_csv_name(range_key))
+        return csv_download(out, audit_csv_name(range_key))
 
     @app.route("/admin/suspects/delete", methods=["POST"])
     @login_required
@@ -6645,13 +6839,20 @@ def register_routes(app):
             # Also end every session and remember cookie for good, so enabling the account
             # later does not bring a stolen one back.
             with db.transaction() as conn:  # both or neither: no sessions left on a disabled account
+                # An account never confirmed has no session to end: its version stays, or
+                # once enabled again its confirmation link would fail and signing in would
+                # promise a password link nobody sent ("someone signed up again").
                 changed = conn.execute("UPDATE users SET disabled = 1, session_version = "
-                                       "session_version + 1 WHERE id = ?", (user_id,)).rowcount
+                                       "session_version + (verified_at IS NOT NULL) WHERE id = ?",
+                                       (user_id,)).rowcount
                 conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
             if not changed:
                 return gone()
             audit("admin_disable", user_id, email, "", who)
-            flash(f"{email} is disabled and signed out everywhere.", "info")
+            flash(f"{email} is disabled and signed out everywhere." + (
+                " It still pays for a plan with Stripe and can no longer reach Manage billing: "
+                "cancel the subscription in Stripe, or it keeps renewing."
+                if charging_subscription(user_id) else ""), "info")
         elif action == "enable":
             if not db.execute_rowcount("UPDATE users SET disabled = 0 WHERE id = ?", (user_id,)):
                 return gone()
@@ -6735,6 +6936,17 @@ def register_routes(app):
             kind = request.form.get("kind", "")
             subject = clean_name(request.form.get("subject", ""))
             body = clean_ticket_body(request.form.get("body", ""))
+            # The same ticket sent again (a retry, a double click without JavaScript): the
+            # first one did everything. Answered before the limits, which would refuse the copy
+            # at the cap (and count it); the check under the lock below catches parallel posts.
+            early = (db.query(DUPLICATE_TICKET_SQL, (current_user.id, kind, subject, body,
+                                                     f"-{DUPLICATE_SECONDS} seconds"), one=True)
+                     if kind in TICKET_KINDS and subject and body else None)
+            if early is not None:
+                flash(f"Ticket #{ticket_ref(early)} was sent. We will answer here and email you "
+                      "when we do.", "success")
+                return redirect(ticket_url("support_ticket", early))
+            limited = False
             open_count = db.query("SELECT COUNT(*) AS n FROM tickets WHERE user_id = ? AND "
                                   "status = 'open'", (current_user.id,), one=True)["n"]
             if kind not in TICKET_KINDS:
@@ -6751,18 +6963,16 @@ def register_routes(app):
             else:
                 wait, scope, _attempt = take_attempt("ticket", ticket_limit_key())
                 err = too_many_message(wait, scope, "new tickets") if wait else None
+                limited = bool(wait)
             ticket_id = None
             if not err:
                 try:
                     with db.transaction() as conn:
                         # The same ticket sent twice (a double click): the second one finds the
                         # first under the write lock and opens it instead of making another.
-                        ticket = conn.execute(
-                            "SELECT t.* FROM tickets t JOIN ticket_messages m ON m.ticket_id = t.id "
-                            "WHERE t.user_id = ? AND t.kind = ? AND t.subject = ? AND m.body = ? "
-                            "AND t.created_at >= datetime('now', ?) ORDER BY t.id DESC LIMIT 1",
-                            (current_user.id, kind, subject, body,
-                             f"-{DUPLICATE_SECONDS} seconds")).fetchone()
+                        ticket = conn.execute(DUPLICATE_TICKET_SQL, (
+                            current_user.id, kind, subject, body,
+                            f"-{DUPLICATE_SECONDS} seconds")).fetchone()
                         duplicate = ticket is not None
                         # Counted again under the write lock: parallel posts cannot pass the cap.
                         if duplicate:
@@ -6788,9 +6998,10 @@ def register_routes(app):
                     return account_gone()
             if err:
                 flash(err, "error")
+                # 429 (with Retry-After) when the rate limit refused it, like sign in.
                 return render_template("support_new.html", form=form, kinds=TICKET_KINDS,
                                        subject_max=TICKET_SUBJECT_MAX,
-                                       body_max=TICKET_BODY_MAX), 400
+                                       body_max=TICKET_BODY_MAX), 429 if limited else 400
             ref = ticket_ref(ticket)
             if not duplicate:
                 audit("ticket_opened", current_user.id, current_user.email, f"#{ref}")
@@ -6823,6 +7034,12 @@ def register_routes(app):
             action = request.form.get("action")
             if action == "reply":
                 body = clean_ticket_body(request.form.get("body", ""))
+                wait = (None,)
+                if body and duplicate_message(db.get_db(), ticket_id, current_user.id, False, body):
+                    # Sent again (a retry): the first one did everything. Answered before the
+                    # rate limit, which would refuse the copy (and count it).
+                    flash("Your message was sent.", "success")
+                    return redirect(ticket_url("support_ticket", ticket, **list_args))
                 if not body:
                     flash("Please write a message.", "error")
                 elif len(body) > TICKET_BODY_MAX:
@@ -6871,7 +7088,8 @@ def register_routes(app):
                                        messages=ticket_messages(ticket_id), admin_view=False,
                                        kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
                                        draft=request.form.get("body", ""),
-                                       at_cap=open_ticket_cap_reached(ticket)), 400
+                                       at_cap=open_ticket_cap_reached(ticket)), \
+                    429 if wait[0] else 400
             if action == "close":
                 closed = db.execute_rowcount(
                     "UPDATE tickets SET status = 'closed', closed_at = CURRENT_TIMESTAMP, "
@@ -7051,22 +7269,33 @@ def register_routes(app):
                     ticket = db.query("SELECT t.*, u.email, u.first_name, u.last_name FROM "
                                       "tickets t JOIN users u ON u.id = t.user_id WHERE t.id = ?",
                                       (ticket_id,), one=True)
+                    if ticket is None:  # its account was deleted a moment ago
+                        return ticket_gone()
                 return render_template("support_ticket.html", ticket=ticket, back_url=back_url,
                                        messages=ticket_messages(ticket_id), admin_view=True,
                                        kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
                                        draft=request.form.get("body", ""),
                                        owner_name=full_name(ticket)), 400
             if action == "close":
+                # Only over the conversation the page showed (seen: its last message): a user
+                # message written meanwhile ("still broken") must be read before closing.
+                seen = form_id("seen")
                 if db.execute_rowcount(
                         "UPDATE tickets SET status = 'closed', closed_at = CURRENT_TIMESTAMP, "
                         "closed_by = 'admin', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND "
-                        "status = 'open'", (ticket_id,)):
+                        "status = 'open' AND (? IS NULL OR NOT EXISTS (SELECT 1 FROM "
+                        "ticket_messages WHERE ticket_id = ? AND from_admin = 0 AND id > ?))",
+                        (ticket_id, seen, ticket_id, seen)):
                     audit("ticket_closed", ticket["user_id"], ticket["email"], f"#{ref}",
                           current_user.email)
                     notify_user(ticket, "closed")
                     flash("The ticket is closed. The user gets an email.", "success")
-                elif not db.query("SELECT 1 FROM tickets WHERE id = ?", (ticket_id,), one=True):
+                elif not (now := db.query("SELECT status FROM tickets WHERE id = ?", (ticket_id,),
+                                          one=True)):
                     return ticket_gone()
+                elif now["status"] == "open":
+                    flash("The user wrote a new message meanwhile, so the ticket was not closed. "
+                          "Read it below, then close the ticket if it is solved.", "error")
                 else:
                     flash("This ticket was already closed.", "info")
             elif action == "reopen":
@@ -7144,8 +7373,13 @@ def register_routes(app):
             if not os.path.isfile(path):
                 abort(404)
             buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                zf.write(path, zip_member_name(doc["original_name"], doc_format(doc)))
+            # Dated now, like write_receipt_zip: a file restored with a time before 1980 has
+            # no ZIP date and zf.write() would fail.
+            info = zipfile.ZipInfo(zip_member_name(doc["original_name"], doc_format(doc)),
+                                   date_time=time.localtime()[:6])
+            info.compress_type = zipfile.ZIP_DEFLATED
+            with open(path, "rb") as fh, zipfile.ZipFile(buf, "w") as zf:
+                zf.writestr(info, fh.read())
             buf.seek(0)
             resp = send_file(buf, mimetype="application/zip", as_attachment=True,
                              download_name=download_name)
@@ -7206,6 +7440,7 @@ def register_routes(app):
             # other request), then moved into place under the lock only if nobody changed the
             # receipt meanwhile; two renames at once (a double click, two tabs) simply retry.
             folder = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id))
+            quota = user_quota(current_user.id)
             changed = 0
             for _attempt in range(3):
                 current = db.query("SELECT * FROM documents WHERE id = ? AND user_id = ?",
@@ -7227,6 +7462,15 @@ def register_routes(app):
                         tmp = None
                 try:
                     with db.transaction() as conn:
+                        if tmp and size > current["size"]:
+                            # A longer name makes the ZIP grow a little: never past the quota.
+                            # Then only the row changes (downloads are named from it) and the
+                            # file keeps its old name inside.
+                            used = conn.execute("SELECT COALESCE(SUM(size), 0) FROM documents "
+                                                "WHERE user_id = ?", (current_user.id,)).fetchone()[0]
+                            if used - current["size"] + size > quota:
+                                os.remove(tmp)
+                                tmp, size = None, current["size"]
                         changed = conn.execute(
                             "UPDATE documents SET original_name = ?, kind = ?, size = ? "
                             "WHERE id = ? AND original_name = ? AND size = ?",

@@ -128,3 +128,15 @@ class MovementsFoldTests(AppTestCase):
         self.assertIn('window.addEventListener("hashchange", openMovements);', js)
         css = read("static", "css", "style.css")
         self.assertIn(".fold-tools .overlap-alert { pointer-events: auto; }", css)
+
+
+class SortScrollTests(AppTestCase):
+    def test_sorting_keeps_the_readers_place(self):
+        # A header click reloaded the page at #movements, which jumped the table to the top.
+        js = read("static", "js", "theme.js")
+        block = js[js.index('var KEY = "nl_movements_scroll";'):]
+        block = block[:block.index("})();")]
+        self.assertIn('e.target.closest(".sort-link, .pager a, .per-page a")', block)
+        self.assertIn("window.scrollTo(0, saved.y);", block)
+        self.assertIn('window.location.href = link.href.split("#")[0];', block)
+        self.assertIn("} catch (err) { return; }  // the plain link then", block)

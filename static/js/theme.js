@@ -106,7 +106,9 @@
       var started = Date.now();
       var timer = setInterval(function () {
         var m = document.cookie.match(/(?:^|; )nl_download=([^;]*)/);
-        if ((m && m[1] === token) || Date.now() - started > 60000) {
+        // The fallback waits a little longer than nginx's proxy_read_timeout (130 s): a
+        // reload before a slow purge answers would cancel the only copy of what it deleted.
+        if ((m && m[1] === token) || Date.now() - started > 135000) {
           clearInterval(timer);
           document.cookie = "nl_download=; Max-Age=0; path=/; SameSite=Lax";
           // At the top, where the message is: neither the old scroll position nor the
@@ -235,7 +237,7 @@
   try { countries = countryData ? JSON.parse(countryData.textContent) : []; } catch (e) { countries = []; }
   var fold = function (s) {  // the same key as fold() in app.py
     return (s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/’/g, "'")
-      .replace(/[-\u2010-\u2015]/g, " ").replace(/&/g, " and ")
+      .replace(/[-\u2010-\u2015]/g, " ").replace(/&/g, " and ").replace(/\./g, "")
       .toLowerCase().replace(/\s+/g, " ").trim();
   };
   var flagOf = function (code) {
@@ -947,6 +949,31 @@
     });
   });
 
+  // Sorting and paging the Movements table reload the page: the page keeps the reader's place
+  // instead of jumping the table to the top of the window (its links' #movements, which
+  // stays for pages without JavaScript or without sessionStorage).
+  (function () {
+    var table = document.getElementById("movements");
+    if (!table) return;
+    var KEY = "nl_movements_scroll";
+    try {
+      var saved = JSON.parse(sessionStorage.getItem(KEY) || "null");
+      sessionStorage.removeItem(KEY);
+      if (saved && saved.path === window.location.pathname && typeof saved.y === "number") {
+        window.scrollTo(0, saved.y);
+      }
+    } catch (err) { /* no storage: the links keep their anchor */ }
+    table.addEventListener("click", function (e) {
+      var link = e.target.closest(".sort-link, .pager a, .per-page a");
+      if (!link || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      try {
+        sessionStorage.setItem(KEY, JSON.stringify({ path: window.location.pathname, y: window.scrollY }));
+      } catch (err) { return; }  // the plain link then
+      e.preventDefault();
+      window.location.href = link.href.split("#")[0];
+    });
+  })();
+
   // Movements folds and starts folded: a link to #movements (Back from a movement, the
   // pager without JavaScript's help) opens it, also when the address changes in place.
   var movementsCard = document.getElementById("movements");
@@ -1373,16 +1400,25 @@
 
     render();
     var timer = null, last = map.clientWidth;
-    window.addEventListener("resize", function () {
-      clearTimeout(timer);
-      timer = setTimeout(function () {
-        // Keep the same middle of the view at the new size.
-        var w = map.clientWidth;
-        if (last && w !== last) { tx *= w / last; ty *= w / last; }
-        last = w;
-        render();
-      }, 100);
-    });
+    function rescale() {
+      // Keep the same middle of the view at the new size.
+      var w = map.clientWidth;
+      if (last && w !== last) { tx *= w / last; ty *= w / last; }
+      last = w;
+      render();
+    }
+    // Any change of the map's width, not only the window's: a scrollbar that appears when
+    // another card opens narrows it too, and the pins would drift off their countries.
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () {
+        if (map.clientWidth && map.clientWidth !== last) rescale();
+      }).observe(map);
+    } else {
+      window.addEventListener("resize", function () {
+        clearTimeout(timer);
+        timer = setTimeout(rescale, 100);
+      });
+    }
     // The card starts folded, where the map has no size: place the pins once it opens.
     card.addEventListener("toggle", function () {
       if (!card.open) return;

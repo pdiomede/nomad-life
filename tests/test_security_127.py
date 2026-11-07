@@ -61,9 +61,11 @@ class SignupTests(AppTestCase):
             follow_redirects=True).get_data(as_text=True)
         self.assertNotIn("Another account", html)
         self.assertIn("We sent a confirmation link to b@example.com", html)
-        link = self.last_link("b@example.com", kind="account/email")
-        html = self.client.post(link, follow_redirects=True).get_data(as_text=True)
-        self.assertIn("Another account started using this email address", html)
+        # 1.12.17: the owner of b@ hears that someone tried, instead of a link that could
+        # never work.
+        self.assertEqual(self.outbox[-1]["to"], "b@example.com")
+        self.assertIn("move another Nomad Life account to b@example.com", self.outbox[-1]["text"])
+        self.assertNotIn("/account/email/", self.outbox[-1]["text"])
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT email FROM users WHERE id = 2").fetchone()[0],
                              "a@example.com")

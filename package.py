@@ -148,6 +148,20 @@ def zip_name(label):
     return f"NomadLife-{label}-accountant-package.zip"
 
 
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def human_date(value):
+    """A date for people, as the app's Movements table writes it: 15-Jan-2027 (from a date,
+    a datetime or an ISO date string; other text is kept). The CSV files keep ISO dates."""
+    if isinstance(value, str):
+        try:
+            value = date.fromisoformat(value[:10])
+        except ValueError:
+            return value
+    return f"{value.day:02d}-{MONTHS[value.month - 1]}-{value.year}"
+
+
 def country_label(name, iso):
     return f"{name} ({iso})" if iso else name
 
@@ -286,9 +300,9 @@ def summary_blocks(data):
         ("title", f"Accountant package {y}"),
         ("meta", ([f"Prepared for: {data.holder}"] if data.holder else []) + [
             f"Base: {data.base_city}, {country_label(data.base_country, data.base_iso)}",
-            f"Period: {data.period.start.isoformat()} to {data.period.end.isoformat()} "
+            f"Period: {human_date(data.period.start)} to {human_date(data.period.end)} "
             f"({data.total_days} days)",
-            f"Generated: {data.generated_at.strftime('%Y-%m-%d %H:%M')} (local time)",
+            f"Generated: {human_date(data.generated_at)} {data.generated_at:%H:%M} UTC",
             f"Nomad Life v{data.app_version}",
         ]),
     ]
@@ -305,7 +319,7 @@ def summary_blocks(data):
         blocks += [("heading", f"Final numbers for {y}"), ("kv", full_year)]
     elif data.status == "current":
         blocks += [
-            ("heading", f"So far (as of {data.as_of.isoformat()})"),
+            ("heading", f"So far (as of {human_date(data.as_of)})"),
             ("kv", [
                 ("Days elapsed", f"{data.elapsed} of {data.total_days}"),
                 (f"Days in base country, {base_name}", str(data.base_so_far)),
@@ -338,7 +352,9 @@ def summary_blocks(data):
         rows.append(row)
     counted = sum(c.days for c in data.countries)
     # "So far" adds up the rows: past days without a stay count nowhere, so not the elapsed days.
-    rows.append(["Total", "", str(counted), f"{counted * 100 / data.total_days:.1f}%"]
+    # The shares shown add up: each row is rounded, so the total is their sum (three countries
+    # of one day each are 0.3% + 0.3% + 0.3% = 0.9%, not the exact 0.8%).
+    rows.append(["Total", "", str(counted), f"{sum(c.share for c in data.countries):.1f}%"]
                 + ([str(sum(c.so_far for c in data.countries))] if so_far else []))
     blocks.append(("table", {"columns": columns, "rows": rows,
                              "widths": [44, 10, 12, 14] + ([14] if so_far else []),
@@ -346,12 +362,12 @@ def summary_blocks(data):
 
     blocks.append(("heading", "Travel timeline"))
     if data.stays:
-        rows = [[f"{s.number:02d}", f"{s.start} to {s.end}", s.city,
+        rows = [[f"{s.number:02d}", f"{human_date(s.start)} to {human_date(s.end)}", s.city,
                  country_label(s.country, s.iso), str(s.calendar_days),
                  str(s.counted_days) + (" *" if s.counted_days != s.calendar_days else ""),
                  str(s.receipts)] for s in data.stays]
         blocks.append(("table", {"columns": ["#", "Dates", "City", "Country", "Days", "Counted", "Receipts"],
-                                 "rows": rows, "widths": [6, 26, 18, 24, 9, 11, 11],
+                                 "rows": rows, "widths": [6, 28, 15, 21, 8, 11, 11],
                                  "align": ["CENTER", "LEFT", "LEFT", "LEFT", "RIGHT", "RIGHT", "RIGHT"]}))
         if any(s.counted_days != s.calendar_days for s in data.stays):
             blocks.append(("note", "* Counted days are lower when a stay shares days with a stay "
@@ -367,7 +383,7 @@ def summary_blocks(data):
         rows = [[r.arcname.rsplit("/", 1)[-1], stay_label(data, r.stay_number), r.kind,
                  _fmt_size(r.size) + ("" if r.exists else " (missing)")] for r in data.receipts]
         blocks.append(("table", {"columns": ["File (in the stay's folder)", "Stay", "Type", "Size"],
-                                 "rows": rows, "widths": [48, 22, 18, 12],
+                                 "rows": rows, "widths": [46, 22, 16, 16],
                                  "align": ["LEFT", "LEFT", "LEFT", "RIGHT"]}))
     else:
         blocks.append(("note", "No receipts uploaded for this year."))
@@ -470,7 +486,9 @@ def render_pdf(data):
         pdf.set_fallback_fonts(["IPAGothic"], exact_match=False)
     if _needs_shaping(summary_text(data)):
         try:
-            pdf.set_text_shaping(True)
+            # Left to right paragraphs (the report's language), right to left runs shaped
+            # inside them: guessed from the first letter, "01 تل أبيب, Israel" came out reversed.
+            pdf.set_text_shaping(True, direction="ltr")
         except Exception:  # noqa: BLE001 - without uharfbuzz the text stays unshaped
             pass
     safe = lambda value: pdf_safe(value, cjk)
@@ -478,7 +496,23 @@ def render_pdf(data):
     pdf.set_auto_page_break(True, margin=20)
     pdf.add_page()
 
-    for kind, content in summary_blocks(data):
+    blocks = summary_blocks(data)
+
+    def table_start_height(table):
+        """The height of a table's header row and first row, wrapped as they will be drawn."""
+        pdf.set_font("DejaVu", size=8.5)
+        total_width = sum(table["widths"])
+        height = 0
+        for values in [table["columns"]] + table["rows"][:1]:
+            lines = 1
+            for value, width in zip(values, table["widths"]):
+                cell_w = pdf.epw * width / total_width - 2
+                lines = max(lines, len(pdf.multi_cell(cell_w, 5.2, safe(clip_cell(value)),
+                                                      dry_run=True, output="LINES")))
+            height += lines * 5.2 + 2
+        return height
+
+    for index, (kind, content) in enumerate(blocks):
         if kind == "title":
             if os.path.exists(LOGO_PATH):
                 pdf.image(LOGO_PATH, x=15, y=14, h=13)
@@ -498,8 +532,14 @@ def render_pdf(data):
                 pdf.multi_cell(0, 5, safe(item), align="L", new_x="LMARGIN", new_y="NEXT")
             pdf.ln(2)
         elif kind == "heading":
-            if pdf.get_y() > pdf.h - pdf.b_margin - 35:
-                pdf.add_page()  # keep a heading together with the content below it
+            # Keep a heading together with what follows: a table's header and first row as
+            # they will wrap (fpdf2 moves a table that does not fit as a whole), else 35 mm.
+            following = blocks[index + 1] if index + 1 < len(blocks) else None
+            needed = 35
+            if following and following[0] == "table":
+                needed = max(needed, 14 + table_start_height(following[1]))
+            if pdf.get_y() > pdf.h - pdf.b_margin - needed:
+                pdf.add_page()
             pdf.ln(3)
             pdf.set_font("DejaVu", "B", 12)
             pdf.set_text_color(*ink)
@@ -550,41 +590,69 @@ def render_pdf(data):
     return bytes(pdf.output())
 
 
-# ---------- README.txt ----------
+# ---------- ReadMe.md ----------
 
-def readme_text(data):
-    lines = [
-        f"Nomad Life accountant package {data.period.label}",
+MD_SPECIAL = set("\\`*_[]<>#|!~&")
+MD_LIST_START = re.compile(r"^(\s*)([-+]|\d+[.)])(\s)")
+
+
+def md_escape(text):
+    """Text from the user in the Markdown ReadMe (names, places, receipts): its Markdown
+    characters escaped, so "*Hotel*", "~~old~~", "a|b" or "&amp;" never changes the formatting
+    or a table, and a name starting like a list item ("+ 1", "2. Hotel") stays text."""
+    text = "".join("\\" + ch if ch in MD_SPECIAL else ch for ch in str(text))
+    return MD_LIST_START.sub(lambda m: m.group(1) + m.group(2)[:-1] + "\\" + m.group(2)[-1]
+                             + m.group(3), text)
+
+
+def readme_markdown(data):
+    """The package's ReadMe.md: what it holds, the counting rules and the disclaimer, in
+    Markdown (UTF-8, no byte order mark, \\n line endings)."""
+    notes = "with notes" if data.include_notes else "notes not included"
+    lines = [f"# Nomad Life accountant package {md_escape(data.period.label)}", ""]
+    if data.holder:
+        lines.append(f"- **Prepared for:** {md_escape(data.holder)}")
+    lines += [
+        f"- **Base:** {md_escape(data.base_city)}, "
+        f"{md_escape(country_label(data.base_country, data.base_iso))}",
+        f"- **Period:** {human_date(data.period.start)} to {human_date(data.period.end)}",
+        f"- **Generated:** {human_date(data.generated_at)} {data.generated_at:%H:%M} UTC by "
+        f"Nomad Life v{md_escape(data.app_version)}",
         "",
-    ] + ([f"Prepared for: {data.holder}"] if data.holder else []) + [
-        f"Base: {data.base_city}, {country_label(data.base_country, data.base_iso)}",
-        f"Period: {data.period.start.isoformat()} to {data.period.end.isoformat()}",
-        f"Generated: {data.generated_at.strftime('%Y-%m-%d %H:%M')} (local time) by Nomad Life v{data.app_version}",
+        "## Files",
         "",
-        "Files",
-        "  summary.pdf         Readable report: headline numbers, days per country, travel timeline, rules, receipt index.",
-        "  timeline.csv        One row per stay" + (" (with notes)." if data.include_notes else " (notes not included)."),
-        "  country-totals.csv  One row per country with days and share of the year.",
-        "  receipts/           The receipts as stored (large photos are resized when uploaded).",
-        "                      receipts/base holds base documents,",
-        "                      the other folders are numbered stays: 01_<start date>_[<city>_]<country> (the city when there is one).",
-        "  manifest.csv        Every other file in this package with its size and SHA-256 checksum.",
+        "| File | What it is |",
+        "| --- | --- |",
+        "| `summary.pdf` | Readable report: headline numbers, days per country, travel timeline, "
+        "rules, receipt index. |",
+        f"| `timeline.csv` | One row per stay ({notes}). |",
+        "| `country-totals.csv` | One row per country with days and share of the year. |",
+        "| `receipts/` | The receipts as stored (large photos are resized when uploaded). "
+        "`receipts/base` holds base documents; the other folders are numbered stays: "
+        "`01_<start date>_[<city>_]<country>` (the city when there is one). |",
+        "| `manifest.csv` | Every other file in this package with its size and SHA-256 checksum. |",
         "",
-        "CSV files are comma separated UTF-8 with a byte order mark. If Excel shows everything in one",
-        "column (regions that use a semicolon as list separator), use Data > From Text/CSV and choose comma.",
+        "CSV files are comma separated UTF-8 with a byte order mark. If Excel shows everything "
+        "in one column (regions that use a semicolon as list separator), use "
+        "**Data > From Text/CSV** and choose comma.",
         "",
-        "Rules used for counting",
-    ] + [f"  - {rule}" for rule in RULES]
+        "## Rules used for counting",
+        "",
+    ] + [f"- {rule}" for rule in RULES]
     if data.status == "current":
-        lines += ["", f"The year is not over. Numbers are shown so far (as of {data.as_of.isoformat()}) "
-                      "and for the full year with the trips already planned."]
+        lines += ["", f"> The year is not over. Numbers are shown so far (as of "
+                      f"{human_date(data.as_of)}) and for the full year with the trips already "
+                      "planned."]
     elif data.status == "future":
-        lines += ["", "The year has not started yet. Only the trips already planned are counted."]
+        lines += ["", "> The year has not started yet. Only the trips already planned are "
+                      "counted."]
     if data.missing:
-        lines += ["", "Missing receipts (recorded in Nomad Life but not found on the server):"]
-        lines += [f"  - {r.name} ({stay_label(data, r.stay_number)})" for r in data.missing]
-    lines += ["", DISCLAIMER, ""]
-    return "\r\n".join(lines).encode("utf-8")
+        lines += ["", "## Missing receipts", "",
+                  "Recorded in Nomad Life but not found on the server:", ""]
+        lines += [f"- {md_escape(r.name)} ({md_escape(stay_label(data, r.stay_number))})"
+                  for r in data.missing]
+    lines += ["", "---", "", DISCLAIMER, ""]
+    return "\n".join(lines).encode("utf-8")
 
 
 # ---------- ZIP ----------
@@ -658,15 +726,16 @@ def prepare(data):
     data.receipts.sort(key=lambda r: (r.stay_number, r.uploaded, r.name.casefold()))
     assign_arcnames(data)
     root = data.root
-    entries = [
-        (f"{root}/README.txt", readme_text(data), LEVEL_TEXT),
+    # The receipts first, then the files that describe them: a receipt that can no longer be
+    # read while streaming (deleted in another tab meanwhile) is then left out of ReadMe.md and
+    # summary.pdf too (stream() builds them again), never listed there as included.
+    entries = [(r.arcname, r, compress_level(r.ext)) for r in data.receipts if r.exists]
+    entries += [
+        (f"{root}/ReadMe.md", readme_markdown(data), LEVEL_TEXT),
         (f"{root}/summary.pdf", render_pdf(data), LEVEL_TEXT),
         (f"{root}/timeline.csv", timeline_csv(data), LEVEL_TEXT),
         (f"{root}/country-totals.csv", country_totals_csv(data), LEVEL_TEXT),
     ]
-    for r in data.receipts:
-        if r.exists:
-            entries.append((r.arcname, r, compress_level(r.ext)))
     for arcname, _, _ in entries:
         _check_arcname(root, arcname)
     return entries
@@ -679,10 +748,14 @@ def stream(data, entries):
     sink = _Sink()
     manifest = []
     when = data.generated_at
+    lost = False  # a receipt could not be read while streaming
+    rebuild = {f"{data.root}/ReadMe.md": readme_markdown, f"{data.root}/summary.pdf": render_pdf}
     zf = zipfile.ZipFile(sink, "w")
     try:
         for arcname, source, level in entries:
             if isinstance(source, bytes):
+                if lost and arcname in rebuild:
+                    source = rebuild[arcname](data)  # with the receipts as they really went
                 with zf.open(_info(arcname, when, len(source), level), "w") as dest:
                     dest.write(source)
                 manifest.append([arcname, "", "generated", when.date().isoformat(), len(source),
@@ -695,7 +768,7 @@ def stream(data, entries):
             try:
                 fh, size = open_receipt(source.path)
             except RECEIPT_ERRORS:
-                source.exists = False
+                source.exists, lost = False, True
                 continue
             with fh, zf.open(_info(arcname, when, size, level), "w") as dest:
                 while True:

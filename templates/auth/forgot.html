@@ -8,7 +8,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="field">
     <label for="email">Email</label>
-    <input id="email" name="email" type="email" autocomplete="email" value="{{ request.form.email }}" required autofocus>
+    <input id="email" name="email" type="email" autocomplete="email" value="{{ request.form.email }}" required{% if not error_shown() %} autofocus{% endif %}>
   </div>
   {{ ui.honeypot() }}
   {{ ui.captcha() }}

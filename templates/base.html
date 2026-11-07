@@ -83,7 +83,7 @@
       {% if messages %}
         <div class="flashes">
           {% for cat, msg in messages %}
-            <div class="flash flash-{{ cat }}">
+            <div class="flash flash-{{ cat }}" role="{{ 'alert' if cat == 'error' else 'status' }}">
               <span class="flash-text">{{ msg }}</span>
               <button type="button" class="flash-close" aria-label="Dismiss message" data-dismiss-flash hidden>
                 <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>

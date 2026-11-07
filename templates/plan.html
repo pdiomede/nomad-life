@@ -20,7 +20,7 @@
 
 <div class="plans plans-2">
   {% call ui.plan_card(plan, current=True, heading="h2") %}
-    <p class="muted small">{{ storage.used | filesize('down') }} used of {{ storage.quota | filesize('down') }}.</p>
+    <p class="muted small">{{ storage.used | usedsize(storage.quota) }} used of {{ storage.quota | filesize('down') }}.</p>
     {% if paying %}
       <p class="muted small">{{ ui.plan_status(paying) }}</p>
     {% endif %}

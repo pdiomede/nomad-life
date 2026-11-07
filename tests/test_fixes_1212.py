@@ -150,7 +150,7 @@ class ReceiptFixTests(AppTestCase):
             names = zf.namelist()
             self.assertTrue(any(n.endswith("Good.pdf") for n in names))
             self.assertFalse(any(n.endswith("Bad.pdf") for n in names))
-            readme = zf.read([n for n in names if n.endswith("README.txt")][0]).decode()
+            readme = zf.read([n for n in names if n.endswith("ReadMe.md")][0]).decode()
         self.assertIn("Bad.pdf", readme)  # listed as missing
 
 

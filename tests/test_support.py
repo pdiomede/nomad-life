@@ -88,7 +88,8 @@ class UserTicketTests(SupportBase):
         for i in range(5):
             self.assertEqual(self.open_ticket(subject=f"T{i}").status_code, 302)
         resp = self.open_ticket(subject="T5")
-        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.status_code, 429)  # 1.12.17: with Retry-After
+        self.assertIn("Retry-After", resp.headers)
         self.assertIn("Too many new tickets", resp.get_data(as_text=True))
         with self.db() as conn:
             conn.execute("DELETE FROM auth_events")

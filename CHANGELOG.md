@@ -2,6 +2,84 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.17] - 2026-11-07
+
+### Changed
+
+- The accountant package's read me is **ReadMe.md**, in Markdown (headings, a table of the files, the rules as a list), instead of README.txt. Names and places in it cannot change its formatting.
+- The summary PDF and the ReadMe write dates like **15-Jan-2027** (period, generation date, "so far" date and the travel timeline); the CSV files keep ISO dates for spreadsheets. The timeline's Receipts header no longer breaks over two lines.
+- Sorting or paging the Movements table keeps the page where it was, instead of scrolling the table to the top of the window.
+- The Google Calendar tab's tooltips show the country's flag, as the Nomad Life tab does: for an event named after a country (Italy, IT) or after a city of the year's stays (Bangkok).
+
+### Fixed
+
+Found in a review of the accountant package and its summary PDF (7 bugs):
+
+- A receipt deleted while the package was downloading was still listed as included. The ReadMe and the PDF are now written after the receipts and list it as missing.
+- A right-to-left name could turn a whole PDF paragraph around. Paragraphs are always laid out left to right.
+- A heading could end a PDF page with its table starting on the next one. It now moves with its first rows.
+- Names in the ReadMe could strike text through (`~~`), start a list (`2.`, `+`) or show an HTML entity. They are escaped.
+- The generation time was the server's local time, labelled "local time". It is UTC and says so.
+- The Total share in Days per country could differ from the sum of the rows by rounding. It adds up the rows.
+- A test file stopped its run before its last tests when started on its own.
+
+Found in a review of the dashboard's cards (Days in Base country, Year elapsed, Days outside Base country, Days per Country) and the Map (8):
+
+- In Windows high contrast, the day bars and the 183 day tick disappeared. They use the system colors.
+- "U.S.A." or "St. Lucia" counted apart from "USA" and "St Lucia". Dots no longer make another country.
+- "Today" was the server's date, so near midnight Year elapsed and the "so far" days were a day off for people far from the server. It is the date where you are.
+- The line under Days outside Base country counted every stay, the base's included. It counts the stays outside it.
+- Countries with the same number of days were listed in the order of their stays. They are listed A to Z.
+- Map pins drifted off their countries when the card changed width without the window changing (a sidebar, the zoom). They follow the map's own size.
+- In Windows high contrast, the map's land and its pins disappeared. They use the system colors.
+- The pin tooltip took the font of the button it belongs to. It uses the page's text font.
+
+Found in a review of receipts and storage (6):
+
+- A big photo that did not get smaller as a JPEG was kept as it was, with the location the phone stored in it, though the docs promise that big photos lose it. Big photos with EXIF or XMP data are always saved again without it.
+- Downloading a receipt stored before 1.2.12 whose file date was before 1980 (a restore) failed. It downloads.
+- Renaming a receipt could take an account past its storage quota (the ZIP grows with the name). At the quota the name changes, but not the file inside.
+- An account over its quota read "500 MB used of 500 MB". The used size rounds up once it is over.
+- A file named ".pdf" or with an invisible name was saved under that name, which Rename refuses. It is saved as "receipt.pdf".
+- A receipt named CON.pdf (or NUL, COM1...) could not be extracted on Windows. Its file gets a "_" in front.
+
+Found in a review of the Settings page (9):
+
+- The account's Recent security activity showed the IP address of an admin who changed its plan or quota. Actions by an admin, Stripe or the server show no address.
+- Pressing Save twice (password, sessions, two-factor) could sign the browser out while the change went through. These forms send once.
+- Every view of Settings waited for the database's write lock, so a busy moment made it fail. Only the first view writes the setup key.
+- Changing the email to an address that has an account sent a link that could never work, and Confirm then gave a wrong reason. The owner of that address now hears that someone tried (the page answers the same, so nobody learns who has an account).
+- A long Google address made Settings scroll sideways on phones. It wraps.
+- Changing the password cancelled a pending email change without saying so. The message says so.
+- Removing an authenticator app already removed in another tab said two-factor was off, while passkeys kept it on. It names what is left.
+- A crafted passkey number made Rename and Remove fail with an error page. It is ignored.
+- Every passkey's buttons read "Rename" and "Remove" to screen readers. They name the passkey.
+
+Found in a review of Support (3) and of the admin's Support tickets (2):
+
+- A ticket or message sent twice at the rate limit (a retry) answered "Too many" though it had been sent, and each copy used up the limit. A copy is answered as sent and counts once.
+- Emoji newer than the server's Python (Unicode 15.1 and 16) were removed from tickets and names, and a subject made of them was refused. They are kept.
+- A ticket refused by the rate limit answered 400 without saying when to retry. It answers 429 with Retry-After, as sign in does.
+- An answer refused because the ticket was closed meanwhile failed with an error page when the account was deleted at that moment. It says the ticket no longer exists.
+- **Close ticket** closed a ticket the user had just written on ("still broken"). It now refuses, so the admin reads the new message first.
+
+Found in a review of the Admin page (5):
+
+- Purging the Security Activity left no trace of who did it. The purge is recorded.
+- Disabling an account that still pays gave no warning, and its owner could no longer reach Manage billing. The account page and the message say to cancel in Stripe first.
+- A purge loaded the whole log into memory, and the page could reload before a slow purge answered, losing the only copy of the file. It reads in chunks into a temporary file, and the page waits longer than the server's timeout.
+- On phones the "Paid with Stripe" note squeezed the plan menu. It takes a line of its own.
+- The first click on the Account and Event columns sorted Z to A. It sorts A to Z.
+
+Found in a review of signing in, out and up (6):
+
+- Sign in errors were not announced to screen readers, and the email field took the focus over them. Messages are announced, and an error keeps the focus off the fields.
+- The form token planted before sign in stayed valid after it. Signing in gives a new one.
+- Opening a page signed out said "Please log in to access this page." It says "Please sign in to see this page."
+- After Sign out, the device cookie still held the email address for a year (shared computers). It holds a keyed hash of it.
+- Any website could sign people out (and end sessions without "Remember me") with a form posted to Nomad Life. Requests from other sites no longer change the session.
+- A sign up that an admin disabled and enabled before it was confirmed could not be finished: signing in promised a link that was never sent. Its confirmation link works again.
+
 ## [1.12.16] - 2026-11-07
 
 ### Added

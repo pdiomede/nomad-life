@@ -9,7 +9,7 @@
       <p class="eyebrow">Settings</p>
       <h1>{{ current_user.name or row.email }}</h1>
       {# Each part stays whole: a narrow line breaks only between them, after a dot. #}
-      <p class="muted">{% if current_user.name %}<span dir="auto">{{ row.email }}</span> &middot; {% endif %}<span class="nowrap">Member since {{ row.created_at | localdate }} &middot;</span> <span class="nowrap">{{ counts.years }} year{{ '' if counts.years == 1 else 's' }} &middot;</span> <span class="nowrap">{{ counts.documents }} document{{ '' if counts.documents == 1 else 's' }} &middot;</span> <span class="nowrap">{{ account_storage.used | filesize('down') }} used of {{ account_storage.quota | filesize('down') }}</span></p>
+      <p class="muted">{% if current_user.name %}<span dir="auto">{{ row.email }}</span> &middot; {% endif %}<span class="nowrap">Member since {{ row.created_at | localdate }} &middot;</span> <span class="nowrap">{{ counts.years }} year{{ '' if counts.years == 1 else 's' }} &middot;</span> <span class="nowrap">{{ counts.documents }} document{{ '' if counts.documents == 1 else 's' }} &middot;</span> <span class="nowrap">{{ account_storage.used | usedsize(account_storage.quota) }} used of {{ account_storage.quota | filesize('down') }}</span></p>
     </div>
   </div>
 
@@ -27,7 +27,7 @@
 
   <section class="card" id="profile" aria-labelledby="profile-title">
     <div class="card-head"><h2 id="profile-title">Profile</h2></div>
-    <form method="post" class="stack">
+    <form method="post" class="stack" data-submit-once>
       {{ ui.csrf() }}
       <input type="hidden" name="action" value="profile">
       <div class="grid-2">
@@ -127,7 +127,7 @@
 
   <section class="card" id="password" aria-labelledby="pw-title">
     <div class="card-head"><h2 id="pw-title">Change password</h2></div>
-    <form method="post" class="stack">
+    <form method="post" class="stack" data-submit-once>
       {{ ui.csrf() }}
       <input type="hidden" name="action" value="password">
       <div class="field">
@@ -172,7 +172,7 @@
           </div>
           <div class="passkey-actions">
             <details class="passkey-more">
-              <summary class="btn btn-ghost btn-sm">Rename</summary>
+              <summary class="btn btn-ghost btn-sm" aria-label="Rename the passkey {{ pk.name }}">Rename</summary>
               <form method="post" class="passkey-inline">
                 {{ ui.csrf() }}
                 <input type="hidden" name="action" value="passkey_rename">
@@ -185,7 +185,7 @@
               </form>
             </details>
             <details class="passkey-more">
-              <summary class="btn btn-ghost btn-sm">Remove</summary>
+              <summary class="btn btn-ghost btn-sm" aria-label="Remove the passkey {{ pk.name }}">Remove</summary>
               <form method="post" class="passkey-inline" data-confirm-delete="the passkey &ldquo;{{ pk.name }}&rdquo;">
                 {{ ui.csrf() }}
                 <input type="hidden" name="action" value="passkey_remove">
@@ -240,7 +240,7 @@
       </div>
       {% if row.totp_secret %}
       <p class="muted small card-intro">Signing in can ask for a 6 digit code from your authenticator app.</p>
-      <form method="post" class="stack">
+      <form method="post" class="stack" data-submit-once>
         {{ ui.csrf() }}
         <input type="hidden" name="action" value="2fa_disable">
         <div class="grid-2">
@@ -265,7 +265,7 @@
           <li>Type the 6 digit code the app now shows for Nomad Life, with your password.</li>
         </ol>
       </div>
-      <form method="post" class="stack">
+      <form method="post" class="stack" data-submit-once>
         {{ ui.csrf() }}
         <input type="hidden" name="action" value="2fa_enable">
         <div class="grid-2">
@@ -300,7 +300,7 @@
       </form>
     </div>
     {% endif %}
-    <form method="post" class="stack">
+    <form method="post" class="stack" data-submit-once>
       {{ ui.csrf() }}
       <input type="hidden" name="action" value="email">
       <div class="grid-2">
@@ -320,7 +320,7 @@
 
   <section class="card" id="devices" aria-labelledby="sessions-title">
     <div class="card-head"><h2 id="sessions-title">Signed in devices</h2></div>
-    <form method="post" class="stack">
+    <form method="post" class="stack" data-submit-once>
       {{ ui.csrf() }}
       <input type="hidden" name="action" value="sessions">
       <p class="small">{{ devices }} browser{{ '' if devices == 1 else 's' }} or device{{ '' if devices == 1 else 's' }} used your account in the last {{ idle_days }} days, this one included.</p>
@@ -334,7 +334,7 @@
     {% if activity %}
     <ul class="activity-list">
       {% for e in activity %}
-      <li><span>{{ e.label }}</span> <span class="muted small">{{ e.created_at }} UTC{% if e.ip %} &middot; {{ e.ip }}{% endif %}</span></li>
+      <li><span>{{ e.label }}</span> <span class="muted small">{{ e.created_at }} UTC{% if e.ip and not e.actor %} &middot; {{ e.ip }}{% endif %}</span></li>
       {% endfor %}
     </ul>
     <p class="muted small">Something you do not recognize? Change your password and use "Sign out everywhere else".</p>

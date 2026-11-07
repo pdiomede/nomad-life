@@ -9,7 +9,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="credential" value="">
   <p class="passkey-error small" role="alert" data-passkey-error hidden></p>
-  <button class="btn btn-primary btn-block" type="submit"{% if not has_totp %} autofocus{% endif %}>Use a passkey</button>
+  <button class="btn btn-primary btn-block" type="submit"{% if not has_totp and not error_shown() %} autofocus{% endif %}>Use a passkey</button>
   <noscript><p class="muted small center">Passkeys need JavaScript. Turn it on, then reload this page{% if has_totp %}, or use the code below{% endif %}.</p></noscript>
 </form>
 {% endif %}
@@ -19,7 +19,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="field">
     <label for="code">Code from your authenticator app</label>
-    <input id="code" name="code" type="text" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required{% if not has_passkeys %} autofocus{% endif %}>
+    <input id="code" name="code" type="text" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required{% if not has_passkeys and not error_shown() %} autofocus{% endif %}>
   </div>
   <button class="btn {{ 'btn-ghost' if has_passkeys else 'btn-primary' }} btn-block" type="submit">Sign in with the code</button>
 </form>

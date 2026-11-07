@@ -74,8 +74,9 @@ class AdminActivityTests(AppTestCase):
         self.add([("sign_in", "u", "")] * 25)  # an account filter with a second page
         section, _ = self.listed("?search=adm&sort=email&page=1&asort=ip&adir=asc")
         self.assertIn('href="/admin?search=adm&amp;sort=email&amp;asort=ip#activity"', section)
-        self.assertIn('href="/admin?search=adm&amp;sort=email&amp;asort=event&amp;adir=asc#activity"'
-                      .replace("&amp;adir=asc", ""), section)
+        # 1.12.17: a first click on Event sorts A to Z.
+        self.assertIn('href="/admin?search=adm&amp;sort=email&amp;asort=event&amp;adir=asc#activity"',
+                      section)
         self.assertIn('href="/admin?search=adm&amp;sort=email&amp;asort=ip&amp;adir=asc&amp;apage=2'
                       '#activity"', section)
         self.assertIn('<input type="hidden" name="search" value="adm">', section)
@@ -83,7 +84,7 @@ class AdminActivityTests(AppTestCase):
         # And the accounts table keeps the activity table.
         html = self.client.get("/admin?asort=ip&apage=2&q=u").get_data(as_text=True)
         accounts = html.split('id="activity"', 1)[0]
-        self.assertIn('href="/admin?sort=email&amp;q=u&amp;asort=ip&amp;apage=2#accounts"', accounts)
+        self.assertIn('href="/admin?sort=email&amp;dir=asc&amp;q=u&amp;asort=ip&amp;apage=2#accounts"', accounts)
         self.assertIn('<input type="hidden" name="asort" value="ip">', accounts)
 
     def test_filter_by_account_with_paging(self):

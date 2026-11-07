@@ -150,8 +150,8 @@
       <tr>
         {% if href %}
           {{ sort_th(state, 'time', 'Time (UTC)', href) }}
-          {{ sort_th(state, 'event', 'Event', href) }}
-          {{ sort_th(state, 'account', 'Account', href, 'hide-sm') }}
+          {{ sort_th(state, 'event', 'Event', href, first='asc') }}
+          {{ sort_th(state, 'account', 'Account', href, 'hide-sm', first='asc') }}
           {{ sort_th(state, 'ip', 'IP', href, 'hide-sm') }}
         {% else %}
           <th scope="col">Time (UTC)</th>

@@ -1,5 +1,6 @@
 """Tests for the annual accountant package (package.py and the /year/<year>/package route)."""
 import hashlib
+import io
 import os
 import shutil
 import subprocess
@@ -44,9 +45,11 @@ class PackageContentsTests(AppTestCase):
         self.assertIsNone(zf.testzip())
         root = "NomadLife-2026-accountant-package"
         names = zf.namelist()
-        self.assertEqual(names[:4], [f"{root}/README.txt", f"{root}/summary.pdf",
-                                     f"{root}/timeline.csv", f"{root}/country-totals.csv"])
-        self.assertEqual(names[-1], f"{root}/manifest.csv")
+        # The receipts first, then the files that describe them (1.12.16), manifest.csv last.
+        self.assertEqual(names[-5:], [f"{root}/ReadMe.md", f"{root}/summary.pdf",
+                                      f"{root}/timeline.csv", f"{root}/country-totals.csv",
+                                      f"{root}/manifest.csv"])
+        self.assertTrue(all("/receipts/" in n for n in names[:-5]))
         self.assertIn(f"{root}/receipts/base/rental-contract_Lease-2026.pdf", names)
         self.assertIn(f"{root}/receipts/01_2026-02-01_Canggu_Indonesia/flight-ticket_Flight-to-Bali.pdf", names)
         self.assertTrue(zf.read(f"{root}/summary.pdf").startswith(b"%PDF"))
@@ -153,7 +156,7 @@ class PackageContentsTests(AppTestCase):
         missing = [r for r in self.read_csv(zf, "manifest.csv") if r["status"] == "missing"]
         self.assertEqual(len(missing), 1)
         self.assertEqual(missing[0]["sha256"], "")
-        self.assertIn("Flight to Bali.pdf", zf.read(f"{root}/README.txt").decode("utf-8"))
+        self.assertIn("Flight to Bali.pdf", zf.read(f"{root}/ReadMe.md").decode("utf-8"))
 
     def test_response_headers(self):
         resp, _ = self.package(2026)
@@ -311,7 +314,7 @@ class PackageSummaryTests(AppTestCase):
         this_year = date.today().year
         self.new_year(this_year)
         text = self.summary(this_year)
-        self.assertIn(f"So far (as of {date.today().isoformat()})", text)
+        self.assertIn(f"So far (as of {package.human_date(date.today())})", text)  # 15-Jan-2027
         self.assertIn("Full year with planned trips", text)
         self.assertNotIn("Final numbers", text)
 
@@ -374,6 +377,140 @@ class PackageMemoryTests(AppTestCase):
         self.assertLess(biggest, 1024 * 1024, "chunks should stay small")
         self.assertLess(peak - held, 2 * 1024 * 1024,
                         f"streaming 50 MB used {(peak - held) / 1e6:.2f} MB of extra memory")
+
+
+
+
+class ReadMeMarkdownTests(AppTestCase):
+    """The package's ReadMe.md (1.12.17, it was README.txt) and dates like 15-Jan-2027."""
+
+    def setUp(self):
+        super().setUp()
+        self.signup()
+        self.set_plan("pro")
+        self.new_year(2025)
+        self.add_movement(2025, "Bangkok", "Thailand", "2025-01-18", "2025-01-30")
+
+    def files(self):
+        with zipfile.ZipFile(io.BytesIO(self.client.get("/year/2025/package").data)) as zf:
+            return {n.split("/", 1)[1]: zf.read(n) for n in zf.namelist()}
+
+    def test_a_markdown_readme(self):
+        files = self.files()
+        self.assertIn("ReadMe.md", files)
+        self.assertNotIn("README.txt", files)
+        raw = files["ReadMe.md"]
+        self.assertFalse(raw.startswith(b"\xef\xbb\xbf"))  # no byte order mark
+        self.assertNotIn(b"\r\n", raw)
+        text = raw.decode("utf-8")
+        self.assertTrue(text.startswith("# Nomad Life accountant package 2025\n"))
+        self.assertIn("- **Period:** 01-Jan-2025 to 31-Dec-2025", text)
+        self.assertIn("## Files\n\n| File | What it is |\n| --- | --- |\n| `summary.pdf` |", text)
+        rules = text[text.index("## Rules used for counting"):]
+        self.assertEqual(rules.count("\n- "), len(package.RULES))
+        self.assertTrue(text.rstrip().endswith(package.DISCLAIMER))
+        self.assertNotIn("## Missing receipts", text)
+        table = [line for line in text.splitlines() if line.startswith("| ")]
+        self.assertTrue(all(line.count("|") - line.count("\\|") == 3 for line in table), table)
+
+    def test_names_cannot_change_the_formatting(self):
+        self.assertEqual(package.md_escape("*Hotel* a|b [x] <y> #1"), "\\*Hotel\\* a\\|b \\[x\\] \\<y\\> \\#1")
+        self.client.post("/settings", data={"action": "profile", "first_name": "*Ada*", "last_name": "|Lovelace|"})
+        text = self.files()["ReadMe.md"].decode()
+        self.assertIn("- **Prepared for:** \\*Ada\\* \\|Lovelace\\| (a@example.com)", text)
+
+    def test_the_pdf_dates_read_easily(self):
+        with self.app.test_request_context():
+            year_row = db.query("SELECT * FROM years WHERE year = 2025", one=True)
+            text = package.summary_text(appmod.build_package_data(year_row, False))
+        self.assertIn("Period: 01-Jan-2025 to 31-Dec-2025 (365 days)", text)
+        self.assertIn("18-Jan-2025 to 30-Jan-2025", text)
+        self.assertEqual(package.human_date("2027-01-15"), "15-Jan-2027")
+        self.assertEqual(package.human_date("not a date"), "not a date")
+        # The CSV files keep ISO dates for spreadsheets.
+        self.assertIn(b"2025-01-18", self.files()["timeline.csv"])
+
+
+
+class PackageReviewTests(AppTestCase):
+    """Found in a review of the accountant package and its summary PDF (1.12.16)."""
+
+    def setUp(self):
+        super().setUp()
+        self.signup()
+        self.set_plan("pro")
+        self.new_year(2025)
+
+    def upload(self, movement_id, name):
+        return self.client.post(f"/movements/{movement_id}", data={
+            "action": "upload", "kind": "flight", "file": (io.BytesIO(b"%PDF-1.4 " + name.encode() * 50), name)},
+            content_type="multipart/form-data")
+
+    def test_1_a_receipt_lost_while_streaming_is_not_listed_as_included(self):
+        mid = self.add_movement(2025, "Bangkok", "Thailand", "2025-01-18", "2025-01-30")
+        self.upload(mid, "hotel.pdf")
+        self.upload(mid, "flight.pdf")
+        with self.app.test_request_context():
+            year_row = db.query("SELECT * FROM years WHERE year = 2025", one=True)
+            data = appmod.build_package_data(year_row, False)
+            entries = package.prepare(data)
+            gone = next(r for r in data.receipts if "flight" in r.name)
+            os.remove(gone.path)  # deleted in another tab while the ZIP downloads
+            body = b"".join(package.stream(data, entries))
+        with zipfile.ZipFile(io.BytesIO(body)) as zf:
+            root = data.root
+            readme = zf.read(f"{root}/ReadMe.md").decode()
+            pdf_text = package.summary_text(data)
+        self.assertIn("## Missing receipts", readme)
+        self.assertIn("flight", readme[readme.index("## Missing receipts"):])
+        self.assertIn("(missing)", pdf_text)
+
+    def test_2_left_to_right_paragraphs(self):
+        source = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                   "package.py"), encoding="utf-8").read()
+        self.assertIn('pdf.set_text_shaping(True, direction="ltr")', source)
+
+    def test_3_a_heading_stays_with_its_table(self):
+        source = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                   "package.py"), encoding="utf-8").read()
+        self.assertIn('needed = max(needed, 14 + table_start_height(following[1]))', source)
+        # Long places and receipt names still render (no error), on more than one page.
+        mid = self.add_movement(2025, "C" * 100, "Thailand", "2025-01-18", "2025-01-30")
+        for i in range(30):
+            self.upload(mid, f"{'receipt-with-a-long-name-' * 4}{i}.pdf")
+        with self.app.test_request_context():
+            year_row = db.query("SELECT * FROM years WHERE year = 2025", one=True)
+            pdf = package.render_pdf(appmod.build_package_data(year_row, False))
+        self.assertTrue(pdf.startswith(b"%PDF"))
+
+    def test_4_names_cannot_strike_through_or_start_a_list(self):
+        self.assertEqual(package.md_escape("~~old~~"), "\\~\\~old\\~\\~")
+        self.assertEqual(package.md_escape("Fish &amp; Chips"), "Fish \\&amp; Chips")
+        self.assertEqual(package.md_escape("+ 1"), "\\+ 1")
+        self.assertEqual(package.md_escape("2. Hotel"), "2\\. Hotel")
+        self.assertEqual(package.md_escape("a-b.c"), "a-b.c")
+
+    def test_5_the_time_is_utc_and_says_so(self):
+        with self.app.test_request_context():
+            year_row = db.query("SELECT * FROM years WHERE year = 2025", one=True)
+            data = appmod.build_package_data(year_row, False)
+        self.assertRegex(package.summary_text(data), r"Generated: \d{2}-[A-Z][a-z]{2}-\d{4} \d{2}:\d{2} UTC")
+        self.assertIn(" UTC by Nomad Life", package.readme_markdown(data).decode())
+        self.assertNotIn("local time", package.summary_text(data))
+
+    def test_6_the_total_share_adds_up_the_rows(self):
+        for i, country in enumerate(["Italy", "Spain", "France"]):
+            self.add_movement(2025, "", country, f"2025-03-0{i + 1}", f"2025-03-0{i + 1}")
+        with self.app.test_request_context():
+            year_row = db.query("SELECT * FROM years WHERE year = 2025", one=True)
+            blocks = package.summary_blocks(appmod.build_package_data(year_row, False))
+        table = next(c for k, c in blocks if k == "table" and c["columns"][0] == "Country")
+        shares = [float(r[3].rstrip("%")) for r in table["rows"][:-1]]
+        self.assertEqual(table["rows"][-1][3], f"{sum(shares):.1f}%")
+
+    def test_7_the_main_guard_is_last(self):
+        source = open(__file__, encoding="utf-8").read().rstrip()
+        self.assertTrue(source.endswith('unittest.main()'))
 
 
 if __name__ == "__main__":

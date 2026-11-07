@@ -207,6 +207,8 @@ p { margin: 0; }
 .captcha-failed { color: var(--error-text); margin: 0; }
 .small { font-size: 13px; }
 .card-intro { margin-bottom: 16px; }  /* space between a card's intro text and the form below it */
+/* A long address (the Google account in Calendar Integration) wraps instead of widening phones. */
+.card-intro { overflow-wrap: anywhere; }
 .center { text-align: center; }
 .right { text-align: right; }
 .nowrap { white-space: nowrap; }
@@ -361,6 +363,11 @@ main:focus { outline: none; }
 .meter { position: relative; height: 8px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); overflow: visible; }
 .meter span { display: block; height: 100%; border-radius: 4px; background: var(--gradient); }
 .meter i { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); opacity: 0.5; }
+/* Windows High Contrast drops background images: the bars and their 183 tick in system colors. */
+@media (forced-colors: active) {
+  .meter span { forced-color-adjust: none; background: Highlight; }
+  .meter i { forced-color-adjust: none; background: CanvasText; opacity: 1; }
+}
 .meter-hot span { background: linear-gradient(90deg, #B6509E, #F25A5A); }
 
 .pill { display: inline-block; align-self: flex-start; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
@@ -405,11 +412,18 @@ main:focus { outline: none; }
 .map-pin-days { pointer-events: none; }
 .map-pin:hover, .map-pin:focus { z-index: 3; }
 .map-pin:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+/* High contrast: the land, the stay pins and the base pin in distinct system colors. */
+@media (forced-colors: active) {
+  .map-land { forced-color-adjust: none; background: GrayText; }
+  .map-pin, .map-dot { forced-color-adjust: none; background: Canvas; color: CanvasText; border: 2px solid CanvasText; }
+  .map-pin-base, .map-dot-base { background: Highlight; color: HighlightText; border-color: CanvasText; }
+}
 .map-tip {
   position: absolute; left: 50%; bottom: calc(100% + 10px); transform: translateX(-50%); z-index: 4;
   display: none; flex-direction: column; gap: 2px; min-width: 140px; max-width: 240px; padding: 8px 10px;
   background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); font-size: 13px; text-align: left; white-space: normal; pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); text-align: left; white-space: normal; pointer-events: none;
+  font: 400 13px/1.35 Inter, system-ui, sans-serif; font-variant-numeric: normal;  /* not the pin's bold 11px/1 */
 }
 .map-tip::after {
   content: ""; position: absolute; left: 50%; top: 100%; margin-left: -6px;
@@ -1020,7 +1034,10 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .admin-email .pill { margin: 0; }
 .admin-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .admin-actions form { margin: 0; }
-.admin-quota { display: flex; align-items: center; gap: 6px; }
+.admin-quota { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* The "Paid with Stripe" note takes a line of its own: beside the select it squeezed the plan
+   names on phones. */
+.admin-plan-note { flex-basis: 100%; margin: 0; }
 .admin-quota input { width: 110px; }
 .admin-price input { width: 90px; }
 /* Each label stays with its field when the form wraps on phones. */

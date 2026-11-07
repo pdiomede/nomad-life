@@ -99,28 +99,30 @@ class PurgeTests(ActivityMenuCase):
         rows = self.parse(resp)
         self.assertEqual([r[2] for r in rows[1:]], ["sign_in", "password_changed"])
         self.assertEqual(self.events(), ["old@example.com sign_in",
-                                         "old@example.com sign_in_failed"])
+                                         "old@example.com sign_in_failed",
+                                         " admin_purge"])  # 1.12.17: the purge is recorded
         html = self.client.get("/admin").get_data(as_text=True)
         self.assertIn("Purged 2 events of security activity of the last 30 days.", html)
 
     def test_purge_all(self):
         rows = self.parse(self.purge("all"))
         self.assertEqual(len(rows) - 1, 4)
-        self.assertEqual(self.events(), [])
+        self.assertEqual(self.events(), [" admin_purge"])  # only the purge's own record
 
     def test_an_event_written_meanwhile_stays(self):
         original = appmod.audit_csv_lines
 
         def sign_in_meanwhile(rows, header=False):
-            with other_connection(self) as conn:
-                conn.execute("INSERT INTO audit_log (event, email) VALUES "
-                             "('sign_in', 'late@example.com')")
+            if header:  # once, while the purge reads
+                with other_connection(self) as conn:
+                    conn.execute("INSERT INTO audit_log (event, email) VALUES "
+                                 "('sign_in', 'late@example.com')")
             return original(rows, header)
 
         with mock.patch.object(appmod, "audit_csv_lines", side_effect=sign_in_meanwhile):
             rows = self.parse(self.purge("all"))
         self.assertNotIn("late@example.com", [r[3] for r in rows])
-        self.assertEqual(self.events(), ["late@example.com sign_in"])
+        self.assertEqual(self.events(), ["late@example.com sign_in", " admin_purge"])
 
     def test_nothing_to_purge(self):
         with self.db() as conn:

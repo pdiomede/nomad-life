@@ -10,3 +10,11 @@
     if (localStorage.getItem("nl_marker") !== "on") document.documentElement.setAttribute("data-marker", "off");
   } catch (e) {}
 })();
+// The browser's time zone, for the dashboard's "today" (Year elapsed, the days so far).
+try {
+  var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (tz && document.cookie.indexOf("nl_tz=" + encodeURIComponent(tz)) === -1) {
+    document.cookie = "nl_tz=" + encodeURIComponent(tz) + "; path=/; max-age=31536000; SameSite=Lax" +
+      (location.protocol === "https:" ? "; Secure" : "");
+  }
+} catch (e) { /* the server's date then */ }

@@ -134,7 +134,7 @@ class UserFixTests(Base):
             self.open_ticket(subject=f"T{i}")
         with self.db() as conn:
             conn.execute("UPDATE users SET email = 'renamed@example.com' WHERE id = 1")
-        self.assertEqual(self.open_ticket(subject="T6").status_code, 400)
+        self.assertEqual(self.open_ticket(subject="T6").status_code, 429)
 
     def test_closing_twice_says_so(self):
         self.open_ticket()

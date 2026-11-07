@@ -93,7 +93,7 @@ class DashboardPaginationTests(AppTestCase):
         html = self.get("/year/2025?page=3")
         self.assertEqual(self.cities(html), ["City21", "City22", "City23"])
         self.assertIn("Showing 21 to 23 of 23 movements", html)
-        self.assertIn("23 movements logged", html)
+        self.assertIn("23 stays outside Base country", html)  # Spain, under a Lisbon base
 
     def test_no_pager_when_everything_fits(self):
         self.add_many(10)
