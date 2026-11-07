@@ -141,7 +141,9 @@
      its place free (fold-gear-space). With a Google Calendar connected, the Nomad Life and
      Google Calendar tabs sit in the middle the same way: the summary and the overlay share
      one grid (fold-head-grid), each holding invisible copies of what the other shows. #}
-  <div class="fold-wrap{% if cal_link %} has-cal-tabs{% endif %}" id="calendar">
+  {# cal-on-google: the Google tab is the one shown, so its two icons (Refresh Calendar,
+     open in Google Calendar) show too, in the overlay and in the summary's copy alike. #}
+  <div class="fold-wrap{% if cal_link %} has-cal-tabs{% endif %}{% if google_view %} cal-on-google{% endif %}" id="calendar">
   {# The overlay comes first in the page, so the gear and the tabs come before the content
      they switch for keyboards and screen readers; it is laid over the head either way. #}
   {% set cal_page = request.args.get("page", "1") | int %}
@@ -152,9 +154,12 @@
     <nav class="cal-tabs" aria-label="Calendar to show" data-cal-tabs>
       <a class="cal-tab" href="{{ url_for('dashboard', year=y.year, page=cal_page, cal='local', _anchor='calendar') }}" data-cal-tab="local" data-tip="Nomad Life local calendar"{% if not google_view %} aria-current="page"{% endif %}>Nomad Life</a>
       <a class="cal-tab" href="{{ url_for('dashboard', year=y.year, page=cal_page, cal='google', _anchor='calendar') }}" data-cal-tab="google" data-src="{{ url_for('calendar_google', year=y.year) }}" data-tip="This is the Google calendar &quot;{{ cal_link.calendar_name }}&quot;" aria-label="Google Calendar: {{ cal_link.calendar_name }}"{% if google_view %} aria-current="page"{% endif %}>Google Calendar</a>
+      <a class="cal-refresh cal-icon" href="{{ url_for('dashboard', year=y.year, page=cal_page, cal='google', refresh=1, _anchor='calendar') }}" data-cal-refresh role="button" data-tip="Refresh Calendar" aria-label="Refresh Calendar"></a>
+      <a class="cal-open cal-icon" href="{{ cal_web }}" target="_blank" rel="noopener noreferrer" data-tip="Open the Google calendar &quot;{{ cal_link.calendar_name }}&quot;" aria-label="Open the Google calendar {{ cal_link.calendar_name }} (opens in a new tab)"></a>
     </nav>
     <span class="muted small fold-sub fold-ghost-text" aria-hidden="true">Your {{ y.year }} day-by-day plan</span>
   </div>
+  <p class="visually-hidden" aria-live="polite" data-cal-status></p>
   {% else %}
   <div class="fold-tools">
     <span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar ({{ y.year }})</span>
@@ -165,7 +170,7 @@
     {% if cal_link %}
     <summary class="card-head fold-summary fold-head-grid">
       <h2 id="calendar-title" class="title-icon icon-calendar">Calendar ({{ y.year }})<span class="fold-gear-space" aria-hidden="true"></span></h2>
-      <span class="cal-tabs cal-tabs-ghost" aria-hidden="true"><span class="cal-tab">Nomad Life</span><span class="cal-tab">Google Calendar</span></span>
+      <span class="cal-tabs cal-tabs-ghost" aria-hidden="true"><span class="cal-tab">Nomad Life</span><span class="cal-tab">Google Calendar</span><span class="cal-refresh cal-icon"></span><span class="cal-open cal-icon"></span></span>
       <span class="muted small fold-sub">Your {{ y.year }} day-by-day plan</span>
     </summary>
     <div class="cal-panel" data-cal-panel="local"{% if google_view %} hidden{% endif %}>

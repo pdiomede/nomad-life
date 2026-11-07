@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.14] - 2026-11-07
+
+### Added
+
+- **Refresh Calendar**: a round arrow icon right after the Google Calendar tab (tooltip "Refresh Calendar") reads the chosen calendar from Google again. The calendar stays on screen until the new one arrives, the icon spins meanwhile, and screen readers hear "Calendar refreshed". Clicks within 10 seconds of the last read reuse it, so Google's quota is spared.
+- **Open in Google Calendar**: an arrow out of a box next to it (tooltip: Open the Google calendar "<name>") opens the year in Google Calendar in a new tab, in the connected Google account.
+- Both icons show only while the **Google Calendar** tab is the one selected.
+- The documentation shows the Google Calendar tab in a new screenshot (light and dark), and the calendar screenshot shows the two tabs.
+- The landing page has a **Your whole year at a glance** section with the calendar screenshot, before How it works.
+
+### Changed
+
+- The Google tab's line says the same as the Days per Country card: "Events with the same title share a color. A day shared by two events, such as a travel day, counts toward the event that started later."
+- The receipt type **Hotel / home rent** reads **Hotel / Home rent**.
+
+### Fixed
+
+Found in a review of the Google Calendar widget and its new icons (6 bugs):
+
+- A refresh that Google did not answer (an outage or a rate limit) replaced the calendar on screen with "Google did not answer". It now keeps the calendar it has and says the refresh failed.
+- At 320 px the tabs and the icons stuck out of the card. They are a little tighter on small phones.
+- Refreshing with the card folded refreshed out of sight. It opens the card.
+- A refresh pressed while the first load was still running could end with the older answer on screen, or let a second refresh start. Only the newest answer changes the view now.
+- While Google failed, each refresh and Try again still called it twice, though it was asking the app to slow down. A failure is not retried for 10 seconds.
+- Refresh Calendar was announced as a link, did nothing on Space, and its result was not announced. It is a button with a status screen readers hear.
+
 ## [1.12.13] - 2026-11-07
 
 ### Added

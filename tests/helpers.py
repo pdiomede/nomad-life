@@ -47,6 +47,7 @@ class AppTestCase(unittest.TestCase):
             "EMAIL_IN_BACKGROUND": False,
         })
         appmod._events_cache.clear()  # the Google tab's short cache is per process
+        appmod._events_failures.clear()
         self.client = self.app.test_client()
         self.outbox = []
         patcher = mock.patch.object(appmod, "send_email", side_effect=self._record_email)

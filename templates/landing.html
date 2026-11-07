@@ -85,6 +85,17 @@
   </div>
 </section>
 
+{# The dashboard calendar, as the documentation shows it (static/img/docs, made by
+   scripts/docs_screenshots.py), in the theme of the page. #}
+<section class="landing-shot" aria-labelledby="calendar-shot-title">
+  <h2 id="calendar-shot-title" class="section-title">Your whole year at a glance</h2>
+  <p class="muted center landing-shot-lead">Every day of the year in the color of the country it counts for, so you see where you spent it in one look.</p>
+  <figure class="landing-figure">
+    <img class="doc-shot doc-shot-light" src="{{ url_for('static', filename='img/docs/calendar-light.webp') }}" width="{{ calendar_shot[0] }}" height="{{ calendar_shot[1] }}" alt="The Nomad Life calendar of a year: twelve months, each day in the color of the country it counts for, with a legend of the countries and their days" loading="lazy" decoding="async">
+    <img class="doc-shot doc-shot-dark" src="{{ url_for('static', filename='img/docs/calendar-dark.webp') }}" width="{{ calendar_shot[0] }}" height="{{ calendar_shot[1] }}" alt="The Nomad Life calendar of a year: twelve months, each day in the color of the country it counts for, with a legend of the countries and their days" loading="lazy" decoding="async">
+  </figure>
+</section>
+
 <section class="steps" id="how-it-works" aria-labelledby="steps-title">
   <h2 id="steps-title" class="section-title">How it works</h2>
   <ol class="step-list">

@@ -951,30 +951,92 @@
   // They are links (?cal=google renders the Google view on the server); here a click swaps
   // the two views in place, opens the card when it is folded, and loads the Google view once
   // from its fragment URL. The address keeps no ?cal, so a reload never waits on Google. A
-  // failed load follows the link instead, if the Google tab is still the one chosen.
+  // failed load follows the link instead, if the Google tab is still the one chosen. The
+  // refresh icon (Refresh Calendar) reads the calendar from Google again (?refresh=1), keeping
+  // the view on screen until the new one arrives.
   document.querySelectorAll("[data-cal-tabs]").forEach(function (nav) {
     var card = document.querySelector(".cal-card");
     var local = card && card.querySelector('[data-cal-panel="local"]');
     var google = card && card.querySelector('[data-cal-panel="google"]');
     if (!local || !google) return;
+    var wrap = nav.closest(".fold-wrap");
     var tabs = nav.querySelectorAll("[data-cal-tab]");
     var googleTab = nav.querySelector('[data-cal-tab="google"]');
+    var refresh = nav.querySelector("[data-cal-refresh]");
+    var status = wrap && wrap.querySelector("[data-cal-status]");
     var loaded = google.children.length > 0;
-    function load() {
+    var latest = 0;  // only the newest request may change the Google view
+    var refreshing = false;
+    function say(text) {
+      // A live region that is always in the page: screen readers hear each change.
+      if (!status) return;
+      status.textContent = "";
+      setTimeout(function () { status.textContent = text; }, 60);
+    }
+    function spin(on) {
+      refreshing = on;
+      if (refresh) refresh.classList.toggle("is-spinning", on);
+    }
+    function fetchView(fresh) {
+      return fetch(googleTab.getAttribute("data-src") + (fresh ? "?refresh=1" : ""), { credentials: "same-origin", headers: { Accept: "text/html" } })
+        .then(function (r) {
+          if (!r.ok || r.redirected) throw new Error("not loaded");  // a sign in page, an error
+          return r.text();
+        });
+    }
+    function refreshed() {
+      // The server keeps its last read when Google does not answer a refresh, and says so.
+      say(google.querySelector("[data-cal-refresh-failed]") ? "Could not refresh the calendar." : "Calendar refreshed.");
+    }
+    function reload() {
+      // Refresh Calendar on a view already shown: it stays until the new one replaces it.
+      var mine = ++latest;
+      spin(true);
+      google.setAttribute("aria-busy", "true");
+      fetchView(true)
+        .then(function (html) {
+          if (mine !== latest) return;
+          google.innerHTML = html;
+          refreshed();
+        })
+        .catch(function () {
+          if (mine !== latest) return;
+          var old = google.querySelector("[data-cal-refresh-failed]");
+          if (old) old.remove();
+          var note = document.createElement("p");
+          note.className = "small cal-notice";
+          note.setAttribute("data-cal-refresh-failed", "");
+          note.textContent = "Could not refresh the calendar. Try again in a moment.";
+          google.insertBefore(note, google.firstChild);
+          say("Could not refresh the calendar.");
+        })
+        .then(function () {
+          if (mine !== latest) return;
+          google.removeAttribute("aria-busy");
+          spin(false);
+        });
+    }
+    function load(fresh) {
+      // The first view of the Google tab (fresh when it comes from Refresh Calendar).
+      var mine = ++latest;
       loaded = true;
+      if (fresh) spin(true);
       google.setAttribute("aria-busy", "true");
       google.textContent = "";
       var note = document.createElement("p");
       note.className = "muted small cal-source";
-      note.textContent = "Loading Google Calendar\u2026";
+      note.textContent = "Loading Google Calendar…";
       google.appendChild(note);
-      fetch(googleTab.getAttribute("data-src"), { credentials: "same-origin", headers: { Accept: "text/html" } })
-        .then(function (r) {
-          if (!r.ok || r.redirected) throw new Error("not loaded");  // a sign in page, an error
-          return r.text();
+      fetchView(fresh)
+        .then(function (html) {
+          if (mine !== latest) return;
+          google.innerHTML = html;
+          google.removeAttribute("aria-busy");
+          if (fresh) { spin(false); refreshed(); }
         })
-        .then(function (html) { google.innerHTML = html; google.removeAttribute("aria-busy"); })
         .catch(function () {
+          if (mine !== latest) return;
+          if (fresh) spin(false);
           if (googleTab.getAttribute("aria-current") === "page") {
             window.location.href = googleTab.href;
           } else {
@@ -984,10 +1046,7 @@
           }
         });
     }
-    nav.addEventListener("click", function (e) {
-      var tab = e.target.closest("[data-cal-tab]");
-      if (!tab || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      e.preventDefault();
+    function choose(tab, noLoad) {
       var which = tab.getAttribute("data-cal-tab");
       tabs.forEach(function (t) {
         if (t === tab) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
@@ -995,12 +1054,37 @@
       card.open = true;
       local.hidden = which !== "local";
       google.hidden = which !== "google";
+      // The Google tab's icons (Refresh Calendar, open in Google Calendar) show with it only.
+      if (wrap) wrap.classList.toggle("cal-on-google", which === "google");
       try {
         var url = new URL(window.location.href);
         url.searchParams.delete("cal");
         history.replaceState(history.state, "", url.pathname + url.search + url.hash);
       } catch (err) { /* old browsers: the address stays as it was */ }
-      if (which === "google" && !loaded) load();
+      if (which === "google" && !loaded && !noLoad) load();
+    }
+    nav.addEventListener("click", function (e) {
+      if (e.target.closest(".cal-open")) return;  // a plain link to Google Calendar, new tab
+      if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if (refresh && e.target.closest("[data-cal-refresh]")) {
+        e.preventDefault();
+        if (refreshing) return;  // a refresh is already on its way
+        card.open = true;  // also when the card was folded on the Google tab
+        if (googleTab.getAttribute("aria-current") !== "page") choose(googleTab, true);
+        if (loaded) reload(); else load(true);
+        return;
+      }
+      var tab = e.target.closest("[data-cal-tab]");
+      if (!tab) return;
+      e.preventDefault();
+      choose(tab);
+    });
+    // Refresh Calendar is a button (role="button"): Space presses it too.
+    nav.addEventListener("keydown", function (e) {
+      if (e.key === " " && e.target.closest("[data-cal-refresh]")) {
+        e.preventDefault();
+        refresh.click();
+      }
     });
     // "Try again" in the Google view, after Google did not answer.
     google.addEventListener("click", function (e) {

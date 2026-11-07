@@ -92,7 +92,8 @@ class TabsShownTests(TabsCase):
         summary = summary[:summary.index("</summary>")]
         self.assertNotIn("<a ", summary)  # the real tabs lie outside the summary
         self.assertIn('<span class="cal-tabs cal-tabs-ghost" aria-hidden="true"><span class="cal-tab">Nomad Life</span>'
-                      '<span class="cal-tab">Google Calendar</span></span>', summary)
+                      '<span class="cal-tab">Google Calendar</span><span class="cal-refresh cal-icon"></span>'
+                      '<span class="cal-open cal-icon"></span></span>', summary)
         self.assertIn('<summary class="card-head fold-summary fold-head-grid">', summary)
         tools = html[html.index('<div class="fold-tools fold-head-grid">'):]
         tools = tools[:tools.index("</nav>")]
@@ -127,7 +128,10 @@ class TabsShownTests(TabsCase):
         self.assertIn('<div class="cal-panel" data-cal-panel="local" hidden>', html)
         self.assertIn('data-cal-tab="google" data-src', html)
         google = html[html.index('data-cal-panel="google"'):]
-        self.assertIn("Events of your Google calendar <strong dir=\"auto\">Work</strong>", google)
+        # The same rule, in the same words, as the Days per Country card.
+        self.assertIn("Events of your Google calendar \"<strong dir=\"auto\">Work</strong>\", read from Google. "
+                      "Events with the same title share a color. A day shared by two events, such as a travel "
+                      "day, counts toward the event that started later.", google)
         self.assertIn('<span dir="auto">Lisbon</span> <span class="muted">3 days</span>', google)
         self.assertIn("No event <span class=\"muted\">362 days</span>", google)
         self.assertIn('aria-label="Google Calendar: Work" aria-current="page"', html)
@@ -337,3 +341,128 @@ class AssetTests(AppTestCase):
         self.assertIn("window.location.href = googleTab.href;", block)
         self.assertIn("history.replaceState(", block)
         self.assertNotIn("innerHTML = '", block)  # only the server's fragment goes in as HTML
+
+
+class RefreshTests(TabsCase):
+    """Refresh Calendar: the icon next to the Google Calendar tab reads the calendar again."""
+
+    def setUp(self):
+        super().setUp()
+        self.connect()
+        self.choose()
+
+    def event_reads(self):
+        return sum("/events" in c[1] for c in self.google.calls)
+
+    def test_the_icon(self):
+        html = self.dashboard()
+        nav = html[html.index("data-cal-tabs>"):]
+        nav = nav[:nav.index("</nav>")]
+        self.assertLess(nav.index('data-cal-tab="google"'), nav.index("data-cal-refresh"))
+        self.assertIn('<a class="cal-refresh cal-icon" href="/year/2026?cal=google&amp;refresh=1#calendar" '
+                      'data-cal-refresh role="button" data-tip="Refresh Calendar" aria-label="Refresh Calendar"></a>', nav)
+        # Its place is kept in the head's invisible copy, so the tabs stay centred.
+        self.assertIn('<span class="cal-refresh cal-icon"></span><span class="cal-open cal-icon"></span></span>', html)
+
+    def test_only_with_a_connected_calendar(self):
+        self.client.post("/settings", data={"action": "calendar_unchoose"})
+        self.assertNotIn("cal-refresh", self.dashboard())
+        self.client.post("/settings", data={"action": "calendar_disconnect"})
+        self.assertNotIn("cal-refresh", self.dashboard())
+
+    def test_refresh_reads_google_again(self):
+        clock = [1000.0]
+        with mock.patch.object(appmod.time, "monotonic", side_effect=lambda: clock[0]):
+            self.client.get("/year/2026/calendar/google")
+            reads = self.event_reads()
+            clock[0] += 30
+            self.client.get("/year/2026/calendar/google")
+            self.assertEqual(self.event_reads(), reads)  # a plain view: the minute's copy
+            self.google.events = [ev("Madrid", "2026-05-04", "2026-05-06")]
+            html = self.client.get("/year/2026/calendar/google?refresh=1").get_data(as_text=True)
+        self.assertEqual(self.event_reads(), reads + 1)
+        self.assertIn('<span dir="auto">Madrid</span>', html)
+        self.assertNotIn('<span dir="auto">Lisbon</span>', html)
+
+    def test_repeated_refreshes_reuse_a_fresh_read(self):
+        clock = [1000.0]
+        with mock.patch.object(appmod.time, "monotonic", side_effect=lambda: clock[0]):
+            self.client.get("/year/2026/calendar/google?refresh=1")
+            reads = self.event_reads()
+            clock[0] += appmod.GOOGLE_REFRESH_MIN_SECONDS - 1
+            self.client.get("/year/2026/calendar/google?refresh=1")
+            self.assertEqual(self.event_reads(), reads)
+            clock[0] += 2
+            self.client.get("/year/2026/calendar/google?refresh=1")
+            self.assertEqual(self.event_reads(), reads + 1)
+
+    def test_without_javascript(self):
+        clock = [1000.0]
+        with mock.patch.object(appmod.time, "monotonic", side_effect=lambda: clock[0]):
+            self.dashboard("?cal=google")
+            reads = self.event_reads()
+            clock[0] += 30
+            html = self.dashboard("?cal=google&refresh=1")
+        self.assertEqual(self.event_reads(), reads + 1)
+        self.assertIn('<details class="card fold-card cal-card" open>', html)
+
+    def test_the_script_and_styles(self):
+        js = read("static", "js", "theme.js")
+        block = js[js.index('document.querySelectorAll("[data-cal-tabs]")'):]
+        block = block[:block.index("  // Map: zoom")]
+        self.assertIn('googleTab.getAttribute("data-src") + (fresh ? "?refresh=1" : "")', block)
+        self.assertIn("if (refreshing) return;", block)
+        self.assertIn("Could not refresh the calendar. Try again in a moment.", block)
+        self.assertIn('if (loaded) reload(); else load(true);', block)
+        reload = block[block.index("function reload()"):block.index("function load(fresh)")]
+        self.assertNotIn("location.href", reload)  # a failed refresh keeps the view on screen
+        css = read("static", "css", "style.css")
+        self.assertIn(".cal-refresh.is-spinning::before { animation: cal-spin 0.8s linear infinite; }", css)
+        self.assertIn("@media (prefers-reduced-motion: reduce) { .cal-refresh.is-spinning::before { animation: none;", css)
+
+
+class GoogleIconsTests(TabsCase):
+    """The Google tab's icons (Refresh Calendar, open in Google Calendar) show only with it."""
+
+    def setUp(self):
+        super().setUp()
+        self.connect()
+        self.choose()
+
+    def test_open_in_google_calendar(self):
+        html = self.dashboard()
+        nav = html[html.index("data-cal-tabs>"):]
+        nav = nav[:nav.index("</nav>")]
+        self.assertLess(nav.index("data-cal-refresh"), nav.index('class="cal-open cal-icon"'))
+        self.assertIn('<a class="cal-open cal-icon" href="https://calendar.google.com/calendar/r/year/2026/1/1?'
+                      'cid=work%40group.calendar.google.com&amp;authuser=ada%40gmail.com" target="_blank" '
+                      'rel="noopener noreferrer" data-tip="Open the Google calendar &quot;Work&quot;" '
+                      'aria-label="Open the Google calendar Work (opens in a new tab)"></a>', nav)
+
+    def test_the_icons_show_only_on_the_google_tab(self):
+        self.assertIn('<div class="fold-wrap has-cal-tabs" id="calendar">', self.dashboard())
+        self.assertIn('<div class="fold-wrap has-cal-tabs" id="calendar">', self.dashboard("?cal=local"))
+        self.assertIn('<div class="fold-wrap has-cal-tabs cal-on-google" id="calendar">', self.dashboard("?cal=google"))
+        css = read("static", "css", "style.css")
+        self.assertIn(".cal-icon { position: relative; flex: none; display: none;", css)
+        self.assertIn(".cal-on-google .cal-icon { display: inline-grid; }", css)
+        js = read("static", "js", "theme.js")
+        self.assertIn('wrap.classList.toggle("cal-on-google", which === "google");', js)
+        self.assertIn('if (e.target.closest(".cal-open")) return;', js)
+
+
+class LandingShotTests(AppTestCase):
+    def test_the_landing_page_shows_the_calendar(self):
+        html = self.client.get("/").get_data(as_text=True)
+        section = html[html.index('<section class="landing-shot"'):]
+        section = section[:section.index("</section>")]
+        self.assertIn('<h2 id="calendar-shot-title" class="section-title">Your whole year at a glance</h2>', section)
+        self.assertIn('class="doc-shot doc-shot-light" src="/static/img/docs/calendar-light.webp', section)
+        self.assertIn('class="doc-shot doc-shot-dark" src="/static/img/docs/calendar-dark.webp', section)
+        self.assertIn('width="1120" height="926"', section)
+        self.assertLess(html.index('class="landing-shot"'), html.index('id="how-it-works"'))
+
+    def test_the_docs_show_the_google_tab(self):
+        html = self.client.get("/docs").get_data(as_text=True)
+        self.assertIn("img/docs/calendar-google-light.webp", html)
+        self.assertIn("img/docs/calendar-google-dark.webp", html)

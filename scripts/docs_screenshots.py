@@ -120,6 +120,45 @@ def seed(app, tmp, password):
     return sample
 
 
+# The demo account's Google Calendar (Calendar Integration): a calendar "Travel plans" whose
+# events the dashboard's Google Calendar tab shows. Google itself is never called: google_api
+# answers with these events.
+DEMO_GOOGLE_EVENTS = [("Lisbon", "2026-01-01", "2026-03-03"), ("Madrid conference", "2026-03-03", "2026-03-07"),
+                      ("Rome", "2026-03-06", "2026-03-09"), ("Lisbon", "2026-03-09", "2026-05-10"),
+                      ("Tokyo", "2026-05-10", "2026-05-25"), ("Lisbon", "2026-05-25", "2026-07-01"),
+                      ("Paris", "2026-07-01", "2026-07-06"), ("Lisbon", "2026-07-06", "2026-11-13"),
+                      ("Bangkok", "2026-11-13", "2026-11-21"), ("Christmas in Lisbon", "2026-12-20", "2027-01-03")]
+
+
+def demo_google(appmod, app):
+    """Connect the demo account to a Google calendar and answer Google's API with the demo
+    events (all-day events: Google's end date is the day after the last)."""
+    from datetime import date, timedelta
+    calendars = [{"id": "alex.rivera@gmail.com", "name": "Alex Rivera", "color": "#9fe1e7", "primary": True},
+                 {"id": "travel@group.calendar.google.com", "name": "Travel plans", "color": "#f6bf26",
+                  "primary": False}]
+    conn = sqlite3.connect(app.config["DATABASE_PATH"])
+    uid = conn.execute("SELECT id FROM users WHERE email = ?", (USER,)).fetchone()[0]
+    conn.execute("INSERT INTO calendar_links (user_id, account, refresh_token, calendars, calendar_id, "
+                 "calendar_name, scopes) VALUES (?, ?, 'demo', ?, ?, ?, ?)",
+                 (uid, "alex.rivera@gmail.com", json.dumps(calendars), calendars[1]["id"], "Travel plans",
+                  f"{appmod.GOOGLE_SCOPE} {appmod.GOOGLE_EVENTS_SCOPE}"))
+    conn.commit()
+    conn.close()
+
+    def after(day):
+        return (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+
+    def fake(method, url, data=None, token=None):
+        if url == appmod.GOOGLE_TOKEN_URL:
+            return {"access_token": "demo"}
+        if "/events" in url:
+            return {"items": [{"summary": t, "start": {"date": a}, "end": {"date": after(b)}}
+                              for t, a, b in DEMO_GOOGLE_EVENTS]}
+        return {}
+    appmod.google_api = fake
+
+
 def free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -138,10 +177,13 @@ def main(only):
             "DATABASE_PATH": os.path.join(tmp, "demo.db"), "UPLOAD_DIR": os.path.join(tmp, "up"),
             "SECRET_KEY": secrets.token_hex(16), "WTF_CSRF_ENABLED": False, "PWNED_CHECK": False,
             "GMAIL_USER": "", "GMAIL_APP_PASSWORD": "", "ADMIN_EMAILS": frozenset({ADMIN}),
-            "ADMIN_REQUIRE_2FA": False, "APP_BASE_URL": f"http://127.0.0.1:{port}"})
+            "ADMIN_REQUIRE_2FA": False, "APP_BASE_URL": f"http://127.0.0.1:{port}",
+            # Calendar Integration on, with a demo client (google_api is faked in demo_google).
+            "GOOGLE_CLIENT_ID": "demo.apps.googleusercontent.com", "GOOGLE_CLIENT_SECRET": "demo"})
         app.logger.disabled = True
         logging.getLogger("werkzeug").setLevel(logging.ERROR)  # no request log
         sample = seed(app, tmp, password)
+        demo_google(appmod, app)
         server = make_server("127.0.0.1", port, app, threaded=True)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         stop = threading.Event()

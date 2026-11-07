@@ -18,13 +18,13 @@ class TabsReviewTests(TabsCase):
         # A hidden (opacity 0) tooltip still made phone pages scroll sideways with a long
         # calendar name, such as an email address.
         css = read("static", "css", "style.css")
-        rule = css[css.index(".cal-tab[data-tip]::after {"):]
+        rule = css[css.index(".cal-tab[data-tip]::after, .cal-icon[data-tip]::after {"):]
         rule = rule[:rule.index("}")]
         self.assertIn("display: none;", rule)
         self.assertIn("max-width: min(300px, calc(100vw - 48px));", rule)
         self.assertIn("white-space: normal;", rule)
-        self.assertIn(".cal-tab[data-tip]:last-child::after { left: auto; right: 0; }", css)
-        self.assertIn(".cal-tab[data-tip]:focus-visible::after { display: block; }", css)
+        self.assertIn('.cal-tab[data-cal-tab="google"]::after, .cal-icon[data-tip]::after { left: auto; right: 0; }', css)
+        self.assertIn(".cal-tab[data-tip]:focus-visible::after, .cal-icon[data-tip]:focus-visible::after { display: block; }", css)
 
     def test_2_reloads_do_not_wait_on_google(self):
         # The address kept ?cal=google after a tab click, so every reload read Google before
@@ -96,7 +96,8 @@ class TabsReviewTests(TabsCase):
 
     def test_10_a_late_failure_keeps_the_choice(self):
         js = read("static", "js", "theme.js")
-        block = js[js.index(".catch(function () {", js.index("data-cal-tabs")):]
+        load = js[js.index("function load(fresh)", js.index("data-cal-tabs")):]
+        block = load[load.index(".catch(function () {"):]
         block = block[:block.index("});")]
         self.assertIn('if (googleTab.getAttribute("aria-current") === "page") {', block)
         self.assertIn("loaded = false;", block)
@@ -193,6 +194,7 @@ class IntegrationReviewTests(TabsCase):
             return fake
         with mock.patch.object(appmod, "google_api", side_effect=answer(403, "rateLimitExceeded")):
             self.assertIn("Google did not answer", self.fragment())
+        appmod._events_failures.clear()  # past the 10 seconds a failure is remembered
         with mock.patch.object(appmod, "google_api", side_effect=answer(403, "insufficientPermissions")):
             self.assertIn(">Allow events</button>", self.fragment())
 

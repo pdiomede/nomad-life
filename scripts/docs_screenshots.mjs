@@ -56,6 +56,8 @@ const SHOTS = [
       __callout(".stat-base a.small", 3, "right");` },
   { name: "movements-table", path: "/year/2026", select: ["#movements"] },
   { name: "calendar", path: "/year/2026", wait: 300, select: [".cal-card"], prep: `document.querySelector(".cal-card").open = true;` },
+  // The Google Calendar tab, as the server draws it with ?cal=google (the card opens on it).
+  { name: "calendar-google", path: "/year/2026?cal=google", wait: 300, select: [".cal-card"] },
   { name: "map", path: "/year/2026", wait: 500, select: [".map-card"], prep: `document.querySelector(".map-card").open = true;`, hover: '.map-pin[aria-label^="Italy"]' },
   { name: "delete-dialog", path: "/year/2026", wait: 900, pad: 28, select: ["#confirm-dialog"], prep: `
       document.querySelector('#movements form[data-confirm-delete^="the movement to Madrid"] button').click();

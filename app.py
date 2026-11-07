@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.13"
+APP_VERSION = "1.12.14"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -90,7 +90,7 @@ for _pass in (0, 1, 2):
             COUNTRY_LOOKUP.setdefault(fold(_key), _name)
 DOCUMENT_KINDS = OrderedDict([
     ("rental_contract", "Rental contract"),
-    ("accommodation", "Hotel / home rent"),
+    ("accommodation", "Hotel / Home rent"),
     ("flight", "Flight ticket"),
     ("other", "Other"),
 ])
@@ -2813,6 +2813,15 @@ def calendar_events_ok(link):
     return GOOGLE_EVENTS_SCOPE in (link.get("scopes") or "").split()
 
 
+def google_calendar_web_url(link, year):
+    """The chosen calendar in Google Calendar on the web, on the year's view, in the connected
+    Google account (authuser) whatever account the browser opens first."""
+    params = {"cid": link["calendar_id"]}
+    if link.get("account"):
+        params["authuser"] = link["account"]
+    return f"https://calendar.google.com/calendar/r/year/{year}/1/1?{urlencode(params)}"
+
+
 def calendar_choice():
     """The calendar tab a dashboard link asks for (?cal=local or ?cal=google), else None."""
     cal = request.args.get("cal")
@@ -2937,19 +2946,25 @@ GOOGLE_RATE_REASONS = {"rateLimitExceeded", "userRateLimitExceeded", "quotaExcee
 # second click does not wait on Google again, and one person cannot spend the app's Google
 # quota by repeating it. Per process; never written anywhere.
 GOOGLE_EVENTS_CACHE_SECONDS = 60
+# Refresh Calendar reads Google again, unless the last read is younger than this: repeated
+# clicks cannot spend the app's Google quota.
+GOOGLE_REFRESH_MIN_SECONDS = 10
 GOOGLE_EVENTS_CACHE_MAX = 500
 GOOGLE_EVENTS_CACHE_EVENTS = 50000  # events held in all, so memory stays bounded
 _events_cache = {}
 _events_cache_lock = threading.Lock()
 
 
-def cached_events(link, year):
+def cached_events(link, year, max_age=None):
+    """(cache key, the cached events or None). max_age: how old a cached read may be, in
+    seconds (GOOGLE_EVENTS_CACHE_SECONDS by default; a refresh asks for a newer one)."""
     key = (link["user_id"], year, link["calendar_id"],
            hashlib.sha256(link["refresh_token"].encode()).hexdigest())
     now = time.monotonic()
+    limit = GOOGLE_EVENTS_CACHE_SECONDS if max_age is None else max_age
     with _events_cache_lock:
         hit = _events_cache.get(key)
-        if hit and now - hit[0] < GOOGLE_EVENTS_CACHE_SECONDS:
+        if hit and now - hit[0] < limit:
             return key, hit[1]
     return key, None
 
@@ -2969,10 +2984,29 @@ def remember_events(key, events):
         _events_cache[key] = (now, events)
 
 
-def google_calendar_view(user_id, year):
+_events_failures = {}  # cache key: when Google last failed to answer for it
+
+
+def note_failure(key):
+    with _events_cache_lock:
+        if len(_events_failures) >= GOOGLE_EVENTS_CACHE_MAX:
+            _events_failures.clear()
+        _events_failures[key] = time.monotonic()
+
+
+def recently_failed(key):
+    """Google failed for this calendar and year within GOOGLE_REFRESH_MIN_SECONDS: no new
+    call, so retries and refreshes cannot hammer it while it asks the app to slow down."""
+    with _events_cache_lock:
+        at = _events_failures.get(key)
+    return at is not None and time.monotonic() - at < GOOGLE_REFRESH_MIN_SECONDS
+
+
+def google_calendar_view(user_id, year, fresh=False):
     """What the Google tab shows for a year: {"state": "ok" | "scope" | "broken" | "gone" |
     "error" | "server_off" | "unchosen" | "off", "calendar": ..., "truncated": ..., "link": ...}.
-    The events are read from Google (kept a minute, never stored)."""
+    The events are read from Google (kept a minute, never stored); fresh: the Refresh
+    Calendar button, which reads them again unless the last read is a few seconds old."""
     link = calendar_link(user_id)
     if not google_calendar_on():
         return {"state": "server_off", "link": link}
@@ -2984,10 +3018,28 @@ def google_calendar_view(user_id, year):
         return {"state": "unchosen", "link": link}
     if not calendar_events_ok(link):
         return {"state": "scope", "link": link}
-    key, events = cached_events(link, year)
+    key, events = cached_events(link, year,
+                                max_age=GOOGLE_REFRESH_MIN_SECONDS if fresh else None)
     if events is not None:
         return {"state": "ok", "link": link, "truncated": events["truncated"],
                 "calendar": google_year_calendar(year, events["stays"])}
+
+    def failed(called=True):
+        """Google did not answer: a refresh keeps the read it has (the minute's copy) and
+        says so, instead of replacing the calendar on screen with an error. called: a real
+        call failed (only that starts the wait, or each click would make it longer)."""
+        if called:
+            note_failure(key)
+        if fresh:
+            _key, kept = cached_events(link, year)
+            if kept is not None:
+                return {"state": "ok", "link": link, "truncated": kept["truncated"],
+                        "refresh_failed": True,
+                        "calendar": google_year_calendar(year, kept["stays"])}
+        return {"state": "error", "link": link}
+
+    if recently_failed(key):
+        return failed(called=False)  # failed seconds ago: no new call (rate limits, quota)
     token = google_access_token(link["refresh_token"])
     if token is None and g.get("google_error") == "invalid_grant":
         db.execute("UPDATE calendar_links SET broken = 1 WHERE user_id = ? AND "
@@ -3000,7 +3052,7 @@ def google_calendar_view(user_id, year):
             return {"state": "scope", "link": link}  # the events permission was taken back
         if token and (status == 404 or (status == 403 and reason not in GOOGLE_RATE_REASONS)):
             return {"state": "gone", "link": link}  # deleted, or no longer shared with them
-        return {"state": "error", "link": link}
+        return failed()
     remember_events(key, events)
     return {"state": "ok", "link": link, "truncated": events["truncated"],
             "calendar": google_year_calendar(year, events["stays"])}
@@ -4440,7 +4492,9 @@ def register_routes(app):
 
     @app.route("/")
     def landing():
-        return render_template("landing.html", plans=plan_catalog(), guides=GUIDES)
+        return render_template("landing.html", plans=plan_catalog(), guides=GUIDES,
+                               # the calendar screenshot of the docs (its size, for the layout)
+                               calendar_shot=docs_shots.get("calendar", [1120, 926]))
 
     def guide_page_data(page_url, guide=None):
         """JSON-LD of /guides (a collection) or of one guide (an article), with a breadcrumb
@@ -4926,11 +4980,14 @@ def register_routes(app):
         link = calendar_link(current_user.id)
         cal_tabs = calendar_tabs_on(link)
         cal = calendar_choice() if cal_tabs else None  # a tab's link: the card opens on it
-        google_view = google_calendar_view(current_user.id, year) if cal == "google" else None
+        google_view = (google_calendar_view(current_user.id, year,
+                                            fresh=request.args.get("refresh") == "1")
+                       if cal == "google" else None)
         g.calendar_forms = cal_tabs  # CALENDAR_CSP: the Google tab's Connect again
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
                                cal_link=link if cal_tabs else None, google_view=google_view,
                                cal_open=cal is not None,
+                               cal_web=google_calendar_web_url(link, year) if cal_tabs else None,
                                overlaps=overlaps, overlap_total=overlap_total,
                                overlap_text=overlap_text,
                                # Changes with the overlaps: the triangle blinks again for new ones.
@@ -4946,11 +5003,15 @@ def register_routes(app):
     @login_required
     def calendar_google(year):
         """The Google tab of the dashboard calendar, as an HTML fragment (theme.js loads it
-        when the tab is opened). The events are read from Google at every call."""
+        when the tab is opened, ?refresh=1 from Refresh Calendar)."""
         year_row = get_year_or_404(year)
         g.calendar_forms = True  # the fragment's Connect again form goes on to Google
-        return render_template("_google_calendar.html", y=year_row,
-                               view=google_calendar_view(current_user.id, year))
+        fresh = request.args.get("refresh") == "1"
+        view = google_calendar_view(current_user.id, year, fresh=fresh)
+        html = render_template("_google_calendar.html", y=year_row, view=view)
+        # A refresh Google did not answer, with no earlier read to keep: 503, so the page
+        # keeps the calendar it shows and says the refresh failed.
+        return (html, 503) if fresh and view["state"] == "error" else html
 
     @app.route("/year/<int:year>/base", methods=["GET", "POST"])
     @login_required
