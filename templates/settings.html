@@ -15,6 +15,7 @@
 
   <nav class="settings-nav" aria-label="Settings sections">
     <a href="#profile">Profile</a>
+    <a href="#calendar">Calendar</a>
     <a href="#plan">Plan</a>
     <a href="#password">Password</a>
     <a href="#two-factor">Two-factor</a>
@@ -42,6 +43,63 @@
       <p class="muted small">Optional. Shown in the menu at the top, used to greet you in our emails and printed on your accountant package.</p>
       <div><button class="btn btn-primary" type="submit">Save name</button></div>
     </form>
+  </section>
+
+  {# Google Calendar: connect, choose one calendar Nomad Life may edit, refresh, disconnect. #}
+  <section class="card" id="calendar" aria-labelledby="calendar-title">
+    <div class="card-head"><h2 id="calendar-title">Calendar Integration</h2>{% if calendar and not calendar.broken %}<span class="pill pill-ok">Connected</span>{% elif calendar %}<span class="pill pill-warn">Connect again</span>{% endif %}</div>
+    {% if not calendar_on and not calendar %}
+    <p class="muted small">Calendar Integration is not set up on this server yet.</p>
+    {% elif not calendar %}
+    <p class="muted small card-intro">Connect a Google Calendar that Nomad Life can add your stays to later. For now, Google is only asked for the list of your calendars.</p>
+    <form method="post" action="{{ url_for('calendar_connect') }}">
+      {{ ui.csrf() }}
+      <button class="btn btn-ghost" type="submit"><span class="btn-icon icon-connect" aria-hidden="true"></span>Connect Google Calendar</button>
+    </form>
+    {% else %}
+    <p class="small card-intro">Connected to <strong dir="auto">{{ calendar.account or "your Google account" }}</strong>{% if calendar.calendar_id %}. Nomad Life uses <strong dir="auto">{{ calendar.calendar_name }}</strong>.{% else %}.{% endif %}</p>
+    {% if calendar.broken %}
+    <p class="small cal-broken">Google no longer lets Nomad Life see your calendars. Connect again to keep using it.</p>
+    {% if calendar_on %}
+    <form method="post" action="{{ url_for('calendar_connect') }}">
+      {{ ui.csrf() }}
+      <button class="btn btn-primary" type="submit"><span class="btn-icon icon-connect" aria-hidden="true"></span>Connect again</button>
+    </form>
+    {% endif %}
+    {% elif calendar.calendars %}
+    <form method="post" class="stack">
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="calendar_choose">
+      <fieldset class="cal-choices">
+        <legend>Choose one calendar</legend>
+        {% for c in calendar.calendars %}
+        <label class="cal-choice">
+          <input type="radio" name="calendar_id" value="{{ c.id }}" required{% if c.id == calendar.calendar_id %} checked{% endif %}>
+          <i class="cal-choice-color"{% if c.color %} style="background: {{ c.color }}"{% endif %} aria-hidden="true"></i>
+          <span dir="auto">{{ c.name }}</span>{% if c.primary %} <span class="tag">Primary</span>{% endif %}
+        </label>
+        {% endfor %}
+      </fieldset>
+      <div><button class="btn btn-primary" type="submit">Save calendar</button></div>
+    </form>
+    {% else %}
+    <p class="muted small">This Google account has no calendar you can edit. Create one in Google Calendar, then refresh the list.</p>
+    {% endif %}
+    <div class="row gap-sm cal-link-actions">
+      {% if calendar_on and not calendar.broken %}
+      <form method="post">
+        {{ ui.csrf() }}
+        <input type="hidden" name="action" value="calendar_refresh">
+        <button class="btn btn-ghost" type="submit">Refresh list</button>
+      </form>
+      {% endif %}
+      <form method="post">
+        {{ ui.csrf() }}
+        <input type="hidden" name="action" value="calendar_disconnect">
+        <button class="btn btn-ghost" type="submit">Disconnect</button>
+      </form>
+    </div>
+    {% endif %}
   </section>
 
   {# The plan lives on its own page (Upgrade, Manage billing); this card says where it stands. #}

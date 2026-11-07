@@ -551,6 +551,7 @@ A server set up from an older copy of this guide lacks `--graceful-timeout 120` 
 
 The database is upgraded by the app on start (new columns are added automatically). Read `CHANGELOG.md` for steps a version needs:
 
+- **1.12.12** creates the `calendar_links` table on start. Calendar Integration stays off until `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are in `config.env` (see google_calendar.md); then restart the service.
 - **1.12.11** creates the `favorite_countries` table on start; nothing to install. Days without a movement now count for no country (before, passed days counted toward the base): tell users to log their time at the base as a movement.
 - **1.12.10** needs Python 3.11 or newer (Pillow 13, which fixes known image vulnerabilities, dropped 3.10). Ubuntu 24.04 ships 3.12, so nothing changes there: the usual `pip install -r requirements.txt` step installs Pillow 13, Werkzeug 3.1.9 and pyasn1 0.6.5. A server still on Python 3.10 must move to a newer Python and recreate `.venv` first.
 - **1.12.3** adds online payment with Stripe (off until configured) and the Terms, Privacy and Refunds pages. The `subscriptions` and `billing_events` tables and the `users.stripe_customer_id` column are created on start; nothing to install. To take payments, follow [stripe.md](stripe.md): it ends with the four `STRIPE_*` keys for `config.env` and a restart. Stripe must reach `https://<your site>/billing/webhook`; the Cloudflare proxy lets it through.

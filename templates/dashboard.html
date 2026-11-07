@@ -135,9 +135,15 @@
   {# The calendar and the map are folded on every page load: a click on the head opens them
      (a <details>, so it also works without JavaScript, and their contents leave the tab order
      while closed). #}
+  {# The gear (Calendar Integration in Settings) lies over the head, outside the <details>: a
+     link inside a <summary> is announced badly, and anything else inside is hidden while
+     folded. An invisible copy of the title puts it right after the title; the summary keeps
+     its place free (fold-gear-space). #}
+  <div class="fold-wrap">
   <details class="card fold-card cal-card">
     <summary class="card-head fold-summary">
       <h2 id="calendar-title" class="title-icon icon-calendar">Calendar ({{ y.year }})</h2>
+      <span class="fold-gear-space" aria-hidden="true"></span>
       <span class="muted small">Your {{ y.year }} day-by-day plan</span>
     </summary>
     <ul class="cal-legend small" aria-label="Colors">
@@ -162,6 +168,11 @@
       {% endfor %}
     </div>
   </details>
+  <div class="fold-tools">
+    <span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar ({{ y.year }})</span>
+    <a class="fold-gear" href="{{ url_for('settings', _anchor='calendar') }}" data-tip="Calendar Integration" aria-label="Calendar Integration"></a>
+  </div>
+  </div>
 
   {% set pins, off_map = map %}
   <details class="card fold-card map-card">

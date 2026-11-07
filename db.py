@@ -198,6 +198,22 @@ CREATE TABLE IF NOT EXISTS passkey_challenges (
     kind TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- The Google Calendar an account connected (Settings, Calendar Integration): one per account.
+-- account is the Google address (the primary calendar's id); calendars the JSON list of the
+-- calendars it may edit, as read when connecting or refreshing ([{id, name, color, primary}]);
+-- calendar_id the one chosen (NULL until chosen). broken = 1 once Google refused the token.
+CREATE TABLE IF NOT EXISTS calendar_links (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL DEFAULT 'google',
+    account TEXT NOT NULL DEFAULT '',
+    refresh_token TEXT NOT NULL,
+    calendars TEXT NOT NULL DEFAULT '[]',
+    calendar_id TEXT,
+    calendar_name TEXT NOT NULL DEFAULT '',
+    broken INTEGER NOT NULL DEFAULT 0,
+    connected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 -- Support tickets: one row per ticket, its messages apart. updated_at moves with every message
 -- or status change; closed_at is NULL while open. The *_seen_id columns hold the last message

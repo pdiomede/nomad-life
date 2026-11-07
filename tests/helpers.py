@@ -34,6 +34,8 @@ class AppTestCase(unittest.TestCase):
             # Nor real Stripe keys: online payment is off unless a test turns it on.
             "STRIPE_SECRET_KEY": "", "STRIPE_WEBHOOK_SECRET": "", "STRIPE_PRICE_PRO": "",
             "STRIPE_PRICE_PLUS": "",
+            # Nor a real Google OAuth client: Calendar Integration is off unless a test turns it on.
+            "GOOGLE_CLIENT_ID": "", "GOOGLE_CLIENT_SECRET": "",
             # Nor may its size settings change what the tests expect: use the defaults.
             "MAX_RECEIPT_BYTES": 10 * appmod.MB, "USER_QUOTA_BYTES": 500 * appmod.MB,
             # Admin page tests of other features skip the two-factor requirement; the tests in

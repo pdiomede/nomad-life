@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.12] - 2026-11-07
+
+### Added
+
+- **Calendar Integration.** A gear next to the dashboard's **Calendar (2026)** title, with the tooltip "Calendar Integration", opens a new Settings section of that name, right after Profile. **Connect Google Calendar** signs in with Google (OAuth with PKCE); back in Settings, the calendars you can edit are listed, your main one first, and you choose one with **Save calendar**. **Refresh list** reads them again and **Disconnect** removes the connection and revokes Nomad Life's access at Google, as deleting the account does. Google is only asked for the list of calendars for now; what the chosen calendar is used for comes later. Off until `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set (google_calendar.md). The Settings activity list records connecting, choosing and disconnecting.
+
+### Fixed
+
+Found in a review of the Google integration before release (6 bugs):
+
+- Disconnecting, or deleting the account, cut every other Nomad Life account connected to the same Google account (Google keeps one access per Google account and app): the access is now revoked only when no other connection uses it.
+- A reconnect that failed (the permission unticked, or Google not sending the list) revoked the new access, which also ended the connection that still worked. A failed connection now changes nothing.
+- Undoing an email change from the old address kept a Google Calendar the person who changed it may have connected, where the owner's stays would go. The undo now removes it, as it does with two-factor sign in.
+- **Refresh list** wrote back the calendar chosen when it started, over one saved meanwhile in another tab; and choosing on a page made before a refresh elsewhere was refused although the calendar was still listed. Both now read the connection again when saving.
+- Tests did not blank `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, so a real client in `config.env` changed what they saw.
+- The calendar names took the muted color of form labels, and "Choose one calendar" touched the line above it.
+
 ## [1.12.11] - 2026-11-06
 
 ### Added

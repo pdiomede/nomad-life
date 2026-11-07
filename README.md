@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.11**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v1.12.12**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -48,6 +48,7 @@ All settings live in `config.env` (see `config.env.example`), which is git ignor
 | `PWNED_CHECK` | Refuse new passwords found in known breaches ([Have I Been Pwned](https://haveibeenpwned.com/Passwords); only 5 characters of the SHA-1 hash leave the server). Default `1`; `0` for a server without internet. |
 | `HCAPTCHA_SITEKEY`, `HCAPTCHA_SECRET` | hCaptcha on Sign up and Forgot password. Empty turns it off; set both or neither. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PLUS` | Online payment (see [stripe.md](stripe.md)). Empty keeps payment off; set all four or none. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client for Calendar Integration in Settings (see [google_calendar.md](google_calendar.md)). Empty turns it off; set both or neither. |
 
 ## Plans
 

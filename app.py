@@ -52,7 +52,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.11"
+APP_VERSION = "1.12.12"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -216,6 +216,7 @@ DOCS_TOC = [
     ("package", "Accountant package", []),
     ("plans", "Plans", [("billing", "Upgrade and billing")]),
     ("settings", "Settings", [("profile", "Name, password and email"),
+                              ("calendar-integration", "Calendar integration"),
                               ("two-factor", "Two-factor sign in"),
                               ("devices", "Devices and activity"),
                               ("delete-account", "Delete your account")]),
@@ -335,6 +336,9 @@ CAPTCHA_CSP = (CSP.replace("script-src 'self'", f"script-src 'self' {HCAPTCHA_HO
 # browsers hold such redirects to form-action too: only that page may send them there.
 STRIPE_FORM_HOSTS = "https://checkout.stripe.com https://billing.stripe.com"
 BILLING_CSP = CSP.replace("form-action 'self'", f"form-action 'self' {STRIPE_FORM_HOSTS}")
+# Likewise the Settings page's Connect Google Calendar form answers with a redirect to Google.
+GOOGLE_FORM_HOSTS = "https://accounts.google.com"
+CALENDAR_CSP = CSP.replace("form-action 'self'", f"form-action 'self' {GOOGLE_FORM_HOSTS}")
 # Browser features no page uses: refused for the page and anything it embeds (hCaptcha too).
 PERMISSIONS_POLICY = ("accelerometer=(), browsing-topics=(), camera=(), display-capture=(), "
                       "geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), "
@@ -531,6 +535,19 @@ def billing_settings():
     return values
 
 
+GOOGLE_KEYS = ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET")
+
+
+def google_settings():
+    """The Google OAuth client from config.env (Calendar Integration): both set turns it on,
+    both empty leaves it off; one alone could never finish a connection, so it stops the app."""
+    values = {k: (os.getenv(k) or "").strip() for k in GOOGLE_KEYS}
+    if any(values.values()) and not all(values.values()):
+        raise SystemExit("config.env: set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or "
+                         "leave both empty to turn Calendar Integration off.")
+    return values
+
+
 def admin_emails(raw):
     return frozenset(e.strip().lower() for e in raw.replace(";", ",").split(",") if e.strip())
 
@@ -582,6 +599,8 @@ def create_app(overrides=None):
         HCAPTCHA_SECRET=hcaptcha_secret,
         # Stripe: yearly plans paid on Stripe's hosted checkout (off while empty).
         **billing,
+        # Google OAuth client: Settings > Calendar Integration (off while empty).
+        **google_settings(),
         GMAIL_APP_PASSWORD=os.getenv("GMAIL_APP_PASSWORD", "").replace(" ", ""),
         DATABASE_PATH=_abs(os.getenv("DATABASE_PATH", "data/nomad.db")),
         UPLOAD_DIR=_abs(os.getenv("UPLOAD_DIR", "uploads")),
@@ -743,7 +762,8 @@ def create_app(overrides=None):
         # and images) only get frame-ancestors, as a full policy breaks Chrome's PDF viewer.
         if resp.mimetype == "text/html":
             policy = (CAPTCHA_CSP if g.get("captcha")
-                      else BILLING_CSP if g.get("billing_forms") else CSP)
+                      else BILLING_CSP if g.get("billing_forms")
+                      else CALENDAR_CSP if g.get("calendar_forms") else CSP)
         else:
             policy = "frame-ancestors 'none'"
         resp.headers.setdefault("Content-Security-Policy", policy)
@@ -1826,6 +1846,9 @@ AUDIT_LABELS = {
     "passkey_added": "Passkey added",
     "passkey_renamed": "Passkey renamed",
     "passkey_removed": "Passkey removed",
+    "calendar_connected": "Google Calendar connected",
+    "calendar_chosen": "Google Calendar chosen",
+    "calendar_disconnected": "Google Calendar disconnected",
     "account_deleted": "Account deleted",
     "admin_plan": "Plan changed by an admin",
     "admin_quota": "Storage quota changed by an admin",
@@ -2616,6 +2639,259 @@ class QuotaExceeded(Exception):
         self.left = left
 
 
+# ---------- Google Calendar (Settings, Calendar Integration) ----------
+
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+GOOGLE_CALENDAR_LIST_URL = "https://www.googleapis.com/calendar/v3/users/me/calendarList"
+# Only the list of calendars for now: what the chosen calendar is used for asks for its own
+# permission when it ships (include_granted_scopes keeps this one).
+GOOGLE_SCOPE = "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
+GOOGLE_TIMEOUT_SECONDS = 10
+GOOGLE_STATE_SECONDS = 600  # from Connect to Google's answer
+GOOGLE_CALENDARS_MAX = 250
+GOOGLE_NAME_MAX = 200
+GOOGLE_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
+
+
+def google_calendar_on():
+    """Calendar Integration works: config.env has the Google OAuth client (google_settings)."""
+    return all(current_app.config.get(k) for k in GOOGLE_KEYS)
+
+
+def google_redirect_uri():
+    """Where Google sends people back, from APP_BASE_URL (never the request's Host): the same
+    address must be listed in the OAuth client on Google Cloud."""
+    return current_app.config["APP_BASE_URL"].rstrip("/") + "/settings/calendar/google/callback"
+
+
+def google_api(method, url, data=None, token=None):
+    """Call a Google endpoint (form encoded POST, or GET; Bearer token when given). The JSON
+    answer ({} for an empty one), or None when Google refused (its error code in
+    g.google_error, such as invalid_grant) or could not be reached (logged)."""
+    body = urlencode(data).encode() if data is not None else None
+    headers = {"User-Agent": "Nomad-Life", "Accept": "application/json"}
+    if body is not None:
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if has_request_context():
+        g.google_error = ""
+    where = url.split("?", 1)[0]  # never log the query
+    req = urllib.request.Request(url, data=body, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=GOOGLE_TIMEOUT_SECONDS) as resp:
+            raw = resp.read(1024 * 1024)
+            answer = json.loads(raw.decode("utf-8", "replace")) if raw.strip() else {}
+            return answer if isinstance(answer, dict) else None
+    except urllib.error.HTTPError as exc:
+        try:
+            error = json.loads(exc.read(64 * 1024).decode("utf-8", "replace")).get("error")
+        except (ValueError, AttributeError):
+            error = ""
+        exc.close()
+        if isinstance(error, dict):  # the Calendar API: {"error": {"status": ..., ...}}
+            error = error.get("status") or ""
+        error = error if isinstance(error, str) else ""
+        if has_request_context():
+            g.google_error = error
+        current_app.logger.warning("Google %s %s refused with HTTP %s: %s", method, where,
+                                   exc.code, error)
+    except Exception as exc:  # noqa: BLE001 - offline, slow or changed service
+        current_app.logger.error("Google %s %s failed: %s", method, where, exc)
+    return None
+
+
+def google_access_token(refresh_token):
+    """A fresh access token for a stored refresh token, or None (g.google_error says why)."""
+    cfg = current_app.config
+    answer = google_api("POST", GOOGLE_TOKEN_URL, {
+        "client_id": cfg["GOOGLE_CLIENT_ID"], "client_secret": cfg["GOOGLE_CLIENT_SECRET"],
+        "refresh_token": refresh_token, "grant_type": "refresh_token"})
+    token = answer.get("access_token") if answer else None
+    return token if isinstance(token, str) and token else None
+
+
+def google_revoke(refresh_token):
+    """Remove Nomad Life's access from the Google account (best effort: logged when it fails;
+    the person can still remove it in their Google account)."""
+    if refresh_token:
+        google_api("POST", GOOGLE_REVOKE_URL, {"token": refresh_token})
+
+
+def google_calendars(access_token):
+    """The calendars the Google account may edit (owner or writer: the ones stays can be added
+    to later), primary first, then by name: [{id, name, color, primary}], or None when Google
+    did not answer."""
+    found, page = [], None
+    while len(found) < GOOGLE_CALENDARS_MAX:
+        params = {"minAccessRole": "writer", "maxResults": 250,
+                  "fields": "items(id,summary,summaryOverride,primary,backgroundColor),"
+                            "nextPageToken"}
+        if page:
+            params["pageToken"] = page
+        answer = google_api("GET", f"{GOOGLE_CALENDAR_LIST_URL}?{urlencode(params)}",
+                            token=access_token)
+        if answer is None or not isinstance(answer.get("items", []), list):
+            return None
+        for item in answer.get("items", []):
+            if not isinstance(item, dict) or not isinstance(item.get("id"), str) \
+                    or not item["id"] or len(item["id"]) > 1024:
+                continue
+            name = ""
+            for key in ("summaryOverride", "summary"):
+                if isinstance(item.get(key), str) and clean_name(item[key]):
+                    name = clean_name(item[key])[:GOOGLE_NAME_MAX]
+                    break
+            color = item.get("backgroundColor")
+            found.append({"id": item["id"], "name": name or item["id"][:GOOGLE_NAME_MAX],
+                          "color": color.lower() if isinstance(color, str)
+                          and GOOGLE_COLOR.fullmatch(color) else "",
+                          "primary": item.get("primary") is True})
+        page = answer.get("nextPageToken")
+        if not isinstance(page, str) or not page:
+            break
+    found = found[:GOOGLE_CALENDARS_MAX]
+    found.sort(key=lambda c: (not c["primary"], db.sort_fold(c["name"]), c["id"]))
+    return found
+
+
+def google_account(calendars):
+    """The Google address: the primary calendar's id."""
+    return next((c["id"] for c in calendars if c["primary"]), "")
+
+
+def calendar_link(user_id):
+    """The account's Google Calendar connection, or None: its row as a dict with the calendars
+    decoded."""
+    row = db.query("SELECT * FROM calendar_links WHERE user_id = ?", (user_id,), one=True)
+    if not row:
+        return None
+    link = dict(row)
+    link["calendars"] = decoded_calendars(row["calendars"])
+    return link
+
+
+def decoded_calendars(text):
+    """The stored JSON list of calendars, [] when it cannot be read."""
+    try:
+        calendars = json.loads(text)
+    except ValueError:
+        return []
+    return [c for c in calendars if isinstance(c, dict) and isinstance(c.get("id"), str)] \
+        if isinstance(calendars, list) else []
+
+
+def grant_in_use(account):
+    """Another Nomad Life account (or this one, connected again) still uses this Google
+    account's access. Google keeps one grant per Google account and app: revoking any of its
+    tokens would cut every connection to that Google account."""
+    return bool(account) and db.query("SELECT 1 FROM calendar_links WHERE account = ? LIMIT 1",
+                                      (account,), one=True) is not None
+
+
+def revoke_after_answer(refresh_token, account):
+    """google_revoke once the answer is sent, so the page never waits on Google; call it after
+    the row is gone. Skipped while another connection uses the same Google account."""
+    if not refresh_token or grant_in_use(account):
+        return False
+    after_answer(lambda: google_revoke(refresh_token))
+    return True
+
+
+CALENDAR_GONE = ("Google Calendar was disconnected in the meantime. Connect it again to choose "
+                 "a calendar.")
+
+
+def calendar_action(action, row):
+    """The Calendar Integration buttons of Settings: choose, refresh the list, disconnect.
+    Each write reads the row again under the write lock, so a choice, a list or a connection
+    changed meanwhile (another tab) is never overwritten."""
+    link = calendar_link(row["id"])
+    if not link:
+        flash(CALENDAR_GONE, "info")
+        return
+    if action == "calendar_disconnect":
+        with db.transaction() as conn:  # whatever is stored when deleting is what goes
+            gone = conn.execute("SELECT account, refresh_token FROM calendar_links WHERE "
+                                "user_id = ?", (row["id"],)).fetchone()
+            if gone:
+                conn.execute("DELETE FROM calendar_links WHERE user_id = ?", (row["id"],))
+                audit("calendar_disconnected", row["id"], row["email"], gone["account"],
+                      conn=conn)
+        if not gone:
+            flash("Google Calendar was already disconnected.", "info")
+            return
+        if revoke_after_answer(gone["refresh_token"], gone["account"]):
+            flash("Google Calendar was disconnected, and Nomad Life no longer has access to "
+                  "your Google account.", "success")
+        else:  # the same Google account is still connected to another Nomad Life account
+            flash("Google Calendar was disconnected from this account.", "success")
+        return
+    if action == "calendar_choose":
+        # Checked against the list as stored when writing: a refresh in another tab may have
+        # replaced it since this page was made.
+        chosen = request.form.get("calendar_id", "")
+        with db.transaction() as conn:
+            now = conn.execute("SELECT * FROM calendar_links WHERE user_id = ?",
+                               (row["id"],)).fetchone()
+            match = next((c for c in decoded_calendars(now["calendars"])
+                          if c["id"] == chosen), None) if now else None
+            changed = bool(now and match and not now["broken"] and chosen != now["calendar_id"])
+            if changed:
+                conn.execute("UPDATE calendar_links SET calendar_id = ?, calendar_name = ?, "
+                             "updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+                             (chosen, match["name"], row["id"]))
+                audit("calendar_chosen", row["id"], row["email"], match["name"], conn=conn)
+        if not now:
+            flash(CALENDAR_GONE, "info")
+        elif now["broken"]:
+            flash("Google no longer lets Nomad Life see your calendars. Connect again first.",
+                  "error")
+        elif not match:
+            flash("Choose one of the calendars in the list.", "error")
+        elif not changed:
+            flash("Nothing changed.", "info")
+        else:
+            flash(f"Nomad Life will use the calendar {match['name']}.", "success")
+        return
+    # calendar_refresh
+    if not google_calendar_on():
+        flash("Calendar Integration is not set up on this server.", "error")
+        return
+    token = google_access_token(link["refresh_token"])
+    calendars = google_calendars(token) if token else None
+    if token is None and g.get("google_error") == "invalid_grant":
+        db.execute("UPDATE calendar_links SET broken = 1 WHERE user_id = ? AND "
+                   "refresh_token = ?", (row["id"], link["refresh_token"]))
+        flash("Google no longer lets Nomad Life see your calendars (the access was removed in "
+              "your Google account, or it expired). Connect again.", "error")
+        return
+    if calendars is None:
+        flash("Google did not answer, so the list was not updated. Try again in a moment.",
+              "error")
+        return
+    with db.transaction() as conn:  # the choice as it is now: another tab may have changed it
+        now = conn.execute("SELECT * FROM calendar_links WHERE user_id = ? AND refresh_token = ?",
+                           (row["id"], link["refresh_token"])).fetchone()
+        keep = next((c for c in calendars if now and c["id"] == now["calendar_id"]), None)
+        if now:
+            conn.execute(
+                "UPDATE calendar_links SET calendars = ?, account = ?, calendar_id = ?, "
+                "calendar_name = ?, broken = 0, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+                (json.dumps(calendars), google_account(calendars) or now["account"],
+                 keep["id"] if keep else None, keep["name"] if keep else "", row["id"]))
+    if not now:
+        flash(CALENDAR_GONE if not calendar_link(row["id"]) else
+              "Google Calendar was connected again in the meantime.", "info")
+    elif now["calendar_id"] and not keep:
+        flash(f"The calendar you had chosen, {now['calendar_name']}, is no longer one you can "
+              "edit in this Google account. Choose another one.", "error")
+    else:
+        flash("The list of calendars was updated.", "success")
+
+
 def delete_account(user_id, password_hash=None):
     """Delete an account with all its years, movements and documents, then its files.
     Returns False when there was no such account any more (deleted meanwhile), when a
@@ -2631,9 +2907,16 @@ def delete_account(user_id, password_hash=None):
         sql, args = sql + " AND password_hash = ?", (*args, password_hash)
     with db.transaction() as conn:  # list and delete together, see the year delete
         docs = conn.execute("SELECT * FROM documents WHERE user_id = ?", (user_id,)).fetchall()
+        link = conn.execute("SELECT account, refresh_token FROM calendar_links WHERE "
+                            "user_id = ?", (user_id,)).fetchone()
         deleted = conn.execute(sql, args).rowcount
     if not deleted:
         return False
+    if link:  # the row went with the account: take back its Google access too
+        if has_request_context():
+            revoke_after_answer(link["refresh_token"], link["account"])
+        elif not grant_in_use(link["account"]):
+            google_revoke(link["refresh_token"])
     remove_files(docs)
     try:
         os.rmdir(os.path.join(current_app.config["UPLOAD_DIR"], str(user_id)))
@@ -4739,6 +5022,10 @@ def register_routes(app):
                     audit("passkey_renamed", row["id"], row["email"], name)
                     flash("The passkey was renamed.", "success")
                 return redirect(url_for("settings"))
+            if action in ("calendar_choose", "calendar_refresh", "calendar_disconnect"):
+                # No password: these only pick from the stored list or take access away.
+                calendar_action(action, row)
+                return redirect(url_for("settings"))
             err = check_current_password(row)
             if action == "password":
                 password = request.form.get("password", "")
@@ -5051,13 +5338,121 @@ def register_routes(app):
         devices = db.query("SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = ?",
                            (row["id"],), one=True)["n"]
         passkeys = user_passkeys(row["id"])
+        calendar_on = google_calendar_on()
+        g.calendar_forms = calendar_on  # CALENDAR_CSP: Connect goes on to Google
         return render_template("settings.html", row=row, counts=counts, account_storage=storage,
+                               calendar_on=calendar_on, calendar=calendar_link(row["id"]),
                                plan=plan_named(row["plan"]), paying=open_subscription(row["id"]),
                                charging=charging_subscription(row["id"]),
                                totp=totp, activity=activity, devices=max(devices, 1),
                                passkeys=passkeys, has_2fa=bool(row["totp_secret"] or passkeys),
                                passkeys_max=PASSKEYS_MAX, passkey_name=default_passkey_name(),
                                idle_days=SESSION_IDLE_DAYS, name_max=NAME_MAX)
+
+    @app.route("/settings/calendar/google/connect", methods=["POST"])
+    @login_required
+    def calendar_connect():
+        """Send the person to Google's consent page (OAuth with PKCE). The state, the verifier
+        and who asked are kept in the session until Google sends the person back."""
+        if not google_calendar_on():
+            flash("Calendar Integration is not set up on this server.", "error")
+            return redirect(url_for("settings"))
+        state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
+        session["gcal"] = {"state": state, "verifier": verifier, "uid": current_user.id,
+                           "fp": current_user.fingerprint, "t": int(time.time())}
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        params = {"client_id": current_app.config["GOOGLE_CLIENT_ID"],
+                  "redirect_uri": google_redirect_uri(), "response_type": "code",
+                  "scope": GOOGLE_SCOPE, "access_type": "offline",
+                  # consent every time, so Google always hands over a refresh token
+                  "prompt": "consent", "include_granted_scopes": "true", "state": state,
+                  "code_challenge": challenge, "code_challenge_method": "S256"}
+        return redirect(f"{GOOGLE_AUTH_URL}?{urlencode(params)}", 303)
+
+    @app.route("/settings/calendar/google/callback")
+    @login_required
+    def calendar_callback():
+        """Google sends the person back here: check the state, exchange the code, read the
+        calendars the account may edit and store the connection (the chosen calendar stays
+        chosen when it is still in the list)."""
+        pending = session.pop("gcal", None)
+        state = request.args.get("state", "")
+        if (not isinstance(pending, dict) or not google_calendar_on()
+                or not isinstance(pending.get("state"), str) or not pending["state"]
+                or not hmac.compare_digest(pending["state"].encode(), state.encode())
+                or pending.get("uid") != current_user.id
+                or pending.get("fp") != current_user.fingerprint
+                or not isinstance(pending.get("t"), int)
+                or time.time() - pending["t"] > GOOGLE_STATE_SECONDS):
+            flash("This Google connection expired or was not started here. Press Connect Google "
+                  "Calendar again.", "error")
+            return redirect(url_for("settings"))
+        if request.args.get("error") == "access_denied":
+            flash("Google Calendar was not connected.", "info")
+            return redirect(url_for("settings"))
+        code = request.args.get("code", "")
+        if request.args.get("error") or not code:
+            flash("Google did not connect the calendar. Try again in a moment.", "error")
+            return redirect(url_for("settings"))
+        cfg = current_app.config
+        tokens = google_api("POST", GOOGLE_TOKEN_URL, {
+            "code": code, "client_id": cfg["GOOGLE_CLIENT_ID"],
+            "client_secret": cfg["GOOGLE_CLIENT_SECRET"], "redirect_uri": google_redirect_uri(),
+            "grant_type": "authorization_code", "code_verifier": pending["verifier"]})
+        access = tokens.get("access_token") if tokens else None
+        refresh = tokens.get("refresh_token") if tokens else None
+        if not isinstance(access, str) or not access or not isinstance(refresh, str) \
+                or not refresh:
+            flash("Google did not answer, so your calendar was not connected. Try again in a "
+                  "moment.", "error")
+            return redirect(url_for("settings"))
+        # A failed connection stores nothing and revokes nothing: the new token belongs to the
+        # same grant as a working connection to this Google account (here or another account).
+        if GOOGLE_SCOPE not in str(tokens.get("scope", "")).split():
+            flash("Google was not allowed to show Nomad Life your calendars, so nothing was "
+                  "connected. Connect again and leave that permission ticked.", "error")
+            return redirect(url_for("settings"))
+        calendars = google_calendars(access)
+        if calendars is None:
+            flash("Google did not send the list of your calendars, so nothing was connected. "
+                  "Try again in a moment.", "error")
+            return redirect(url_for("settings"))
+        account = google_account(calendars)
+        with db.transaction() as conn:
+            user = conn.execute("SELECT email FROM users WHERE id = ?",
+                                (current_user.id,)).fetchone()
+            old = conn.execute("SELECT * FROM calendar_links WHERE user_id = ?",
+                               (current_user.id,)).fetchone()
+            if user:
+                keep = next((c for c in calendars
+                             if old and c["id"] == old["calendar_id"]), None)
+                conn.execute(
+                    "INSERT INTO calendar_links (user_id, provider, account, refresh_token, "
+                    "calendars, calendar_id, calendar_name) VALUES (?, 'google', ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(user_id) DO UPDATE SET account = excluded.account, "
+                    "refresh_token = excluded.refresh_token, calendars = excluded.calendars, "
+                    "calendar_id = excluded.calendar_id, calendar_name = excluded.calendar_name, "
+                    "broken = 0, connected_at = CURRENT_TIMESTAMP, "
+                    "updated_at = CURRENT_TIMESTAMP",
+                    (current_user.id, account, refresh, json.dumps(calendars),
+                     keep["id"] if keep else None, keep["name"] if keep else ""))
+                audit("calendar_connected", current_user.id, user["email"], account, conn=conn)
+        if not user:
+            return account_gone()
+        # Another Google account's access is of no use any more. The same account's is the
+        # same grant as the new token: revoking it would take the new one away too.
+        if old and old["account"] != account:
+            revoke_after_answer(old["refresh_token"], old["account"])
+        if keep:
+            flash(f"Google Calendar is connected again. Nomad Life still uses {keep['name']}.",
+                  "success")
+        elif calendars:
+            flash("Google Calendar is connected. Choose the calendar to use.", "success")
+        else:
+            flash("Google Calendar is connected, but this Google account has no calendar you can "
+                  "edit.", "info")
+        return redirect(url_for("settings"))
 
     @app.route("/account/email/<token>", methods=["GET", "POST"])
     def confirm_email(token):
@@ -5187,6 +5582,10 @@ def register_routes(app):
                     (data["old"], locked_hash, row["id"], current["email"]))
                 # The same for passkeys: theirs would let them past the owner's new password.
                 conn.execute("DELETE FROM passkeys WHERE user_id = ?", (row["id"],))
+                # And a Google Calendar they connected: the owner's stays could go to it.
+                gcal = conn.execute("SELECT account, refresh_token FROM calendar_links WHERE "
+                                    "user_id = ?", (row["id"],)).fetchone()
+                conn.execute("DELETE FROM calendar_links WHERE user_id = ?", (row["id"],))
                 # This change and every later one are undone: their undo links stop working,
                 # so whoever made them cannot move the account away from the owner again.
                 conn.execute("UPDATE email_changes SET undone_at = CURRENT_TIMESTAMP WHERE "
@@ -5208,6 +5607,8 @@ def register_routes(app):
         if current_user.is_authenticated and current_user.id == row["id"]:
             sign_out()
         audit("email_reverted", row["id"], data["old"], f"{current['email']} to {data['old']}")
+        if gcal:
+            revoke_after_answer(gcal["refresh_token"], gcal["account"])
         stripe_sync_email(row["id"])
         fresh = db.query("SELECT * FROM users WHERE id = ?", (row["id"],), one=True)
         # Without the name, as the security alerts: whoever changed the address may have set

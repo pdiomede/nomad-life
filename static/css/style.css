@@ -440,6 +440,31 @@ main:focus { outline: none; }
 .fold-card:not([open]) > .fold-summary { margin-bottom: 0; }
 .map-tools { display: flex; justify-content: flex-end; margin: -4px 0 8px; }
 @media (prefers-reduced-motion: reduce) { .fold-summary::after { transition: none; } }
+/* The Calendar card's gear (Calendar Integration): laid over the head from outside the <details>,
+   right after an invisible copy of the title; clicks elsewhere on the head reach the summary. */
+.fold-wrap { position: relative; }
+.fold-tools { position: absolute; top: 21px; left: 21px; display: flex; align-items: center; gap: 6px; pointer-events: none; }
+.fold-ghost { visibility: hidden; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+.fold-gear-space { flex: none; width: 28px; height: 28px; margin-left: -6px; }
+.fold-gear { pointer-events: auto; position: relative; flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: var(--muted); }
+.fold-gear::before {
+  content: ""; width: 18px; height: 18px; background-color: currentColor;
+  -webkit-mask: var(--gear) center / contain no-repeat; mask: var(--gear) center / contain no-repeat;
+  --gear: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/></svg>");
+}
+.fold-gear:hover { color: var(--text); background: var(--surface-2); text-decoration: none; }
+.fold-gear:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.fold-gear[data-tip]::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 50%; z-index: 30;
+  transform: translate(-50%, -2px); padding: 5px 9px; border-radius: 6px; white-space: nowrap;
+  background: var(--primary); color: var(--primary-text); font-size: 12px; font-weight: 600;
+  line-height: 1.3; box-shadow: var(--shadow); opacity: 0; pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+@media (hover: hover) { .fold-gear[data-tip]:hover::after { opacity: 1; transform: translate(-50%, 0); } }
+.fold-gear[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) { .fold-gear[data-tip]::after { transition: none; } }
+@media (forced-colors: active) { .fold-gear::before { forced-color-adjust: none; background-color: LinkText; } }
 
 /* Dashboard calendar: the year's months, each day in the color of the country it counts for
    (--cal-* tokens, set in the three theme blocks). Four months a row, fewer on narrow screens. */
@@ -828,6 +853,7 @@ main:focus { outline: none; }
   .steps { margin: 48px 0 36px; }
   .cta { padding: 22px; }
   .card { padding: 16px; }
+  .fold-tools { top: 17px; left: 17px; }  /* the card's padding plus its border */
   .table-wrap { margin: 0 -16px; }
   .table th, .table td { padding: 10px; }
   .table th:first-child, .table td:first-child { padding-left: 16px; }
@@ -939,6 +965,20 @@ main:focus { outline: none; }
 .settings-nav a { display: inline-block; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--link); font-size: 13px; font-weight: 500; }
 .settings-nav a:hover { background: var(--surface-2); text-decoration: none; }
 .settings-nav a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+/* Settings, Calendar Integration: one row per Google calendar, a radio to choose one. */
+.cal-choices { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cal-choices legend { padding: 0; margin-bottom: 8px; font-size: 14px; font-weight: 600; }
+.cal-choice { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; overflow-wrap: anywhere; font-size: 14px; color: var(--text); }  /* a name to read, not a field label */
+.cal-choice:hover { background: var(--surface-2); }
+.cal-choice:has(input:checked) { border-color: var(--link); background: var(--surface-2); }
+.cal-choice input { flex: none; margin: 0; width: 18px; height: 18px; accent-color: var(--link); }
+.cal-choice input:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.cal-choice-color { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+.cal-broken { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--warning-bg); color: var(--text); }
+.cal-link-actions { flex-wrap: wrap; margin-top: 14px; }
+.cal-link-actions form { margin: 0; }
+.icon-connect { --btn-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='4.5' width='18' height='16.5' rx='2.5'/><path d='M3 9.5h18M8 2.5v4M16 2.5v4M12 12.5v6M9 15.5h6'/></svg>"); }
+@media (forced-colors: active) { .cal-choice-color { forced-color-adjust: none; border: 1px solid CanvasText; } }
 .narrow > .card[id] { scroll-margin-top: 16px; }
 .tfa-steps { flex: 1 1 220px; min-width: 0; margin: 0; padding-left: 20px; display: grid; gap: 8px; }
 .tfa-key { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
