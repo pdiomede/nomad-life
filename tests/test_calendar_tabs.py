@@ -128,10 +128,7 @@ class TabsShownTests(TabsCase):
         self.assertIn('<div class="cal-panel" data-cal-panel="local" hidden>', html)
         self.assertIn('data-cal-tab="google" data-src', html)
         google = html[html.index('data-cal-panel="google"'):]
-        # The same rule, in the same words, as the Days per Country card.
-        self.assertIn("Events of your Google calendar \"<strong dir=\"auto\">Work</strong>\", read from Google. "
-                      "Events with the same title share a color. A day shared by two events, such as a travel "
-                      "day, counts toward the event that started later.", google)
+        self.assertNotIn("Events of your Google calendar", google)  # the line is gone (1.12.15)
         self.assertIn('<span dir="auto">Lisbon</span> <span class="muted">3 days</span>', google)
         self.assertIn("No event <span class=\"muted\">362 days</span>", google)
         self.assertIn('aria-label="Google Calendar: Work" aria-current="page"', html)

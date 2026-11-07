@@ -14,6 +14,7 @@ All notable changes to this project are documented in this file.
 - The Movements table writes dates as **18-Jan-2027 to 30-Jan-2027**, and the place as its flag, the **country** in bold, a bar and the city (the city on its own line on phones). The overlap report uses the same dates.
 - Pointing at a day of the Nomad Life calendar shows a tooltip in the app's style with the date and the country with its flag; the Google tab's days show the event. The calendar legends no longer show flags.
 - The receipt type list of a movement is wide enough for **Hotel / Home rent** on one line.
+- The Google Calendar tab no longer shows its line above the legend ("Events of your Google calendar ..., read from Google. ...").
 - The documentation's Movements, calendar and receipts screenshots show the new table, tooltips and type list.
 
 ### Fixed
