@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{# Turning a year to AUTO: what syncing with the Google calendar would change, each change
+   with a checkbox (sync_review in app.py). Applying turns AUTO on. #}
+{% macro place(p) %}{{ ui.flag(p.country) }}<strong>{{ p.country }}</strong>{% if p.city %} <span class="loc-sep" aria-hidden="true">|</span> {{ p.city }}{% endif %}{% endmacro %}
+{% macro days(p) %}<span class="nowrap">{{ p.start_date | daydate }}</span> <span class="muted">to</span> <span class="nowrap">{{ p.end_date | daydate }}</span>{% endmacro %}
+{% block title %}Turn on AUTO for {{ y.year }} | Nomad Life{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('dashboard', year=y.year) }}">&larr; Back to {{ y.year }}</a>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ y.year }}</p>
+    <h1>Turn on AUTO</h1>
+  </div>
+</div>
+<section class="card sync-review" aria-labelledby="sync-title">
+  <div class="card-head"><h2 id="sync-title">Changes from Google Calendar</h2></div>
+  <p class="small card-intro">In AUTO mode the movements of {{ y.year }} follow your Google calendar &ldquo;<strong dir="auto">{{ link.calendar_name }}</strong>&rdquo;, and Google Calendar wins any difference. Events named after a place count: a country (&ldquo;Italy&rdquo;) or a city and its country (&ldquo;Rome, Italy&rdquo;). Choose the changes to make now; your notes and receipts are kept on every movement that stays.</p>
+  {% if ignored %}<p class="muted small">{{ ignored }} other event{{ '' if ignored == 1 else 's' }} in {{ y.year }} {{ 'is' if ignored == 1 else 'are' }} not named after a place, so {{ 'it is' if ignored == 1 else 'they are' }} left out.</p>{% endif %}
+  {% if truncated %}<p class="small cal-notice">This calendar has more events in {{ y.year }} than Nomad Life can read at once; the latest ones are left out.</p>{% endif %}
+  <form method="post" class="stack" data-submit-once data-sync-review>
+    {{ ui.csrf() }}
+    <input type="hidden" name="plan" value="{{ plan }}">
+    {% if listed %}
+    <div class="row gap-sm sync-select" hidden data-sync-select>
+      <button type="button" class="btn btn-ghost btn-sm" data-sync-all="1">Select all</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-sync-all="0">Select none</button>
+    </div>
+    {% for kind, title, items in groups if items %}
+    <fieldset class="sync-group sync-{{ kind }}">
+      <legend>{{ title }} <span class="muted">({{ items | length }})</span></legend>
+      <ul class="sync-list">
+        {% for c in items %}
+        <li>
+          <label class="check sync-item">
+            <input type="checkbox" name="change" value="{{ c.key }}"{% if c.default %} checked{% endif %}>
+            <span>
+              {% if kind == 'add' %}{{ place(c.event) }}, {{ days(c.event) }}
+              {% elif kind == 'edit' %}{{ place(c.movement) }}, {{ days(c.movement) }} <span class="muted">becomes</span> {{ place(c.event) }}, {{ days(c.event) }}
+              {% elif kind == 'delete' %}{{ place(c.movement) }}, {{ days(c.movement) }}{% if c.receipts %} <span class="tag tag-warn">{{ c.receipts }} receipt{{ '' if c.receipts == 1 else 's' }} deleted too</span>{% endif %}
+              {% else %}{{ place(c.movement) }}, {{ days(c.movement) }} <span class="muted">is linked to its event</span>{% endif %}
+            </span>
+          </label>
+        </li>
+        {% endfor %}
+      </ul>
+    </fieldset>
+    {% endfor %}
+    <p class="muted small">An unticked change is not made: its event is left out of the sync, and the movement stays as you typed it. Switching the year to MANUAL and back to AUTO shows every change again.</p>
+    {% else %}
+    <p class="small">Your movements already match the Google calendar: nothing to change.</p>
+    {% endif %}
+    <div class="row gap-sm wrap">
+      <button class="btn btn-primary" type="submit">Turn on AUTO{% if listed %} and apply{% endif %}</button>
+      <a class="btn btn-ghost" href="{{ url_for('dashboard', year=y.year) }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

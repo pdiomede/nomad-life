@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS years (
     base_city TEXT NOT NULL,
     base_country TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- 'manual': movements are typed; 'auto': they come from the connected Google calendar
+    -- (2.0.0). Every year starts manual. synced_at: the last sync that read Google (UTC).
+    sync_mode TEXT NOT NULL DEFAULT 'manual',
+    synced_at TEXT,
+    -- The Google calendar the year was turned AUTO with: another one (or none) needs a new
+    -- review, so its events never replace the movements without asking.
+    sync_calendar TEXT,
+    -- When (Unix time) the Google read last applied to the year was made: an older read, cached
+    -- by another server process, is never applied after it.
+    synced_read_at REAL NOT NULL DEFAULT 0,
     UNIQUE (user_id, year)
 );
 
@@ -51,7 +61,11 @@ CREATE TABLE IF NOT EXISTS movements (
     country TEXT NOT NULL,
     start_date TEXT NOT NULL,
     end_date TEXT NOT NULL,
-    notes TEXT NOT NULL DEFAULT ''
+    notes TEXT NOT NULL DEFAULT '',
+    -- The Google Calendar event a synced movement comes from (NULL: typed), and whether that
+    -- event is gone while the movement is kept for its receipts (2.0.0).
+    google_event_id TEXT,
+    sync_missing INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -212,6 +226,14 @@ CREATE TABLE IF NOT EXISTS passkey_challenges (
 -- calendars it may edit, as read when connecting or refreshing ([{id, name, color, primary}]);
 -- calendar_id the one chosen (NULL until chosen). broken = 1 once Google refused the token.
 -- scopes: what Google granted, space separated (since 1.12.13; '' before: connect again).
+-- Google events left out of a year's AUTO sync (2.0.0): the changes unticked when the year
+-- was turned to AUTO. Rebuilt by each review.
+CREATE TABLE IF NOT EXISTS sync_ignored (
+    year_id INTEGER NOT NULL REFERENCES years(id) ON DELETE CASCADE,
+    google_event_id TEXT NOT NULL,
+    PRIMARY KEY (year_id, google_event_id)
+);
+
 CREATE TABLE IF NOT EXISTS calendar_links (
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     provider TEXT NOT NULL DEFAULT 'google',
@@ -440,6 +462,15 @@ MIGRATIONS = [
     # made before only allowed the calendar list, so they show "connect again" for the events.
     ("calendar_links", "scopes", ["ALTER TABLE calendar_links ADD COLUMN scopes TEXT NOT NULL "
                                   "DEFAULT ''"]),
+    # Movements synced from Google Calendar (2.0.0): every existing year stays manual.
+    ("years", "sync_mode", ["ALTER TABLE years ADD COLUMN sync_mode TEXT NOT NULL DEFAULT 'manual'"]),
+    ("years", "synced_at", ["ALTER TABLE years ADD COLUMN synced_at TEXT"]),
+    ("years", "sync_calendar", ["ALTER TABLE years ADD COLUMN sync_calendar TEXT"]),
+    ("years", "synced_read_at", ["ALTER TABLE years ADD COLUMN synced_read_at REAL NOT NULL "
+                                 "DEFAULT 0"]),
+    ("movements", "google_event_id", ["ALTER TABLE movements ADD COLUMN google_event_id TEXT"]),
+    ("movements", "sync_missing", ["ALTER TABLE movements ADD COLUMN sync_missing INTEGER NOT NULL "
+                                   "DEFAULT 0"]),
 ]
 
 # Indexes and triggers on migrated columns: SCHEMA runs before the columns exist on an old
@@ -463,6 +494,10 @@ AFTER_MIGRATIONS = [
                        "UPDATE tickets SET ref_year = CAST(strftime('%Y', NEW.created_at) AS INTEGER), "
                        "ref_seq = (SELECT last_seq FROM ticket_counters WHERE year = "
                        "CAST(strftime('%Y', NEW.created_at) AS INTEGER)) WHERE id = NEW.id; END"),
+    # One movement per Google event and year: two syncs at once cannot both add it.
+    ("idx_movements_event", "CREATE UNIQUE INDEX IF NOT EXISTS idx_movements_event "
+                            "ON movements(year_id, google_event_id) "
+                            "WHERE google_event_id IS NOT NULL"),
 ]
 
 # Triggers of earlier development builds, dropped on start. tickets_ref counted from the highest

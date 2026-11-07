@@ -112,7 +112,8 @@ class CalendarTests(AppTestCase):
 
     def test_more_countries_than_colors_repeat_the_palette(self):
         year = self.new_year(2030)
-        # 16 colors since 1.12.16: the 17th and 18th countries take the 1st and 2nd again.
+        # 14 automatic colors since 2.0.0 (15 with the base pink): the 15th to 18th countries
+        # take the 1st to 4th again.
         countries = ["Spain", "Italy", "France", "Japan", "Chile", "Peru", "Kenya", "Egypt",
                      "Nepal", "Fiji", "Ghana", "Chad", "Cuba", "Iran", "Iraq", "Oman", "Togo", "Mali"]
         for i, country in enumerate(countries):
@@ -120,7 +121,8 @@ class CalendarTests(AppTestCase):
                               f"2030-{1 + i // 10:02d}-{(i % 10) * 2 + 2:02d}")
         html = self.page(2030)
         self.assertEqual(html.count('<button type="button" class="cal-swatch cal-color-btn cal-1"'), 2)
-        self.assertEqual(html.count('<button type="button" class="cal-swatch cal-color-btn cal-16"'), 1)
+        self.assertEqual(html.count('<button type="button" class="cal-swatch cal-color-btn cal-14"'), 1)
+        self.assertNotIn("cal-15", html)
 
 
 class CalendarStyleTests(AppTestCase):

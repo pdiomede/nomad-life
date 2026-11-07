@@ -703,6 +703,8 @@
     btn.id = input.id + "-picker";
     btn.setAttribute("aria-haspopup", "dialog");
     btn.setAttribute("aria-expanded", "false");
+    // A read-only date (a movement synced from Google Calendar): shown, never changed.
+    if (input.disabled) btn.disabled = true;
     var icon = document.createElement("span"), text = document.createElement("span");
     icon.className = "date-icon"; icon.setAttribute("aria-hidden", "true");
     text.className = "date-text"; text.id = btn.id + "-text";
@@ -1071,6 +1073,27 @@
   };
   window.nlColorPickers(document);
 
+  // AUTO / MANUAL switch next to the year: without a Google connection it is aria-disabled
+  // (still focusable, so its tooltip says why), and pressing it does nothing.
+  document.querySelectorAll("[data-sync-switch]").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      var btn = form.querySelector("[role=switch]");
+      if (btn.getAttribute("aria-disabled") === "true") e.preventDefault();
+    });
+  });
+  // The review of the changes before AUTO: Select all / Select none.
+  document.querySelectorAll("[data-sync-review]").forEach(function (form) {
+    var bar = form.querySelector("[data-sync-select]");
+    if (!bar) return;
+    bar.hidden = false;
+    bar.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-sync-all]");
+      if (!btn) return;
+      var on = btn.getAttribute("data-sync-all") === "1";
+      form.querySelectorAll('input[name="change"]').forEach(function (box) { box.checked = on; });
+    });
+  });
+
   // Calendar card tabs (with a Google Calendar connected): Nomad Life and Google Calendar.
   // They are links (?cal=google renders the Google view on the server); here a click swaps
   // the two views in place, opens the card when it is folded, and loads the Google view once
@@ -1105,6 +1128,12 @@
       return fetch(googleTab.getAttribute("data-src") + (fresh ? "?refresh=1" : ""), { credentials: "same-origin", headers: { Accept: "text/html" } })
         .then(function (r) {
           if (!r.ok || r.redirected) throw new Error("not loaded");  // a sign in page, an error
+          if (r.headers.get("X-Nomad-Synced")) {
+            // An AUTO year's movements changed with this read: the whole page shows them,
+            // opened on the Google tab, with the server's "Synced" message.
+            window.location.href = googleTab.href;
+            return new Promise(function () {});  // the page is going away
+          }
           return r.text();
         });
     }

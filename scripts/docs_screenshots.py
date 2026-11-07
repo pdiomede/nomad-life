@@ -121,13 +121,14 @@ def seed(app, tmp, password):
 
 
 # The demo account's Google Calendar (Calendar Integration): a calendar "Travel plans" whose
-# events the dashboard's Google Calendar tab shows. Google itself is never called: google_api
-# answers with these events.
-DEMO_GOOGLE_EVENTS = [("Lisbon", "2026-01-01", "2026-03-03"), ("Madrid conference", "2026-03-03", "2026-03-07"),
-                      ("Rome", "2026-03-06", "2026-03-09"), ("Lisbon", "2026-03-09", "2026-05-10"),
-                      ("Tokyo", "2026-05-10", "2026-05-25"), ("Lisbon", "2026-05-25", "2026-07-01"),
-                      ("Paris", "2026-07-01", "2026-07-06"), ("Lisbon", "2026-07-06", "2026-11-13"),
-                      ("Bangkok", "2026-11-13", "2026-11-21"), ("Christmas in Lisbon", "2026-12-20", "2027-01-03")]
+# events the dashboard's Google Calendar tab shows and an AUTO year syncs (titles named after a
+# place; "Christmas in Lisbon" is not one). Google itself is never called: google_api answers
+# with these events.
+DEMO_GOOGLE_EVENTS = [("Lisbon, Portugal", "2026-01-01", "2026-03-03"), ("Madrid, Spain", "2026-03-03", "2026-03-07"),
+                      ("Rome, Italy", "2026-03-06", "2026-03-09"), ("Lisbon, Portugal", "2026-03-09", "2026-05-10"),
+                      ("Tokyo, Japan", "2026-05-10", "2026-05-25"), ("Lisbon, Portugal", "2026-05-25", "2026-07-01"),
+                      ("Paris, France", "2026-07-01", "2026-07-06"), ("Lisbon, Portugal", "2026-07-06", "2026-11-13"),
+                      ("Bangkok, Thailand", "2026-11-13", "2026-11-21"), ("Christmas in Lisbon", "2026-12-20", "2027-01-03")]
 
 
 def demo_google(appmod, app):
@@ -143,6 +144,9 @@ def demo_google(appmod, app):
                  "calendar_name, scopes) VALUES (?, ?, 'demo', ?, ?, ?, ?)",
                  (uid, "alex.rivera@gmail.com", json.dumps(calendars), calendars[1]["id"], "Travel plans",
                   f"{appmod.GOOGLE_SCOPE} {appmod.GOOGLE_EVENTS_SCOPE}"))
+    # Last year, in AUTO (the sync-switch screenshot); 2026 stays MANUAL for the others.
+    conn.execute("INSERT INTO years (user_id, year, base_city, base_country, sync_mode, sync_calendar) "
+                 "VALUES (?, 2025, 'Lisbon', 'Portugal', 'auto', ?)", (uid, calendars[1]["id"]))
     conn.commit()
     conn.close()
 
@@ -153,8 +157,9 @@ def demo_google(appmod, app):
         if url == appmod.GOOGLE_TOKEN_URL:
             return {"access_token": "demo"}
         if "/events" in url:
-            return {"items": [{"summary": t, "start": {"date": a}, "end": {"date": after(b)}}
-                              for t, a, b in DEMO_GOOGLE_EVENTS]}
+            return {"items": [{"id": f"demo-{i}", "summary": t, "start": {"date": a},
+                               "end": {"date": after(b)}}
+                              for i, (t, a, b) in enumerate(DEMO_GOOGLE_EVENTS, 1)]}
         return {}
     appmod.google_api = fake
 

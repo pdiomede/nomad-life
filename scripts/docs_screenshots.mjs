@@ -58,6 +58,9 @@ const SHOTS = [
   { name: "calendar", path: "/year/2026", wait: 300, select: [".cal-card"], prep: `document.querySelector(".cal-card").open = true;` },
   // The Google Calendar tab, as the server draws it with ?cal=google (the card opens on it).
   { name: "calendar-google", path: "/year/2026?cal=google", wait: 300, select: [".cal-card"] },
+  // AUTO next to the year (2025 runs in AUTO in the demo), and the review before turning 2026 to AUTO.
+  { name: "sync-switch", path: "/year/2025", select: [".page-head"] },
+  { name: "sync-review", path: "/year/2026/sync", select: [".sync-review"] },
   { name: "map", path: "/year/2026", wait: 500, select: [".map-card"], prep: `document.querySelector(".map-card").open = true;`, hover: '.map-pin[aria-label^="Italy"]' },
   { name: "delete-dialog", path: "/year/2026", wait: 900, pad: 28, select: ["#confirm-dialog"], prep: `
       document.getElementById("movements").open = true;

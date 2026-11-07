@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.0.0] - 2026-11-07
+
+### Added
+
+- **AUTO movements from Google Calendar.** Next to the year on the dashboard, a label says **MANUAL** (movements are added by hand) or **AUTO** (movements are added automatically from the connected Google Calendar), with a switch to change it. Every year starts in MANUAL.
+  - In AUTO, the year's movements follow the chosen Google calendar each time the year is opened (also right after signing in), and Google Calendar wins any difference. Events count when named after a place: a country ("Italy", "IT") or "City, Country" ("Rome, Italy"); others are left out.
+  - Turning AUTO on first opens a review of the differences (movements to add, change, remove, and already matching), each with a checkbox. An unticked change stays out of the sync. Removing a movement that has receipts starts unticked.
+  - Notes and receipts stay yours. A synced movement whose event is gone is removed, or kept and marked **Not in Google Calendar** when it has receipts. Its place and dates are read-only in AUTO; **+ Add movement** is hidden.
+  - If Google Calendar is disconnected, another calendar is chosen, or the calendar is deleted, the year goes back to MANUAL and keeps its movements. If Google does not answer, nothing changes.
+- Documentation: Movements from Google Calendar, with two new screenshots.
+
+### Changed
+
+- The calendar uses 15 colors (red, orange, yellow, lime, green, teal, cyan, blue, indigo, purple, magenta, pink, raspberry, brown, slate), the same in both themes, 5 a row in the color menu; pink is the base's. Day numbers are dark or white, whichever reads better on each color. Saved choices of the two colors that no longer exist go back to automatic.
+- The docs' demo calendar names its events after places, and the screenshots are made again.
+
+### Fixed
+
+Found in a bug hunt of the new sync (15 bugs):
+
+- A calendar with more events than Nomad Life reads at once removed the movements of the events not read. A partial read now only adds and changes.
+- Choosing another Google calendar or account replaced every synced movement without asking, losing their notes. The year remembers its calendar and goes back to MANUAL until it is reviewed again.
+- Movements typed while Google Calendar was disconnected were doubled when AUTO resumed. A year that lost its connection now needs the review again.
+- A deleted calendar, or a permission taken back, was asked again at every view and left the year read-only. The year goes back to MANUAL.
+- While Google was failing, every dashboard view waited on it again after 10 seconds. It waits a minute.
+- Every view of an AUTO year took the database's write lock and could fail behind another request. It only writes when something changes.
+- A copy of Google's events cached by another server process could undo a newer sync and lose notes. An older read is never applied after a newer one.
+- A receipt uploaded while the review was open could be deleted with its movement. The review shows again instead.
+- The review matched stays by country only, so a travel day moved by one day could swap two cities. It matches the same city first, then the most shared days.
+- An event Google listed twice made the dashboard fail. It counts once, and ids are never cut.
+- The switch's hidden tooltip made the dashboard scroll sideways on phones.
+- The date buttons of a synced movement still opened their calendar. They are read-only.
+- A movement page opened in AUTO and saved after the year left AUTO failed with "Country is required." and emptied the fields. Place and dates stay as stored.
+- The Movements table showed Delete for synced movements, which the server then refused. It is hidden.
+- Coming back to the review with the Back button offered to turn AUTO on again, undoing the changes unticked before. It goes back to the dashboard.
+
 ## [1.12.19] - 2026-11-07
 
 ### Changed

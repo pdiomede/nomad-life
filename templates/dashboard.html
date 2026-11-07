@@ -5,7 +5,19 @@
 <div class="page-head">
   <div>
     <p class="eyebrow">Solar year</p>
-    <h1>{{ y.year }}</h1>
+    <div class="year-title">
+      <h1>{{ y.year }}</h1>
+      {% set tip = ('Movements are added automatically from the connected Google Calendar named "' ~ sync.name ~ '"') if sync.auto else 'Movements are added manually' %}
+      <span class="sync-chip {{ 'is-auto' if sync.auto else 'is-manual' }}" data-tip="{{ tip }}" tabindex="0" aria-label="{{ 'AUTO' if sync.auto else 'MANUAL' }}: {{ tip }}">{{ 'AUTO' if sync.auto else 'MANUAL' }}</span>
+      <form method="post" action="{{ url_for('sync_mode', year=y.year) }}" class="sync-switch-form" data-sync-switch>
+        {{ ui.csrf() }}
+        <input type="hidden" name="mode" value="{{ 'manual' if sync.auto else 'auto' }}">
+        <button type="submit" class="switch switch-tip sync-switch" role="switch" aria-checked="{{ 'true' if sync.auto else 'false' }}"
+                aria-label="Add movements automatically from Google Calendar"
+                data-tip="{{ ('Switch ' ~ y.year ~ ' to MANUAL') if sync.auto else ('Switch ' ~ y.year ~ ' to AUTO: review the changes first') if sync.can else 'Connect Google Calendar in Settings to turn on AUTO' }}"{% if not sync.can and not sync.auto %} aria-disabled="true"{% endif %}><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
+      </form>
+    </div>
+    {% if sync.problem %}<p class="small sync-problem">{{ sync.problem }}</p>{% endif %}
   </div>
   <div class="row wrap gap-sm year-actions">
     <nav class="year-tabs" aria-label="Years">
@@ -14,7 +26,7 @@
       {% endfor %}
       <a class="year-tab add" href="{{ url_for('new_year', back=y.year) }}" title="Add a year">+ Year</a>
     </nav>
-    <a class="btn btn-primary" href="{{ url_for('movement_new', year=y.year) }}">+ Add movement</a>
+    {% if not sync.auto %}<a class="btn btn-primary" href="{{ url_for('movement_new', year=y.year) }}">+ Add movement</a>{% endif %}
   </div>
 </div>
 
@@ -81,6 +93,7 @@
       <span class="muted small">{{ movements | length }} movement{{ '' if movements | length == 1 else 's' }} in {{ y.year }}</span>
     </summary>
     {% if movements %}
+    {% if sync.auto %}<p class="muted small mv-sync-note">Movements come from your Google calendar &ldquo;{{ sync.name }}&rdquo;. Change them there; notes and receipts you add here stay.</p>{% endif %}
     <div class="table-wrap">
       <table class="table">
         <thead>
@@ -93,7 +106,7 @@
           {% for m in pager.rows %}
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
             <td class="dates"><time class="nowrap" datetime="{{ m.start_date }}">{{ m.start_date | daydate }}</time> <span class="muted">to</span> <time class="nowrap" datetime="{{ m.end_date }}">{{ m.end_date | daydate }}</time></td>
-            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a></td>
+            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a>{% if m.google_event_id %} <span class="sync-row-icon" data-tip="From Google Calendar" aria-label="From Google Calendar" role="img"></span>{% endif %}{% if m.sync_missing %} <span class="tag tag-warn" data-tip="The event is no longer in Google Calendar. The movement is kept for its receipts: delete it when you no longer need it.">Not in Google Calendar</span>{% endif %}</td>
             {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
             {% set counted = stats.counted.get(m.id, 0) %}
             <td class="num">{{ length }}{% if counted != length %}<div class="muted small" title="A day shared with another stay counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest)">{{ counted }} counted</div>{% endif %}</td>
@@ -102,7 +115,7 @@
               <div class="row-actions">
                 <a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}" aria-label="Edit movement to {{ m | place }}">Edit</a>
                 {% set receipts = '' if not m.doc_count else ' and its receipt' if m.doc_count == 1 else ' and its ' ~ m.doc_count ~ ' receipts' %}
-                {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete', 'page': pager.page, 'sort': movement_order.sort, 'dir': movement_order.dir}, aria_label='Delete movement to ' ~ (m | place)) }}
+                {% if not (sync.auto and m.google_event_id and not m.sync_missing) %}{{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete', 'page': pager.page, 'sort': movement_order.sort, 'dir': movement_order.dir}, aria_label='Delete movement to ' ~ (m | place)) }}{% endif %}
               </div>
             </td>
           </tr>
@@ -124,7 +137,7 @@
     {% else %}
       <div class="empty">
         <p>No movements yet for {{ y.year }}.</p>
-        <a class="btn btn-primary btn-sm" href="{{ url_for('movement_new', year=y.year) }}">Log your first trip</a>
+        {% if sync.auto %}<span class="muted small">Movements come from your Google calendar &ldquo;{{ sync.name }}&rdquo;: add an event named after the place, like &ldquo;Italy&rdquo; or &ldquo;Rome, Italy&rdquo;.</span>{% else %}<a class="btn btn-primary btn-sm" href="{{ url_for('movement_new', year=y.year) }}">Log your first trip</a>{% endif %}
       </div>
     {% endif %}
   </details>

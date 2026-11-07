@@ -13,6 +13,7 @@ import mimetypes
 import os
 import re
 import secrets
+import sqlite3
 import struct
 import tempfile
 import threading
@@ -53,7 +54,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.19"
+APP_VERSION = "2.0.0"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -206,7 +207,8 @@ DOCS_TOC = [
                                       ("base", "Change your base or delete a year")]),
     ("movements", "Movements", [("add-movement", "Add a movement"),
                                 ("country-picker", "The country picker"),
-                                ("edit-movement", "Edit or delete a movement")]),
+                                ("edit-movement", "Edit or delete a movement"),
+                                ("auto-movements", "Movements from Google Calendar")]),
     ("counting", "How days are counted", [("counting-example", "A worked example"),
                                           ("threshold", "The 183 day line")]),
     ("dashboard", "Your dashboard", [("cards", "The four cards"),
@@ -2984,8 +2986,14 @@ def google_events(access_token, calendar_id, year):
             title = clean_name(item["summary"]) if isinstance(item.get("summary"), str) else ""
             # The real dates: which event a shared day goes to depends on when each one
             # started, also before the year (google_year_calendar clips them to the year).
+            gid = item.get("id")
             stays.append({"id": len(stays) + 1, "title": title[:GOOGLE_NAME_MAX] or "(No title)",
-                          "start_date": start.isoformat(), "end_date": end.isoformat()})
+                          "start_date": start.isoformat(), "end_date": end.isoformat(),
+                          # Google's own id (each instance of a repeating event has one): the
+                          # AUTO sync links a movement to it.
+                          # (never cut: two long ids would become one)
+                          "gid": gid if isinstance(gid, str) and len(gid) <= GOOGLE_NAME_MAX
+                          else ""})
         page = answer.get("nextPageToken")
         if not isinstance(page, str) or not page or page in seen:
             break
@@ -3144,20 +3152,23 @@ def note_failure(key):
         _events_failures[key] = time.monotonic()
 
 
-def recently_failed(key):
-    """Google failed for this calendar and year within GOOGLE_REFRESH_MIN_SECONDS: no new
-    call, so retries and refreshes cannot hammer it while it asks the app to slow down."""
+def recently_failed(key, window=None):
+    """Google failed for this calendar and year within window seconds
+    (GOOGLE_REFRESH_MIN_SECONDS by default): no new call, so retries and refreshes cannot
+    hammer it while it asks the app to slow down."""
     with _events_cache_lock:
         at = _events_failures.get(key)
-    return at is not None and time.monotonic() - at < GOOGLE_REFRESH_MIN_SECONDS
+    return at is not None and time.monotonic() - at < (window or GOOGLE_REFRESH_MIN_SECONDS)
 
 
-def google_calendar_view(user_id, year, fresh=False, palette=None, places=None, chosen=None,
-                         base=""):
-    """What the Google tab shows for a year: {"state": "ok" | "scope" | "broken" | "gone" |
-    "error" | "server_off" | "unchosen" | "off", "calendar": ..., "truncated": ..., "link": ...}.
+def google_year_events(user_id, year, fresh=False, backoff=None):
+    """The chosen Google calendar's events of a year, for the Google tab and the AUTO sync:
+    {"state": "ok" | "scope" | "broken" | "gone" | "error" | "server_off" | "unchosen" |
+    "off", "link": ..., "events": {"stays", "truncated"} (state ok), "refresh_failed": bool}.
     The events are read from Google (kept a minute, never stored); fresh: the Refresh
-    Calendar button, which reads them again unless the last read is a few seconds old."""
+    Calendar button, which reads them again unless the last read is a few seconds old.
+    backoff: how long a failure waits before Google is called again (the dashboard of an AUTO
+    year waits a minute, since the page itself waits on Google)."""
     link = calendar_link(user_id)
     if not google_calendar_on():
         return {"state": "server_off", "link": link}
@@ -3172,8 +3183,7 @@ def google_calendar_view(user_id, year, fresh=False, palette=None, places=None, 
     key, events = cached_events(link, year,
                                 max_age=GOOGLE_REFRESH_MIN_SECONDS if fresh else None)
     if events is not None:
-        return {"state": "ok", "link": link, "truncated": events["truncated"],
-                "calendar": google_year_calendar(year, events["stays"], palette, places, chosen, base)}
+        return {"state": "ok", "link": link, "events": events}
 
     def failed(called=True):
         """Google did not answer: a refresh keeps the read it has (the minute's copy) and
@@ -3184,12 +3194,10 @@ def google_calendar_view(user_id, year, fresh=False, palette=None, places=None, 
         if fresh:
             _key, kept = cached_events(link, year)
             if kept is not None:
-                return {"state": "ok", "link": link, "truncated": kept["truncated"],
-                        "refresh_failed": True,
-                        "calendar": google_year_calendar(year, kept["stays"], palette, places, chosen, base)}
+                return {"state": "ok", "link": link, "events": kept, "refresh_failed": True}
         return {"state": "error", "link": link}
 
-    if recently_failed(key):
+    if recently_failed(key, backoff):
         return failed(called=False)  # failed seconds ago: no new call (rate limits, quota)
     token = google_access_token(link["refresh_token"])
     if token is None and g.get("google_error") == "invalid_grant":
@@ -3200,13 +3208,368 @@ def google_calendar_view(user_id, year, fresh=False, palette=None, places=None, 
     if events is None:
         status, reason = g.get("google_status", 0), g.get("google_reason", "")
         if token and reason == "insufficientPermissions":
+            note_failure(key)  # not asked again at once
             return {"state": "scope", "link": link}  # the events permission was taken back
         if token and (status == 404 or (status == 403 and reason not in GOOGLE_RATE_REASONS)):
+            note_failure(key)
             return {"state": "gone", "link": link}  # deleted, or no longer shared with them
         return failed()
+    events["read_at"] = time.time()  # wall clock: the same in every server process
     remember_events(key, events)
-    return {"state": "ok", "link": link, "truncated": events["truncated"],
-            "calendar": google_year_calendar(year, events["stays"], palette, places, chosen, base)}
+    return {"state": "ok", "link": link, "events": events}
+
+
+def google_calendar_view(user_id, year, fresh=False, palette=None, places=None, chosen=None,
+                         base="", read=None):
+    """What the Google tab shows for a year: google_year_events() (or read, when the caller
+    already has it) with "calendar" and "truncated" added when the events could be read."""
+    view = dict(read or google_year_events(user_id, year, fresh))
+    events = view.pop("events", None)
+    if view["state"] == "ok":
+        view["truncated"] = events["truncated"]
+        view["calendar"] = google_year_calendar(year, events["stays"], palette, places, chosen,
+                                                base)
+    return view
+
+
+# ---------- AUTO movements: the year's movements synced from Google Calendar (2.0.0) ----------
+#
+# A year is "manual" (movements are typed) or "auto": its movements come from the connected
+# Google calendar, which wins any difference. Only events named after a place count: a country
+# ("Italy", "IT") or "City, Country" ("Rome, Italy"). A synced movement keeps its notes and
+# receipts; when its event is gone it is deleted, or kept and flagged (sync_missing) when it
+# has receipts. Turning a year to AUTO first shows the differences (sync_review), where each
+# one can be ticked or not.
+
+SYNC_MODES = ("manual", "auto")
+
+
+def event_place(title):
+    """(city, country) of a Google event named after a place, else None: a country by name or
+    ISO code ("Italy", "IT"; a code of two or three letters only in capitals, so an event
+    called "No" or "In" is not Norway or India) or "City, Country" ("Rome, Italy")."""
+    text = clean_place(title or "")
+    if not text or len(text) > 2 * PLACE_MAX:
+        return None
+
+    def country_of(part):
+        part = clean_place(part)
+        if len(part) <= 3 and not part.isupper():
+            return None
+        country = normalize_country(part)
+        return country if COUNTRY_CODES.get(country) else None
+
+    country = country_of(text)
+    if country:
+        return "", country
+    if "," in text:
+        city, _, tail = text.rpartition(",")
+        country, city = country_of(tail), clean_place(city)
+        if country and city and len(city) <= PLACE_MAX:
+            return city, country
+    return None
+
+
+def sync_events(year, stays):
+    """The place events of a year as movements to be: [{gid, title, city, country,
+    start_date, end_date}], their days clipped to the year, oldest first. Events without an
+    id (none from Google) are left out."""
+    first, last = date(year, 1, 1), date(year, 12, 31)
+    found, seen = [], set()
+    for s in stays:
+        place = event_place(s["title"])
+        if not place or not s.get("gid") or s["gid"] in seen:
+            continue  # an id read twice (pages shifting while Google is read): the first
+        seen.add(s["gid"])
+        start = max(parse_date(s["start_date"]), first)
+        end = min(parse_date(s["end_date"]), last)
+        if end < start:
+            continue
+        found.append({"gid": s["gid"], "title": s["title"], "city": place[0], "country": place[1],
+                      "start_date": start.isoformat(), "end_date": end.isoformat()})
+    found.sort(key=lambda e: (e["start_date"], e["end_date"], e["gid"]))
+    return found
+
+
+def _same_place(m, e):
+    return fold(m["city"] or "") == fold(e["city"]) and \
+        fold(normalize_country(m["country"])) == fold(e["country"])
+
+
+def sync_changes(movements, receipts, events, reviewing=False, complete=True):
+    """What syncing would change: a list of {key, kind, movement, event, receipts, default,
+    listed}. kind: "add" (an event without a movement), "edit" (a movement takes its event's
+    place and dates), "delete", "link" (a typed movement that already matches an event),
+    "flag"/"unflag" (sync_missing, never listed). receipts: {movement id: count}.
+    reviewing: turning the year to AUTO, so typed movements are matched to the events too
+    (else they are left alone: the review already decided about them). complete: False when
+    Google had more events than were read (truncated): then nothing is removed or flagged,
+    since a movement's event may only be among those not read."""
+    by_gid = {e["gid"]: e for e in events}
+    changes, used = [], set()
+
+    def change(kind, key, m=None, e=None, default=True, listed=True):
+        changes.append({"key": key, "kind": kind, "movement": m, "event": e,
+                        "receipts": receipts.get(m["id"], 0) if m else 0,
+                        "default": default, "listed": listed})
+
+    typed = []
+    for m in movements:
+        gid = m["google_event_id"]
+        if not gid:
+            typed.append(m)
+            continue
+        e = by_gid.get(gid)
+        if e is None or gid in used:
+            if not complete:
+                continue
+            if receipts.get(m["id"]):
+                if not m["sync_missing"]:
+                    change("flag", f"flag:{m['id']}", m, listed=False)
+            else:
+                change("delete", f"del:{m['id']}", m)
+            continue
+        used.add(gid)
+        if m["sync_missing"]:
+            change("unflag", f"unflag:{m['id']}", m, e, listed=False)
+        if (not _same_place(m, e) or m["start_date"] != e["start_date"]
+                or m["end_date"] != e["end_date"]):
+            change("edit", f"edit:{m['id']}:{gid}", m, e)
+    if reviewing:
+        free = [e for e in events if e["gid"] not in used]
+
+        def same_country(m, e):
+            return fold(normalize_country(m["country"])) == fold(e["country"])
+
+        def same_days(m, e):
+            return m["start_date"] == e["start_date"] and m["end_date"] == e["end_date"]
+
+        def shared(m, e):
+            """Days the movement and the event have in common (0: none)."""
+            start = max(parse_date(m["start_date"]), parse_date(e["start_date"]))
+            end = min(parse_date(m["end_date"]), parse_date(e["end_date"]))
+            return max((end - start).days + 1, 0)
+
+        # Typed movements are matched to the free events, the closest match first: the same
+        # place and days, the same country and days, the same place on shared days, the same
+        # country on shared days (then the event sharing the most days), so a shifted travel
+        # day never swaps two stays.
+        passes = [lambda m, e: _same_place(m, e) and same_days(m, e),
+                  lambda m, e: same_country(m, e) and same_days(m, e),
+                  lambda m, e: _same_place(m, e) and shared(m, e),
+                  lambda m, e: same_country(m, e) and shared(m, e)]
+        matched = {}
+        for test in passes:
+            for m in typed:
+                if m["id"] in matched:
+                    continue
+                options = [e for e in free if e["gid"] not in used and test(m, e)]
+                if options:
+                    e = max(options, key=lambda e: shared(m, e))
+                    used.add(e["gid"])
+                    matched[m["id"]] = e
+        for m in typed:
+            e = matched.get(m["id"])
+            if e is None:
+                if complete:
+                    change("delete", f"del:{m['id']}", m, default=not receipts.get(m["id"]))
+            elif _same_place(m, e) and same_days(m, e):
+                change("link", f"link:{m['id']}:{e['gid']}", m, e)
+            else:
+                change("edit", f"edit:{m['id']}:{e['gid']}", m, e)
+    for e in events:
+        if e["gid"] not in used:
+            change("add", f"add:{e['gid']}", e=e)
+    return changes
+
+
+def sync_plan_hash(changes):
+    """A fingerprint of the listed changes and what they write, so a review applied after
+    Google Calendar changed is shown again instead."""
+    parts = []
+    for c in changes:
+        if c["listed"]:
+            # The event and the movement as shown, its receipts too: a receipt added to a
+            # movement while the review is open must not be deleted with it unseen.
+            e, m = c["event"] or {}, c["movement"]
+            parts.append("|".join([c["key"], e.get("city", ""), e.get("country", ""),
+                                   e.get("start_date", ""), e.get("end_date", ""),
+                                   str(c["receipts"])] + ([m["city"], m["country"], m["start_date"],
+                                                          m["end_date"]] if m else [])))
+    return hashlib.sha256("\n".join(sorted(parts)).encode()).hexdigest()[:20]
+
+
+class SyncChanged(Exception):
+    """The review no longer matches the year or Google Calendar: show it again."""
+
+
+def year_sync_rows(conn, year_id):
+    movements = conn.execute("SELECT * FROM movements WHERE year_id = ? ORDER BY id",
+                             (year_id,)).fetchall()
+    receipts = {r[0]: r[1] for r in conn.execute(
+        "SELECT movement_id, COUNT(*) FROM documents WHERE year_id = ? AND movement_id IS NOT "
+        "NULL GROUP BY movement_id", (year_id,))}
+    return movements, receipts
+
+
+def apply_sync(year_id, events, keys=None, reviewing=False, expect=None, complete=True,
+               calendar=None, read_at=0.0):
+    """Sync a year's movements with the events, under one write lock: the movements are read
+    again there, so what is written always fits what is stored. keys: the changes to apply
+    (None: all of them, AUTO's own sync); flags always apply. reviewing: turning the year to
+    AUTO, which also sets the mode; expect: the review's sync_plan_hash, which must still hold
+    (else SyncChanged). Returns {"added", "changed", "removed", "left_out"} and removes the
+    deleted movements' receipt files after the lock. complete: see sync_changes; calendar:
+    the Google calendar a review turns AUTO with (years.sync_calendar); read_at: when Google
+    was read (each server process caches its own read for a minute): a read older than the
+    one last applied is skipped, so another process's stale copy never undoes a newer sync.
+    AUTO's own sync first looks without the write lock: a view with nothing to change never
+    waits for it (nor fails behind another writer)."""
+    done = {"added": 0, "changed": 0, "removed": 0, "left_out": 0}
+    if not reviewing:
+        conn = db.get_db()
+        movements, receipts = year_sync_rows(conn, year_id)
+        ignored = {r[0] for r in conn.execute(
+            "SELECT google_event_id FROM sync_ignored WHERE year_id = ?", (year_id,))}
+        if not sync_changes(movements, receipts, [e for e in events if e["gid"] not in ignored],
+                            complete=complete):
+            return done
+    docs = []
+    with db.transaction() as conn:
+        mode = conn.execute("SELECT sync_mode, synced_read_at FROM years WHERE id = ?",
+                            (year_id,)).fetchone()
+        if mode is None:
+            raise SyncChanged  # the year was deleted meanwhile
+        if not reviewing and (mode[0] != "auto" or read_at < mode[1]):
+            return done  # switched to MANUAL meanwhile, or this read is older than the last
+        movements, receipts = year_sync_rows(conn, year_id)
+        if not reviewing:  # the events unticked in the review stay out
+            ignored = {r[0] for r in conn.execute(
+                "SELECT google_event_id FROM sync_ignored WHERE year_id = ?", (year_id,))}
+            events = [e for e in events if e["gid"] not in ignored]
+        changes = sync_changes(movements, receipts, events, reviewing, complete)
+        if expect is not None and sync_plan_hash(changes) != expect:
+            raise SyncChanged
+        count = len(movements)
+        if reviewing:
+            conn.execute("DELETE FROM sync_ignored WHERE year_id = ?", (year_id,))
+        for c in changes:
+            if keys is not None and c["listed"] and c["key"] not in keys:
+                # Unticked: its event stays out of the sync, and a synced movement it
+                # concerns becomes a typed one, kept as it is.
+                if c["event"]:
+                    conn.execute("INSERT OR IGNORE INTO sync_ignored (year_id, google_event_id) "
+                                 "VALUES (?, ?)", (year_id, c["event"]["gid"]))
+                if c["movement"] and c["movement"]["google_event_id"]:
+                    conn.execute("UPDATE movements SET google_event_id = NULL, sync_missing = 0 "
+                                 "WHERE id = ? AND year_id = ?", (c["movement"]["id"], year_id))
+                continue
+            m, e = c["movement"], c["event"]
+            if c["kind"] == "add":
+                if count >= MOVEMENTS_MAX:
+                    done["left_out"] += 1
+                    continue
+                conn.execute("INSERT INTO movements (year_id, city, country, start_date, end_date, "
+                             "google_event_id) VALUES (?, ?, ?, ?, ?, ?)",
+                             (year_id, e["city"], e["country"], e["start_date"], e["end_date"],
+                              e["gid"]))
+                count += 1
+                done["added"] += 1
+            elif c["kind"] in ("edit", "link"):
+                conn.execute("UPDATE movements SET city = ?, country = ?, start_date = ?, "
+                             "end_date = ?, google_event_id = ?, sync_missing = 0 "
+                             "WHERE id = ? AND year_id = ?",
+                             (e["city"], e["country"], e["start_date"], e["end_date"], e["gid"],
+                              m["id"], year_id))
+                done["changed"] += c["kind"] == "edit"
+            elif c["kind"] == "delete":
+                docs += conn.execute("SELECT * FROM documents WHERE movement_id = ?",
+                                     (m["id"],)).fetchall()
+                conn.execute("DELETE FROM movements WHERE id = ? AND year_id = ?",
+                             (m["id"], year_id))
+                count -= 1
+                done["removed"] += 1
+            elif c["kind"] in ("flag", "unflag"):
+                conn.execute("UPDATE movements SET sync_missing = ? WHERE id = ? AND year_id = ?",
+                             (int(c["kind"] == "flag"), m["id"], year_id))
+        if reviewing:
+            conn.execute("UPDATE years SET synced_at = ?, synced_read_at = ?, sync_mode = 'auto', "
+                         "sync_calendar = ? WHERE id = ?",
+                         (utc_now_text(), read_at, calendar, year_id))
+        else:
+            conn.execute("UPDATE years SET synced_at = ?, synced_read_at = MAX(synced_read_at, ?) "
+                         "WHERE id = ?", (utc_now_text(), read_at, year_id))
+    remove_files(docs)
+    return done
+
+
+def sync_summary(done):
+    """"Synced with Google Calendar: 2 added, 1 changed." or "" when nothing changed."""
+    parts = [f"{done[k]} {word}" for k, word in (("added", "added"), ("changed", "changed"),
+                                                 ("removed", "removed")) if done[k]]
+    text = ("Synced with Google Calendar: " + ", ".join(parts) + ".") if parts else ""
+    if done["left_out"]:
+        text += (f" {plural(done['left_out'], 'event')} left out: a year holds at most "
+                 f"{MOVEMENTS_MAX} movements.")
+    return text.strip()
+
+
+def year_auto(year_row, link):
+    """The year runs in AUTO: chosen so, and the Google connection can read its calendar.
+    Otherwise it works as MANUAL (a broken connection never deletes anything)."""
+    return (year_row["sync_mode"] == "auto" and calendar_tabs_on(link)
+            and calendar_events_ok(link) and year_row["sync_calendar"] == link["calendar_id"])
+
+
+def sync_status(year_row, link, read=None):
+    """What the year head shows: {"auto": the year runs in AUTO, "can": AUTO can be turned on
+    (a working Google connection with a chosen calendar), "name": the calendar's name,
+    "problem": why Google did not answer}. A year that lost its calendar is put back to
+    MANUAL by auto_sync, which says so."""
+    can = bool(calendar_tabs_on(link) and calendar_events_ok(link))
+    auto = year_auto(year_row, link)
+    problem = ""
+    if auto and read is not None and (read["state"] != "ok" or read.get("refresh_failed")):
+        problem = "Google Calendar did not answer, so the movements were not synced just now."
+    return {"auto": auto, "can": can, "problem": problem,
+            "name": (link or {}).get("calendar_name") or "", "synced_at": year_row["synced_at"]}
+
+
+# Google answers that mean the year cannot follow its calendar any more: the user must act.
+SYNC_LOST_STATES = ("server_off", "off", "broken", "unchosen", "scope", "gone")
+
+
+def auto_sync(year_row, fresh=False):
+    """AUTO's own sync, when an AUTO year's dashboard (or its Google tab) is shown: every
+    change applied. Returns (google_year_events() answer or None, message, category).
+    A year that can no longer follow the calendar it was turned AUTO with (disconnected,
+    another calendar chosen, the calendar deleted, the permission taken back) goes back to
+    MANUAL: turning AUTO on again shows the review, so another calendar's events, or
+    movements typed meanwhile, are never replaced or doubled without asking."""
+    if year_row["sync_mode"] != "auto":
+        return None, "", ""
+    link = calendar_link(year_row["user_id"])
+    read = None
+    if year_auto(year_row, link):
+        read = google_year_events(year_row["user_id"], year_row["year"], fresh,
+                                  backoff=None if fresh else GOOGLE_EVENTS_CACHE_SECONDS)
+        if read["state"] not in SYNC_LOST_STATES:
+            if read["state"] != "ok" or read.get("refresh_failed"):
+                return read, "", ""  # Google did not answer: the movements stay as they are
+            events = read["events"]
+            try:
+                done = apply_sync(year_row["id"], sync_events(year_row["year"], events["stays"]),
+                                  complete=not events["truncated"],
+                                  read_at=events.get("read_at", 0.0))
+            except (SyncChanged, sqlite3.OperationalError):
+                return read, "", ""  # busy or changed meanwhile: the next view syncs
+            return read, sync_summary(done), "info"
+    if not db.try_execute("UPDATE years SET sync_mode = 'manual' WHERE id = ? AND "
+                          "sync_mode = 'auto'", (year_row["id"],)):
+        return read, "", ""  # busy (the next view tries again), or already MANUAL
+    return read, (f"{year_row['year']} is back to MANUAL: Google Calendar is no longer connected "
+                  "to it, or another calendar was chosen. Turn AUTO on again to review the "
+                  "changes."), "error"
 
 
 def revoke_after_answer(refresh_token, account):
@@ -3421,16 +3784,13 @@ def map_pins(year_row, movements, stats=None):
 
 # Colors of the stay countries in the dashboard calendar (--cal-1 to --cal-8 in style.css);
 # after eight countries they repeat, and the legend and hover text still name every day.
-CALENDAR_COLORS = 16
+CALENDAR_COLORS = 14
 # The colors a country can be given with the legend's picker: the base pink and the 16 above.
 CALENDAR_PALETTE = ("cal-base",) + tuple(f"cal-{i}" for i in range(1, CALENDAR_COLORS + 1))
 COLORS_MAX = 300  # chosen colors per account
 # Their names, for the picker's buttons (screen readers) and its messages.
-CALENDAR_COLOR_NAMES = {
-    "cal-base": "Pink", "cal-1": "Mint", "cal-2": "Yellow", "cal-3": "Lilac", "cal-4": "Light blue",
-    "cal-5": "Salmon", "cal-6": "Light green", "cal-7": "Cyan", "cal-8": "Tan", "cal-9": "Coral",
-    "cal-10": "Orchid", "cal-11": "Lime", "cal-12": "Periwinkle", "cal-13": "Teal", "cal-14": "Gold",
-    "cal-15": "Grey", "cal-16": "Khaki"}
+# In the picker's order (5 a row): the user's palette of 15 colors (2.0.0), the base pink among them.
+CALENDAR_COLOR_NAMES = {"cal-7": "Red", "cal-2": "Orange", "cal-5": "Yellow", "cal-9": "Lime", "cal-3": "Green", "cal-6": "Teal", "cal-11": "Cyan", "cal-1": "Blue", "cal-8": "Indigo", "cal-4": "Purple", "cal-10": "Magenta", "cal-base": "Pink", "cal-13": "Raspberry", "cal-12": "Brown", "cal-14": "Slate"}
 
 
 def country_colors(user_id):
@@ -5255,6 +5615,13 @@ def register_routes(app):
     @login_required
     def dashboard(year):
         year_row = get_year_or_404(year)
+        fresh = request.args.get("refresh") == "1"
+        # AUTO: the movements follow Google Calendar first (cached a minute, so a reload does
+        # not wait on Google again); a sync that changed something says so.
+        read, synced, category = auto_sync(year_row, fresh=fresh)
+        if synced:
+            flash(synced, category)
+            year_row = get_year_or_404(year)  # its mode may have changed
         movements = db.query(
             "SELECT m.*, (SELECT COUNT(*) FROM documents d WHERE d.movement_id = m.id) AS doc_count "
             "FROM movements m WHERE m.year_id = ? ORDER BY m.start_date, m.end_date DESC, m.id",
@@ -5280,10 +5647,10 @@ def register_routes(app):
         cal = calendar_choice() if cal_tabs else None  # a tab's link: the card opens on it
         chosen = country_colors(current_user.id)
         palette = calendar_palette(movements, year_colors(stats, chosen))
-        google_view = (google_calendar_view(current_user.id, year,
-                                            fresh=request.args.get("refresh") == "1",
+        google_view = (google_calendar_view(current_user.id, year, fresh=fresh,
                                             palette=palette, places=calendar_places(movements),
-                                            chosen=chosen, base=year_row["base_country"])
+                                            chosen=chosen, base=year_row["base_country"],
+                                            read=read)
                        if cal == "google" else None)
         g.calendar_forms = cal_tabs  # CALENDAR_CSP: the Google tab's Connect again
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
@@ -5306,6 +5673,7 @@ def register_routes(app):
                                years=years, stats=stats,
                                base_docs=base_docs, map=map_pins(year_row, movements, stats),
                                calendar=year_calendar(year_row, movements, stats, chosen),
+                               sync=sync_status(year_row, link, read),
                                # stays outside the base (the card's line; the base is logged too)
                                abroad_movements=sum(
                                    1 for m in movements if fold(normalize_country(m["country"]))
@@ -5320,6 +5688,9 @@ def register_routes(app):
         year_row = get_year_or_404(year)
         g.calendar_forms = True  # the fragment's Connect again form goes on to Google
         fresh = request.args.get("refresh") == "1"
+        read, synced, category = auto_sync(year_row, fresh=fresh)
+        if synced:
+            flash(synced, category)  # shown by the page theme.js reloads (X-Nomad-Synced)
         movements = db.query("SELECT * FROM movements WHERE year_id = ? "
                              "ORDER BY start_date, end_date DESC, id", (year_row["id"],))
         stats = compute_stats(year_row, movements)
@@ -5327,11 +5698,93 @@ def register_routes(app):
         palette = calendar_palette(movements, year_colors(stats, chosen))
         view = google_calendar_view(current_user.id, year, fresh=fresh, palette=palette,
                                     places=calendar_places(movements), chosen=chosen,
-                                    base=year_row["base_country"])
+                                    base=year_row["base_country"], read=read)
         html = render_template("_google_calendar.html", y=year_row, view=view)
         # A refresh Google did not answer, with no earlier read to keep: 503, so the page
         # keeps the calendar it shows and says the refresh failed.
-        return (html, 503) if fresh and view["state"] == "error" else html
+        if fresh and view["state"] == "error":
+            return html, 503
+        # The AUTO sync changed the movements: the page reloads to show them (theme.js).
+        return (html, 200, {"X-Nomad-Synced": "1"}) if synced else html
+
+    @app.route("/year/<int:year>/sync-mode", methods=["POST"])
+    @login_required
+    def sync_mode(year):
+        """The AUTO / MANUAL switch next to the year. MANUAL is set at once; AUTO goes to the
+        review of the differences first, which sets it when applied."""
+        year_row = db.query("SELECT * FROM years WHERE user_id = ? AND year = ?",
+                            (current_user.id, year), one=True)
+        if year_row is None:
+            flash(f"The year {year} no longer exists.", "error")
+            return redirect(url_for("index"))
+        if request.form.get("mode") == "manual":
+            db.execute("UPDATE years SET sync_mode = 'manual' WHERE id = ?", (year_row["id"],))
+            flash(f"{year} is in MANUAL mode: you add and change its movements yourself.", "info")
+            return redirect(url_for("dashboard", year=year))
+        link = calendar_link(current_user.id)
+        if not (calendar_tabs_on(link) and calendar_events_ok(link)):
+            flash("Connect Google Calendar and choose a calendar in Settings to turn on AUTO.",
+                  "error")
+            return redirect(url_for("dashboard", year=year))
+        return redirect(url_for("sync_review", year=year), code=303)
+
+    @app.route("/year/<int:year>/sync", methods=["GET", "POST"])
+    @login_required
+    def sync_review(year):
+        """Turning a year to AUTO: the differences between its movements and the Google
+        calendar, each with a checkbox (removing a typed movement with receipts starts
+        unticked). Applying writes the ticked ones and turns AUTO on, only if Google Calendar
+        and the movements are still as shown (else the review shows again)."""
+        year_row = db.query("SELECT * FROM years WHERE user_id = ? AND year = ?",
+                            (current_user.id, year), one=True)
+        if year_row is None:
+            flash(f"The year {year} no longer exists.", "error")
+            return redirect(url_for("index"))
+        link = calendar_link(current_user.id)
+        if not (calendar_tabs_on(link) and calendar_events_ok(link)):
+            flash("Connect Google Calendar and choose a calendar in Settings to turn on AUTO.",
+                  "error")
+            return redirect(url_for("dashboard", year=year))
+        if year_auto(year_row, link):
+            # Back to the review after applying it (the Back button): applying again would
+            # undo the changes unticked then.
+            flash(f"{year} is already in AUTO mode.", "info")
+            return redirect(url_for("dashboard", year=year))
+        # Read again (unless seconds old), so the page and its POST, which another server
+        # process may answer, see the same calendar.
+        read = google_year_events(current_user.id, year, fresh=True)
+        if read["state"] != "ok" or read.get("refresh_failed"):
+            flash("Google Calendar did not answer, so AUTO was not turned on. Try again in a "
+                  "moment.", "error")
+            return redirect(url_for("dashboard", year=year))
+        events = sync_events(year, read["events"]["stays"])
+        complete = not read["events"]["truncated"]
+        if request.method == "POST":
+            keys = set(request.form.getlist("change"))
+            try:
+                done = apply_sync(year_row["id"], events, keys=keys, reviewing=True,
+                                  expect=request.form.get("plan", ""), complete=complete,
+                                  calendar=link["calendar_id"],
+                                  read_at=read["events"].get("read_at", 0.0))
+            except SyncChanged:
+                flash("Google Calendar or your movements changed meanwhile. Check the changes "
+                      "again.", "error")
+                return redirect(url_for("sync_review", year=year))
+            flash(f"{year} is in AUTO mode: its movements follow your Google calendar "
+                  f"\u201c{link['calendar_name']}\u201d. " + (sync_summary(done) or
+                                                         "Nothing needed to change."), "success")
+            return redirect(url_for("dashboard", year=year))
+        with db.transaction() as conn:  # one consistent read of the year
+            movements, receipts = year_sync_rows(conn, year_row["id"])
+        changes = sync_changes(movements, receipts, events, reviewing=True, complete=complete)
+        listed = [c for c in changes if c["listed"]]
+        groups = [(kind, title, [c for c in listed if c["kind"] == kind]) for kind, title in (
+            ("add", "Add"), ("edit", "Change"), ("delete", "Remove"), ("link", "Already matching"))]
+        return render_template("sync_review.html", y=year_row, link=link, groups=groups,
+                               plan=sync_plan_hash(changes), listed=listed,
+                               ignored=len([s for s in read["events"]["stays"]
+                                            if not event_place(s["title"])]),
+                               truncated=read["events"]["truncated"])
 
     @app.route("/year/<int:year>/base", methods=["GET", "POST"])
     @login_required
@@ -5484,6 +5937,10 @@ def register_routes(app):
             flash(f"The year {year} no longer exists, so the movement was not saved.", "error")
             return redirect(url_for("index"))
         year_row = get_year_or_404(year)
+        if year_auto(year_row, calendar_link(current_user.id)):
+            flash(f"{year} is in AUTO mode: its movements come from Google Calendar. Add the "
+                  "trip there, or switch the year to MANUAL.", "info")
+            return redirect(url_for("dashboard", year=year))
         form = request.form if request.method == "POST" else {}
         if request.method == "POST":
             data, err = validate_movement(request.form, year)
@@ -5563,16 +6020,31 @@ def register_routes(app):
             return redirect(url_for("index"))
         m = get_movement_or_404(movement_id)
         year_row = get_year_or_404(m["year"])
+        # AUTO: a synced movement's place and dates are Google's (notes and receipts stay
+        # yours); it is deleted in Google Calendar, unless Google no longer has it.
+        synced = bool(m["google_event_id"]) and year_auto(year_row, calendar_link(current_user.id))
         if request.method == "POST":
             action = request.form.get("action")
+            if action == "delete" and synced and not m["sync_missing"]:
+                flash("This movement comes from Google Calendar: delete the event there, or "
+                      "switch the year to MANUAL.", "error")
+                return redirect(url_for("movement_edit", movement_id=movement_id))
             if action == "update":
-                data, err = validate_movement(request.form, m["year"], m["notes"])
+                # A synced movement saves only its notes: its place and dates stay Google's.
+                # A page opened while the movement was synced sends no place and dates (its
+                # fields were disabled), also when the year left AUTO since: keep the stored.
+                form = {k: m[k] for k in ("city", "country", "start_date", "end_date")}
+                if not synced and "country" in request.form:
+                    form.update(request.form.to_dict())
+                form["notes"] = request.form.get("notes", "")
+                data, err = validate_movement(form, m["year"], m["notes"])
                 if err:
                     # Re-render so the user keeps what they typed.
                     flash(err, "error")
-                    return render_template("movement.html", y=year_row, m=m, form=request.form,
+                    return render_template("movement.html", y=year_row, m=m, form=form,
                                            docs=documents_for(year_row["id"], movement_id),
-                                           back_url=back_to_movement(year_row, movement_id))
+                                           back_url=back_to_movement(year_row, movement_id),
+                                           synced=synced)
                 else:
                     db.execute("UPDATE movements SET city = ?, country = ?, start_date = ?, "
                                "end_date = ?, notes = ? WHERE id = ?",
@@ -5610,7 +6082,7 @@ def register_routes(app):
             return redirect(url_for("movement_edit", movement_id=movement_id))
         return render_template("movement.html", y=year_row, m=m, form=m,
                                docs=documents_for(year_row["id"], movement_id),
-                               back_url=back_to_movement(year_row, movement_id))
+                               back_url=back_to_movement(year_row, movement_id), synced=synced)
 
     # --- account ---
 

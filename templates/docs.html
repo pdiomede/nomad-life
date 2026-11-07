@@ -131,6 +131,22 @@
           {{ shot('delete-dialog', 'The delete confirmation dialog on step 2 of 2: "Are you sure? This permanently deletes the movement to Madrid and its 2 receipts." with Cancel and Yes, delete permanently', 'Every delete asks twice. The second step says what will be removed.') }}
           <p>Limits: city and country up to {{ place_max }} characters, and up to {{ '{:,}'.format(movements_max) }} movements a year.</p>
         </section>
+        <section id="auto-movements" class="doc-sub" data-doc-title="Movements from Google Calendar">
+          <h3>Movements from Google Calendar</h3>
+          {{ shot('sync-switch', 'The head of the dashboard: the year 2025 with an AUTO label and a switch turned on next to it, the year tabs on the right', 'AUTO: the year follows your Google calendar. The switch turns it back to MANUAL.') }}
+          <p>Each year is <strong>MANUAL</strong> or <strong>AUTO</strong>, shown next to the year on the dashboard. A new year starts in MANUAL: you add its movements yourself. In AUTO, its movements come from the Google calendar you connected (see <a href="#calendar-integration">Calendar integration</a>), and they follow it each time you open the year, also right after you sign in.</p>
+          <ul>
+            <li>Events count when their title is a place: a country, by name or code (<strong>Italy</strong>, <strong>IT</strong>), or a city and its country (<strong>Rome, Italy</strong>). Other events, like a dentist appointment, are left out. An all-day event from 1 to 6 February gives a stay from 1 to 5 February, as Google shows it; days outside the year are cut.</li>
+            <li>Google Calendar wins: change a trip there and its movement changes here; delete it there and the movement goes, unless it has receipts. Then it stays, marked <strong>Not in Google Calendar</strong>, until you delete it yourself.</li>
+            <li>In AUTO, a movement's place and dates come from its event: change them in Google Calendar. Its notes and receipts are yours and stay. <strong>+ Add movement</strong> is hidden: add the trip in Google Calendar. Movements you typed before turning AUTO on and chose to keep stay as they are.</li>
+            <li>The <strong>Refresh Calendar</strong> arrow of the Google Calendar tab reads the calendar again at once; otherwise Nomad Life reads it at most once a minute.</li>
+            <li>If Google Calendar does not answer, nothing changes and the dashboard says so. If it is disconnected, another calendar is chosen, or the calendar is deleted, the year goes back to MANUAL and keeps its movements: turn AUTO on again to review the differences.</li>
+            <li>A calendar with more events than Nomad Life can read at once never loses movements: only additions and changes apply until all of it can be read.</li>
+          </ul>
+          <h4>Turning AUTO on</h4>
+          {{ shot('sync-review', 'The Turn on AUTO page: changes from Google Calendar grouped in Change and Remove, each with a checkbox, Select all and Select none, and the Turn on AUTO and apply and Cancel buttons', 'Before AUTO starts, you choose which differences to apply.') }}
+          <p>Press the switch next to the year. A page lists what would change for the movements to match your Google calendar: movements to <strong>add</strong>, to <strong>change</strong> (the same country on overlapping days takes the event's city and dates), to <strong>remove</strong> (with their receipts), and those <strong>already matching</strong>. Untick what you do not want: an unticked event stays out of the sync, and the movement stays as you typed it. Removing a movement that has receipts starts unticked. Press <strong>Turn on AUTO and apply</strong>, or <strong>Cancel</strong> to stay in MANUAL. Switching back to MANUAL keeps every movement as it is.</p>
+        </section>
         <p class="doc-top"><a href="#top"><span aria-hidden="true">&uarr;</span> Back to the top</a></p>
       </section>
 
@@ -228,7 +244,7 @@
             <li>The gear next to the title, <strong>Calendar Integration</strong>, opens the part of Settings where you connect a Google Calendar (see <a href="#calendar-integration">Calendar integration</a>).</li>
             <li>With a Google Calendar connected and chosen, two tabs sit in the middle of the head: <strong>Nomad Life</strong> (this calendar) and <strong>Google Calendar</strong>, which shows the chosen Google calendar's events on the same months, read from Google when you open it. Events with the same title share a color, a day shared by two events goes to the one that started later, and days without an event are grey ("No event"). The round arrow next to the tab, <strong>Refresh Calendar</strong>, reads the calendar from Google again after you change it there, and the arrow out of a box opens that calendar in Google Calendar in a new tab. Both show only on the Google Calendar tab.</li>
           </ul>
-          {{ shot('calendar-google', 'The calendar of 2026 on its Google Calendar tab: the events of the Google calendar Travel plans, Lisbon in green, Tokyo, Christmas in Lisbon, Bangkok, Paris, Madrid conference and Rome each in its own color, a few days without an event in grey, and the Refresh Calendar and open in Google Calendar icons next to the tab', 'The Google Calendar tab: your chosen Google calendar on the same months.') }}
+          {{ shot('calendar-google', 'The calendar of 2026 on its Google Calendar tab: the events of the Google calendar Travel plans, Lisbon, Portugal first, then Tokyo, Japan, Bangkok, Thailand, Paris, France, Madrid, Spain, Rome, Italy and Christmas in Lisbon, each in its own color, a few days without an event in grey, and the Refresh Calendar and open in Google Calendar icons next to the tab', 'The Google Calendar tab: your chosen Google calendar on the same months.') }}
         </section>
 
         <section id="map" class="doc-sub" data-doc-title="The map">
@@ -340,7 +356,7 @@
         <section id="calendar-integration" class="doc-sub" data-doc-title="Calendar integration">
           <h3>Calendar integration</h3>
           <ul>
-            <li><strong>Calendar Integration</strong> connects one Google Calendar that Nomad Life can add your stays to later. Open it from Settings, or with the gear next to the title of the dashboard's Calendar.</li>
+            <li><strong>Calendar Integration</strong> connects one Google Calendar: its events show in the dashboard's Google Calendar tab, and a year in AUTO takes its movements from it (see <a href="#auto-movements">Movements from Google Calendar</a>). Open it from Settings, or with the gear next to the title of the dashboard's Calendar.</li>
             <li>Press <strong>Connect Google Calendar</strong>, choose the Google account (Google always asks, also when you are signed in to one) and sign in. Google is asked for the list of your calendars and to see their events, read only, for the dashboard's Google Calendar tab: Nomad Life never changes your events and does not store them.</li>
             <li>Connected before the events could be shown? The Google Calendar tab asks for that one permission: press <strong>Allow events</strong>, and Google brings you back to the tab. Your chosen calendar stays chosen.</li>
             <li>Back in Settings, choose one calendar and press <strong>Save calendar</strong>. Only calendars you can edit are listed, your main one first.</li>

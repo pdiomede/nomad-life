@@ -23,13 +23,25 @@ def legend_color(html, country):
 
 
 class PaletteTests(AppTestCase):
-    def test_seventeen_colors_in_every_theme(self):
-        self.assertEqual(len(appmod.CALENDAR_PALETTE), 17)
-        self.assertEqual(list(appmod.CALENDAR_COLOR_NAMES), list(appmod.CALENDAR_PALETTE))
+    def test_fifteen_colors_in_every_theme(self):
+        # 2.0.0: the user's palette, the same in every theme, in the picker 5 a row.
+        self.assertEqual(len(appmod.CALENDAR_PALETTE), 15)
+        self.assertEqual(sorted(appmod.CALENDAR_COLOR_NAMES), sorted(appmod.CALENDAR_PALETTE))
+        self.assertEqual(list(appmod.CALENDAR_COLOR_NAMES.values()),
+                         ["Red", "Orange", "Yellow", "Lime", "Green", "Teal", "Cyan", "Blue", "Indigo",
+                          "Purple", "Magenta", "Pink", "Raspberry", "Brown", "Slate"])
         css = read("static", "css", "style.css")
-        for i in range(1, 17):
-            self.assertEqual(css.count(f"--cal-{i}: #"), 3, i)  # light, dark, dark by system
-            self.assertIn(f".cal-{i} {{ background: var(--cal-{i}); }}", css)
+        wanted = {"#D94848", "#F08935", "#D9B630", "#8CAE3A", "#2B9E62", "#169D91", "#28B7D2", "#448DD2",
+                  "#4756C4", "#7650BE", "#BC40B0", "#EC7AA2", "#A94169", "#A76A43", "#617988"}
+        found = set()
+        for key in appmod.CALENDAR_PALETTE:
+            values = re.findall(rf"--{key}: (#[0-9A-F]{{6}});", css)
+            self.assertEqual(len(values), 3, key)  # light, dark, dark by system
+            self.assertEqual(len(set(values)), 1, key)
+            found.add(values[0])
+            self.assertRegex(css, rf"\.{key} {{ background: var\(--{key}\); color: #(1B2030|FFFFFF); }}")
+        self.assertEqual(found, wanted)
+        self.assertIn("grid-template-columns: repeat(5, 22px);", css)
 
 
 class ColorPickerTests(AppTestCase):
@@ -54,8 +66,8 @@ class ColorPickerTests(AppTestCase):
         self.assertEqual(legend_color(html, "Thailand"), "cal-1")
         form = html[html.index('data-key="thailand"'):]
         form = form[:form.index("</form>")]
-        self.assertEqual(form.count('class="cal-color-opt '), 17)
-        self.assertIn('<button type="submit" name="color" value="cal-1" class="cal-color-opt cal-1" aria-label="Mint" title="Mint" aria-pressed="true">', form)
+        self.assertEqual(form.count('class="cal-color-opt '), 15)
+        self.assertIn('<button type="submit" name="color" value="cal-1" class="cal-color-opt cal-1" aria-label="Blue" title="Blue" aria-pressed="true">', form)
         self.assertIn('>Automatic</button>', form)
         self.assertIn('data-c="thailand"', html)
 
@@ -63,7 +75,7 @@ class ColorPickerTests(AppTestCase):
         resp = self.pick("Thailand", "cal-9")
         answer = resp.get_json()
         self.assertEqual(answer["colors"]["thailand"], "cal-9")
-        self.assertEqual(answer["names"]["cal-9"], "Coral")
+        self.assertEqual(answer["names"]["cal-9"], "Lime")
         html = self.html()
         self.assertEqual(legend_color(html, "Thailand"), "cal-9")
         self.assertIn('class="cal-day cal-9" data-tip="Mon 18 Jan 2027 \U0001F1F9\U0001F1ED Thailand" data-c="thailand"', html)

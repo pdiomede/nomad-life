@@ -13,25 +13,26 @@
 
   <section class="card">
     <div class="card-head"><h2>Details</h2></div>
+    {% if synced %}<p class="small card-intro sync-note">This movement comes from your Google calendar: its place and dates follow the event there. Your notes and receipts stay yours.</p>{% endif %}
     <form method="post" class="stack" enctype="multipart/form-data" data-submit-once>
       {{ ui.csrf() }}
       <input type="hidden" name="action" value="update">
       <div class="grid-2">
         <div class="field">
           <label for="country">Country</label>
-          <input id="country" name="country" maxlength="100" list="country-list" data-country-combo data-base-country="{{ y.base_country }}" autocomplete="off" value="{{ form.country or '' }}" placeholder="Indonesia" required>
+          <input id="country" name="country" maxlength="100" list="country-list" data-country-combo data-base-country="{{ y.base_country }}" autocomplete="off" value="{{ form.country or '' }}" placeholder="Indonesia" required{% if synced %} disabled{% endif %}>
         </div>
         <div class="field">
           <label for="city">City (optional)</label>
-          <input id="city" name="city" maxlength="100" value="{{ form.city or '' }}" placeholder="Bali">
+          <input id="city" name="city" maxlength="100" value="{{ form.city or '' }}" placeholder="Bali"{% if synced %} disabled{% endif %}>
         </div>
         <div class="field">
           <label for="start_date">From</label>
-          <input id="start_date" name="start_date" type="date" data-date-picker min="{{ y.year }}-01-01" max="{{ y.year }}-12-31" value="{{ form.start_date or '' }}" required>
+          <input id="start_date" name="start_date" type="date" data-date-picker min="{{ y.year }}-01-01" max="{{ y.year }}-12-31" value="{{ form.start_date or '' }}" required{% if synced %} disabled{% endif %}>
         </div>
         <div class="field">
           <label for="end_date">To</label>
-          <input id="end_date" name="end_date" type="date" data-date-picker min="{{ y.year }}-01-01" max="{{ y.year }}-12-31" value="{{ form.end_date or '' }}" required>
+          <input id="end_date" name="end_date" type="date" data-date-picker min="{{ y.year }}-01-01" max="{{ y.year }}-12-31" value="{{ form.end_date or '' }}" required{% if synced %} disabled{% endif %}>
         </div>
       </div>
       <div class="field">
@@ -82,7 +83,11 @@
         <p class="muted small">This removes the movement and all its receipts.</p>
       </div>
       {% set receipts = '' if not docs else ' and its receipt' if docs|length == 1 else ' and its ' ~ docs|length ~ ' receipts' %}
+      {% if synced and not m.sync_missing %}
+      <p class="muted small">It comes from Google Calendar: delete the event there, or switch {{ y.year }} to MANUAL.</p>
+      {% else %}
       {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete'}, button_class='btn btn-danger') }}
+      {% endif %}
     </div>
   </section>
   {% endif %}
