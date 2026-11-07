@@ -53,7 +53,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "1.12.17"
+APP_VERSION = "1.12.18"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -854,6 +854,7 @@ def create_app(overrides=None):
     app.add_template_filter(local_date, "localdate")
     app.add_template_filter(local_datetime, "localdatetime")
     app.add_template_filter(utc_datetime, "utcdatetime")
+    app.add_template_filter(utc_date, "utcdate")
     app.add_template_filter(ticket_ref, "ticket_ref")
     app.add_template_global(chat_rows, "chat_rows")
     app.add_template_global(favorite_countries, "favorite_countries")
@@ -2229,6 +2230,15 @@ def local_date(utc_timestamp):
     except (TypeError, ValueError):
         return utc_timestamp
     return dt.astimezone().strftime("%Y-%m-%d")
+
+
+def utc_date(utc_timestamp):
+    """A stored UTC time as its UTC date: the admin pages, whose Security activity is in UTC
+    too, so a sign in near midnight shows the same day in both."""
+    try:
+        return datetime.strptime(utc_timestamp, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d")
+    except (TypeError, ValueError):
+        return utc_timestamp or ""
 
 
 def utc_datetime(utc_timestamp):
@@ -5996,9 +6006,11 @@ def register_routes(app):
                     # Groups of 4, as authenticator apps show and accept a typed key.
                     "grouped": " ".join(secret[i:i + 4] for i in range(0, len(secret), 4))}
         activity = audit_rows(db.query(
-            # Name changes are not security events: they must not push a stranger's sign in
-            # off this short list.
-            "SELECT * FROM audit_log WHERE user_id = ? AND event != 'profile_changed' "
+            # Name changes and picking which Google calendar to use are not security events:
+            # they must not push a stranger's sign in off this short list. Connecting and
+            # disconnecting Google stay (they give or take away access).
+            "SELECT * FROM audit_log WHERE user_id = ? AND event NOT IN ('profile_changed', "
+            "'calendar_chosen', 'calendar_unchosen') "
             "AND event NOT LIKE 'ticket\\_%' ESCAPE '\\' "
             "ORDER BY id DESC LIMIT 10", (row["id"],)))
         devices = db.query("SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = ?",

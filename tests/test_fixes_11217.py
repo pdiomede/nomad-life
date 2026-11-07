@@ -437,3 +437,4 @@ class AuthReviewTests(SupportBase):
         fresh.post(link)  # the first link works again
         with self.db() as conn:
             self.assertIsNotNone(conn.execute("SELECT verified_at FROM users WHERE id = ?", (uid,)).fetchone()[0])
+

@@ -286,11 +286,17 @@ def assign_arcnames(data):
 # ---------- summary (shared by the PDF and the tests) ----------
 
 def _fmt_size(size):
+    """A receipt's size as the app's receipt list shows it (app.format_size, nearest): "2 MB",
+    "1.5 MB", never "1024 KB" or "2.0 MB"."""
     if size < 1024:
         return f"{size} B"
-    if round(size / 1024) < 1024:  # never "1024 KB"
-        return f"{round(size / 1024)} KB"
-    return f"{size / (1024 * 1024):.1f} MB"
+    kb = round(size / 1024)
+    if kb < 1024:  # never "1024 KB"
+        return f"{kb} KB"
+    mb = round(size / (1024 * 1024) * 10) / 10
+    if mb < 1024:
+        return f"{mb:.1f}".rstrip("0").rstrip(".") + " MB"
+    return f"{round(size / (1024 ** 3) * 10) / 10:.1f}".rstrip("0").rstrip(".") + " GB"
 
 
 def summary_blocks(data):

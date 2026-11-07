@@ -553,6 +553,7 @@ The database is upgraded by the app on start (new columns are added automaticall
 
 - **1.12.16** creates the `country_colors` table on start; nothing to install.
 - **1.12.17**: nothing to install.
+- **1.12.18**: nothing to install.
 - **1.12.15** needs nothing beyond the usual upgrade steps.
 - **1.12.14** needs nothing beyond the usual upgrade steps.
 - **1.12.13** adds the `scopes` column to `calendar_links` on start. In Google Cloud, add the scope `calendar.events.readonly` to the consent screen (Data access, see google_calendar.md); each user who connected before presses **Allow events** once in the dashboard's Google Calendar tab.

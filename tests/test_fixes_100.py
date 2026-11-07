@@ -64,7 +64,7 @@ class SizeAndTextTests(unittest.TestCase):
         for size in (1048300, 1048575):
             self.assertEqual(appmod.format_size(size), "1 MB")
             self.assertEqual(appmod.format_size(size, "up"), "1 MB")
-            self.assertEqual(package._fmt_size(size), "1.0 MB")
+            self.assertEqual(package._fmt_size(size), "1 MB")  # as the receipt list (1.12.17)
         self.assertEqual(appmod.format_size(1048000, "down"), "1023 KB")
 
     def test_package_rules_cover_identical_dates(self):

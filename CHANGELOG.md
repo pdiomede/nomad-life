@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.12.18] - 2026-11-07
+
+### Fixed
+
+Three small inconsistencies noted by the 1.12.17 reviews:
+
+- The Admin page showed Joined and Last sign in in the server's time zone, beside a Security Activity in UTC, so a sign in near midnight could show two different days. Every date on the admin pages is in UTC and says so.
+- Choosing or clearing the Google calendar Nomad Life uses filled Settings' short Recent security activity list, pushing sign ins off it. Only connecting and disconnecting Google are listed.
+- The summary PDF wrote a receipt's size as "2.0 MB" where the app shows "2 MB". It writes sizes as the app does.
+
 ## [1.12.17] - 2026-11-07
 
 ### Changed
