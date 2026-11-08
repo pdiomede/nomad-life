@@ -104,7 +104,7 @@
       <span class="muted small">{{ movements | length }} movement{{ '' if movements | length == 1 else 's' }} in {{ y.year }}</span>
     </summary>
     {% if movements %}
-    {% if sync.auto and not share %}<p class="muted small mv-sync-note">Movements come from your Google calendar &ldquo;{{ sync.name }}&rdquo;. Change them there; notes and receipts you add here stay.</p>{% endif %}
+    {% if sync.auto and not share %}<p class="muted small mv-sync-note">Movements come from your Google calendar &ldquo;{{ sync.name }}&rdquo;. Change them there; notes, receipts and cities you add here stay.</p>{% endif %}
     <div class="table-wrap">
       <table class="table">
         <thead>

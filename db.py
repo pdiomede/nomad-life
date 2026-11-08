@@ -65,7 +65,10 @@ CREATE TABLE IF NOT EXISTS movements (
     -- The Google Calendar event a synced movement comes from (NULL: typed), and whether that
     -- event is gone while the movement is kept for its receipts (2.0.0).
     google_event_id TEXT,
-    sync_missing INTEGER NOT NULL DEFAULT 0
+    sync_missing INTEGER NOT NULL DEFAULT 0,
+    -- 1: the city is the one its event names ("Rome, Italy"), locked like the dates; 0: typed
+    -- here, also on a synced movement whose event names only a country (2.1.1).
+    city_from_event INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -493,6 +496,11 @@ MIGRATIONS = [
     ("movements", "google_event_id", ["ALTER TABLE movements ADD COLUMN google_event_id TEXT"]),
     ("movements", "sync_missing", ["ALTER TABLE movements ADD COLUMN sync_missing INTEGER NOT NULL "
                                    "DEFAULT 0"]),
+    # Until 2.1.1 every city of a synced movement came from its event.
+    ("movements", "city_from_event", ["ALTER TABLE movements ADD COLUMN city_from_event INTEGER "
+                                      "NOT NULL DEFAULT 0",
+                                      "UPDATE movements SET city_from_event = 1 "
+                                      "WHERE google_event_id IS NOT NULL AND city != ''"]),
 ]
 
 # Indexes and triggers on migrated columns: SCHEMA runs before the columns exist on an old

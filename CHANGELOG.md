@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.1] - 2026-11-08
+
+### Added
+
+- **A city of your own on AUTO movements.** When the Google Calendar event names only a country ("Italy"), the movement's page now lets you type its city. The city stays in Nomad Life only (the movements table, the Nomad Life calendar and the map), nothing is written to Google, and every sync keeps it. When the event names a city ("Rome, Italy"), Google's city wins and the field stays locked, like the dates. If the event later moves to another country, the typed city is cleared; if it names the same city, the field locks quietly.
+
+### Changed
+
+- Turning a year to AUTO no longer erases a city you typed when the matching event names only the country: "Rome, Italy" against an event "Italy" on the same days is now linked as it is, and a change of dates keeps Rome (the review shows the city kept).
+- Saving a synced movement writes only its notes (and its city when it is yours), never the place and dates read when the page opened, so a sync meanwhile always wins.
+
 ## [2.1.0] - 2026-11-08
 
 ### Added

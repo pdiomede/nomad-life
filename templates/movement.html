@@ -14,6 +14,7 @@
   <section class="card">
     <div class="card-head"><h2>Details</h2></div>
     {% if synced and m.sync_missing %}<p class="small card-intro sync-note"><span class="tag tag-warn">Not in Google Calendar</span> Its event is no longer in your Google calendar. The movement is kept for its receipts: delete it below when you no longer need it.</p>
+    {% elif synced and city_open %}<p class="small card-intro sync-note">This movement comes from your Google calendar: its country and dates follow the event there. The city, notes and receipts are yours, and the city stays in Nomad Life only.</p>
     {% elif synced %}<p class="small card-intro sync-note">This movement comes from your Google calendar: its place and dates follow the event there. Your notes and receipts stay yours.</p>{% endif %}
     <form method="post" class="stack" enctype="multipart/form-data" data-submit-once>
       {{ ui.csrf() }}
@@ -25,7 +26,7 @@
         </div>
         <div class="field">
           <label for="city">City (optional)</label>
-          <input id="city" name="city" maxlength="100" value="{{ form.city or '' }}" placeholder="Bali"{% if synced %} disabled{% endif %}>
+          <input id="city" name="city" maxlength="100" value="{{ form.city or '' }}" placeholder="Bali"{% if synced and not city_open %} disabled{% endif %}>
         </div>
         <div class="field">
           <label for="start_date">From</label>

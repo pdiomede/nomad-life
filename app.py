@@ -54,7 +54,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.1.1"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -3542,9 +3542,23 @@ def sync_events(year, stays):
     return found
 
 
-def _same_place(m, e):
-    return fold(m["city"] or "") == fold(e["city"]) and \
-        fold(normalize_country(m["country"])) == fold(e["country"])
+def _place_fits(m, e):
+    """The movement already has its event's place: the same country, and the event's city
+    when it names one. An event named after a country alone ("Italy") leaves the city to
+    the movement: one typed here (2.1.1) stays in Nomad Life, never written to Google."""
+    return fold(normalize_country(m["country"])) == fold(e["country"]) and \
+        (not e["city"] or fold(m["city"] or "") == fold(e["city"]))
+
+
+def sync_city(m, e):
+    """(city, city_from_event) a movement gets from its event: the event's city when it names
+    one, else the movement's own city while the country stays (else none: it was the other
+    country's)."""
+    if e["city"]:
+        return e["city"], 1
+    if m and fold(normalize_country(m["country"])) == fold(e["country"]):
+        return m["city"] or "", 0
+    return "", 0
 
 
 def sync_changes(movements, receipts, events, reviewing=False, complete=True):
@@ -3560,7 +3574,9 @@ def sync_changes(movements, receipts, events, reviewing=False, complete=True):
     changes, used = [], set()
 
     def change(kind, key, m=None, e=None, default=True, listed=True):
-        changes.append({"key": key, "kind": kind, "movement": m, "event": e,
+        # after: the place and days the movement will have (the review's "becomes").
+        after = dict(e, city=sync_city(m, e)[0]) if e else None
+        changes.append({"key": key, "kind": kind, "movement": m, "event": e, "after": after,
                         "receipts": receipts.get(m["id"], 0) if m else 0,
                         "default": default, "listed": listed})
 
@@ -3588,9 +3604,13 @@ def sync_changes(movements, receipts, events, reviewing=False, complete=True):
         used.add(gid)
         if m["sync_missing"]:
             change("unflag", f"unflag:{m['id']}", m, e, listed=False)
-        if (not _same_place(m, e) or m["start_date"] != e["start_date"]
+        if (not _place_fits(m, e) or m["start_date"] != e["start_date"]
                 or m["end_date"] != e["end_date"]):
             change("edit", f"edit:{m['id']}:{gid}", m, e)
+        elif m["city_from_event"] != sync_city(m, e)[1]:
+            # The event now names the movement's own city ("Rome, Italy": locked), or no
+            # longer names one ("Italy": the city stays, now yours to change). Never listed.
+            change("city", f"city:{m['id']}", m, e, listed=False)
     if reviewing:
         free = [e for e in events if e["gid"] not in used]
 
@@ -3610,9 +3630,9 @@ def sync_changes(movements, receipts, events, reviewing=False, complete=True):
         # place and days, the same country and days, the same place on shared days, the same
         # country on shared days (then the event sharing the most days), so a shifted travel
         # day never swaps two stays.
-        passes = [lambda m, e: _same_place(m, e) and same_days(m, e),
+        passes = [lambda m, e: _place_fits(m, e) and same_days(m, e),
                   lambda m, e: same_country(m, e) and same_days(m, e),
-                  lambda m, e: _same_place(m, e) and shared(m, e),
+                  lambda m, e: _place_fits(m, e) and shared(m, e),
                   lambda m, e: same_country(m, e) and shared(m, e)]
         matched = {}
         for test in passes:
@@ -3629,7 +3649,7 @@ def sync_changes(movements, receipts, events, reviewing=False, complete=True):
             if e is None:
                 if complete:
                     change("delete", f"del:{m['id']}", m, default=not receipts.get(m["id"]))
-            elif _same_place(m, e) and same_days(m, e):
+            elif _place_fits(m, e) and same_days(m, e):
                 change("link", f"link:{m['id']}:{e['gid']}", m, e)
             else:
                 change("edit", f"edit:{m['id']}:{e['gid']}", m, e)
@@ -3741,17 +3761,18 @@ def apply_sync(year_id, events, keys=None, reviewing=False, expect=None, complet
                     done["left_out"] += 1
                     continue
                 conn.execute("INSERT INTO movements (year_id, city, country, start_date, end_date, "
-                             "google_event_id) VALUES (?, ?, ?, ?, ?, ?)",
+                             "google_event_id, city_from_event) VALUES (?, ?, ?, ?, ?, ?, ?)",
                              (year_id, e["city"], e["country"], e["start_date"], e["end_date"],
-                              e["gid"]))
+                              e["gid"], int(bool(e["city"]))))
                 count += 1
                 done["added"] += 1
-            elif c["kind"] in ("edit", "link"):
+            elif c["kind"] in ("edit", "link", "city"):
+                city, from_event = sync_city(m, e)
                 conn.execute("UPDATE movements SET city = ?, country = ?, start_date = ?, "
-                             "end_date = ?, google_event_id = ?, sync_missing = 0 "
-                             "WHERE id = ? AND year_id = ?",
-                             (e["city"], e["country"], e["start_date"], e["end_date"], e["gid"],
-                              m["id"], year_id))
+                             "end_date = ?, google_event_id = ?, sync_missing = 0, "
+                             "city_from_event = ? WHERE id = ? AND year_id = ?",
+                             (city, e["country"], e["start_date"], e["end_date"], e["gid"],
+                              from_event, m["id"], year_id))
                 done["changed"] += c["kind"] == "edit"
             elif c["kind"] == "delete":
                 docs += conn.execute("SELECT * FROM documents WHERE movement_id = ?",
@@ -6422,6 +6443,9 @@ def register_routes(app):
         # AUTO: a synced movement's place and dates are Google's (notes and receipts stay
         # yours); it is deleted in Google Calendar, unless Google no longer has it.
         synced = bool(m["google_event_id"]) and year_auto(year_row, calendar_link(current_user.id))
+        # Its city is yours when the event names only a country ("Italy"): typed here, it
+        # stays in Nomad Life (2.1.1). "Rome, Italy" gives the city, locked like the dates.
+        city_open = synced and not m["city_from_event"]
         if request.method == "POST":
             action = request.form.get("action")
             if action == "delete" and synced and not m["sync_missing"]:
@@ -6429,12 +6453,15 @@ def register_routes(app):
                       "switch the year to MANUAL.", "error")
                 return redirect(url_for("movement_edit", movement_id=movement_id))
             if action == "update":
-                # A synced movement saves only its notes: its place and dates stay Google's.
-                # A page opened while the movement was synced sends no place and dates (its
-                # fields were disabled), also when the year left AUTO since: keep the stored.
+                # A synced movement saves only its notes, and its city when the event names
+                # none: its country and dates stay Google's. A page opened while the movement
+                # was synced sends no place and dates (its fields were disabled), also when
+                # the year left AUTO since: keep the stored.
                 form = {k: m[k] for k in ("city", "country", "start_date", "end_date")}
                 if not synced and "country" in request.form:
                     form.update(request.form.to_dict())
+                elif city_open and "city" in request.form:
+                    form["city"] = request.form["city"]
                 form["notes"] = request.form.get("notes", "")
                 data, err = validate_movement(form, m["year"], m["notes"])
                 if err:
@@ -6443,12 +6470,25 @@ def register_routes(app):
                     return render_template("movement.html", y=year_row, m=m, form=form,
                                            docs=documents_for(year_row["id"], movement_id),
                                            back_url=back_to_movement(year_row, movement_id),
-                                           synced=synced)
+                                           synced=synced, city_open=city_open)
                 else:
-                    db.execute("UPDATE movements SET city = ?, country = ?, start_date = ?, "
-                               "end_date = ?, notes = ? WHERE id = ?",
-                               (data["city"], data["country"], data["start_date"],
-                                data["end_date"], data["notes"], movement_id))
+                    city_lost = False
+                    if synced:
+                        # Never write the place and dates read earlier: a sync may have changed
+                        # them meanwhile. The typed city only while the event still names none
+                        # and the country is the one it was typed for (else Google's wins).
+                        db.execute("UPDATE movements SET notes = ? WHERE id = ?",
+                                   (data["notes"], movement_id))
+                        if city_open and data["city"] != (m["city"] or ""):
+                            city_lost = not db.execute_rowcount(
+                                "UPDATE movements SET city = ? WHERE id = ? AND city_from_event = 0 "
+                                "AND country = ? AND google_event_id = ?",
+                                (data["city"], movement_id, m["country"], m["google_event_id"]))
+                    else:
+                        db.execute("UPDATE movements SET city = ?, country = ?, start_date = ?, "
+                                   "end_date = ?, notes = ? WHERE id = ?",
+                                   (data["city"], data["country"], data["start_date"],
+                                    data["end_date"], data["notes"], movement_id))
                     if not db.query("SELECT 1 FROM movements WHERE id = ?", (movement_id,),
                                     one=True):  # deleted meanwhile, in another tab
                         flash("This movement no longer exists, so the changes were not saved.",
@@ -6457,8 +6497,12 @@ def register_routes(app):
                     # A page opened in MANUAL and saved once the year is AUTO: its place and dates
                     # were not saved, say so instead of "updated".
                     sent = {k: request.form[k].strip() for k in
-                            ("city", "country", "start_date", "end_date") if k in request.form}
-                    if synced and any(sent[k] != (m[k] or "") for k in sent):
+                            ("city", "country", "start_date", "end_date") if k in request.form
+                            and not (k == "city" and city_open)}
+                    if city_lost:
+                        flash("Only the notes were saved: Google Calendar changed this movement's "
+                              "place meanwhile, so the city was not saved.", "info")
+                    elif synced and any(sent[k] != (m[k] or "") for k in sent):
                         flash(f"Only the notes were saved: {m['year']} is in AUTO mode, so this "
                               "movement's place and dates come from Google Calendar.", "info")
                     else:
@@ -6489,7 +6533,8 @@ def register_routes(app):
             return redirect(url_for("movement_edit", movement_id=movement_id))
         return render_template("movement.html", y=year_row, m=m, form=m,
                                docs=documents_for(year_row["id"], movement_id),
-                               back_url=back_to_movement(year_row, movement_id), synced=synced)
+                               back_url=back_to_movement(year_row, movement_id), synced=synced,
+                               city_open=city_open)
 
     # --- account ---
 

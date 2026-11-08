@@ -38,7 +38,7 @@
             <input type="checkbox" name="change" value="{{ c.key }}"{% if c.default %} checked{% endif %}>
             <span>
               {% if kind == 'add' %}{{ place(c.event) }}, {{ days(c.event) }}
-              {% elif kind == 'edit' %}{{ place(c.movement) }}, {{ days(c.movement) }} <span class="muted">becomes</span> {{ place(c.event) }}, {{ days(c.event) }}
+              {% elif kind == 'edit' %}{{ place(c.movement) }}, {{ days(c.movement) }} <span class="muted">becomes</span> {{ place(c.after) }}, {{ days(c.after) }}
               {% elif kind == 'delete' %}{{ place(c.movement) }}, {{ days(c.movement) }}{% if c.receipts %} <span class="tag tag-warn">{{ c.receipts }} receipt{{ '' if c.receipts == 1 else 's' }} deleted too</span>{% endif %}
               {% else %}{{ place(c.movement) }}, {{ days(c.movement) }} <span class="muted">is linked to its event</span>{% endif %}
             </span>
