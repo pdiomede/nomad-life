@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{# A delegate's read only view of a movement (m) or of a year's base (m is none): the place,
+   the dates, the notes and the receipts to download. Nothing here sends a form. #}
+{% block title %}{{ (m | place) if m else 'Base ' ~ y.year }} | Nomad Life{% endblock %}
+{% block content %}
+<div class="narrow">
+  <a class="back" href="{{ back_url }}">&larr; Back to {{ y.year }}</a>
+  <div class="page-head">
+    <div>
+      {% if m %}
+      <p class="eyebrow">Movement</p>
+      <h1>{{ ui.flag(m.country) }}{% if m.city %}{{ m.city }}, {% endif %}{{ m.country }}</h1>
+      {% else %}
+      <p class="eyebrow">Base location {{ y.year }}</p>
+      <h1>{{ ui.flag(y.base_country) }}{{ y.base_city }}, {{ y.base_country }}</h1>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if m %}
+  <section class="card">
+    <div class="card-head"><h2>Details</h2></div>
+    {% if m.google_event_id and y.sync_mode == 'auto' %}<p class="small card-intro sync-note">This movement comes from Google Calendar.{% if m.sync_missing %} <span class="tag tag-warn">Not in Google Calendar</span>{% endif %}</p>{% endif %}
+    {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
+    <dl class="detail-list">
+      <div><dt>Country</dt><dd dir="auto">{{ m.country }}</dd></div>
+      <div><dt>City</dt><dd dir="auto">{{ m.city or '-' }}</dd></div>
+      <div><dt>Dates</dt><dd><time datetime="{{ m.start_date }}">{{ m.start_date | daydate }}</time> to <time datetime="{{ m.end_date }}">{{ m.end_date | daydate }}</time> ({{ length }} day{{ '' if length == 1 else 's' }})</dd></div>
+      <div class="detail-wide"><dt>Notes</dt><dd class="detail-notes" dir="auto">{{ m.notes or 'No notes.' }}</dd></div>
+    </dl>
+  </section>
+  {% endif %}
+
+  <section class="card">
+    <div class="card-head">
+      <h2>{{ 'Receipts' if m else 'Documents' }}</h2>
+      <span class="muted small">{{ docs | length }} file{{ '' if docs | length == 1 else 's' }}</span>
+    </div>
+    {{ ui.doc_list(docs, readonly=true) }}
+  </section>
+</div>
+{% endblock %}

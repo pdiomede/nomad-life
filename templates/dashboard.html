@@ -7,8 +7,10 @@
     <p class="eyebrow">Solar year</p>
     <div class="year-title">
       <h1>{{ y.year }}</h1>
-      {% set tip = ('Movements are added automatically from the connected Google Calendar named "' ~ sync.name ~ '"') if sync.auto else 'Movements are added manually' %}
+      {% if share %}{% set tip = 'Movements are added automatically from Google Calendar' if sync.auto else 'Movements are added manually' %}
+      {% else %}{% set tip = ('Movements are added automatically from the connected Google Calendar named "' ~ sync.name ~ '"') if sync.auto else 'Movements are added manually' %}{% endif %}
       <span class="sync-chip {{ 'is-auto' if sync.auto else 'is-manual' }}" data-tip="{{ tip }}" tabindex="0">{{ 'AUTO' if sync.auto else 'MANUAL' }}<span class="visually-hidden">: {{ tip }}</span></span>
+      {% if not share %}
       <form method="post" action="{{ url_for('sync_mode', year=y.year) }}" class="sync-switch-form" data-sync-switch data-submit-once>
         {{ ui.csrf() }}
         <input type="hidden" name="mode" value="{{ 'manual' if sync.auto else 'auto' }}">
@@ -18,17 +20,18 @@
                 data-tip="{{ switch_tip }}"{% if not sync.can and not sync.auto %} aria-disabled="true"{% endif %}><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
         <span class="visually-hidden" id="sync-switch-tip">{{ switch_tip }}</span>
       </form>
+      {% endif %}
     </div>
     {% if sync.problem %}<p class="small sync-problem">{{ sync.problem }}</p>{% endif %}
   </div>
   <div class="row wrap gap-sm year-actions">
     <nav class="year-tabs" aria-label="Years">
       {% for r in years %}
-        <a class="year-tab {% if r.year == y.year %}active{% endif %}" href="{{ url_for('dashboard', year=r.year) }}"{% if r.year == y.year %} aria-current="page"{% endif %}>{{ r.year }}</a>
+        <a class="year-tab {% if r.year == y.year %}active{% endif %}" href="{{ year_url(r.year) }}"{% if r.year == y.year %} aria-current="page"{% endif %}>{{ r.year }}</a>
       {% endfor %}
-      <a class="year-tab add" href="{{ url_for('new_year', back=y.year) }}" title="Add a year">+ Year</a>
+      {% if not share %}<a class="year-tab add" href="{{ url_for('new_year', back=y.year) }}" title="Add a year">+ Year</a>{% endif %}
     </nav>
-    {% if not sync.auto %}<a class="btn btn-primary" href="{{ url_for('movement_new', year=y.year) }}">+ Add movement</a>{% endif %}
+    {% if not sync.auto and not share %}<a class="btn btn-primary" href="{{ url_for('movement_new', year=y.year) }}">+ Add movement</a>{% endif %}
   </div>
 </div>
 
@@ -36,7 +39,8 @@
   <div class="card stat stat-base">
     <div class="stat-head">
       <p class="stat-label">Base</p>
-      <a class="fold-gear stat-gear" href="{{ url_for('base', year=y.year) }}" data-tip="Manage Base country" aria-label="Manage Base country"></a>
+      {% if share %}<a class="fold-gear stat-gear" href="{{ base_url(y.year) }}" data-tip="Base country and its documents" aria-label="Base country and its documents"></a>
+      {% else %}<a class="fold-gear stat-gear" href="{{ base_url(y.year) }}" data-tip="Manage Base country" aria-label="Manage Base country"></a>{% endif %}
     </div>
     <p class="stat-value">{{ y.base_city }}</p>
     <div class="stat-foot"><p class="muted">{{ ui.flag(y.base_country) }}{{ y.base_country }}</p></div>
@@ -100,29 +104,30 @@
       <span class="muted small">{{ movements | length }} movement{{ '' if movements | length == 1 else 's' }} in {{ y.year }}</span>
     </summary>
     {% if movements %}
-    {% if sync.auto %}<p class="muted small mv-sync-note">Movements come from your Google calendar &ldquo;{{ sync.name }}&rdquo;. Change them there; notes and receipts you add here stay.</p>{% endif %}
+    {% if sync.auto and not share %}<p class="muted small mv-sync-note">Movements come from your Google calendar &ldquo;{{ sync.name }}&rdquo;. Change them there; notes and receipts you add here stay.</p>{% endif %}
     <div class="table-wrap">
       <table class="table">
         <thead>
           {# Sortable: newest dates first by default; the choice stays for the session. #}
           {% set cal_arg = request.args.get('cal') if request.args.get('cal') in ('local', 'google') else none %}
-          {% macro mv_sort_href(key, dir) %}{{ url_for('dashboard', year=y.year, sort=key, dir=dir, cal=cal_arg, _anchor='movements') }}{% endmacro %}
+          {% macro mv_sort_href(key, dir) %}{{ year_url(y.year, sort=key, dir=dir, cal=cal_arg, _anchor='movements') }}{% endmacro %}
           <tr>{{ ui.sort_th(movement_order, 'dates', 'Dates', mv_sort_href) }}{{ ui.sort_th(movement_order, 'location', 'Location', mv_sort_href, first='asc') }}{{ ui.sort_th(movement_order, 'days', 'Days', mv_sort_href, 'num') }}{{ ui.sort_th(movement_order, 'docs', 'Docs', mv_sort_href, 'num hide-sm') }}<th class="hide-sm"><span class="visually-hidden">Actions</span></th></tr>
         </thead>
         <tbody>
           {% for m in pager.rows %}
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
             <td class="dates"><time class="nowrap" datetime="{{ m.start_date }}">{{ m.start_date | daydate }}</time> <span class="muted">to</span> <time class="nowrap" datetime="{{ m.end_date }}">{{ m.end_date | daydate }}</time></td>
-            <td><a class="loc-link" href="{{ url_for('movement_edit', movement_id=m.id) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a>{% if m.google_event_id %} <span class="sync-row-icon" title="From Google Calendar" aria-label="From Google Calendar" role="img"></span>{% endif %}{% if m.sync_missing and sync.auto %} <span class="tag tag-warn" title="The event is no longer in Google Calendar. The movement is kept for its receipts: delete it when you no longer need it.">Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar. The movement is kept for its receipts; delete it when you no longer need it.</span></span>{% endif %}</td>
+            <td><a class="loc-link" href="{{ movement_url(m) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a>{% if m.google_event_id %} <span class="sync-row-icon" title="From Google Calendar" aria-label="From Google Calendar" role="img"></span>{% endif %}{% if m.sync_missing and sync.auto and share %} <span class="tag tag-warn" title="The event is no longer in Google Calendar. The movement is kept for its receipts.">Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar. The movement is kept for its receipts.</span></span>{% elif m.sync_missing and sync.auto %} <span class="tag tag-warn" title="The event is no longer in Google Calendar. The movement is kept for its receipts: delete it when you no longer need it.">Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar. The movement is kept for its receipts; delete it when you no longer need it.</span></span>{% endif %}</td>
             {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
             {% set counted = stats.counted.get(m.id, 0) %}
             <td class="num">{{ length }}{% if counted != length %}<div class="muted small" title="A day shared with another stay counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest)">{{ counted }} counted</div>{% endif %}</td>
             <td class="num hide-sm">{{ m.doc_count }}</td>
             <td class="right hide-sm">
               <div class="row-actions">
-                <a class="btn btn-ghost btn-sm" href="{{ url_for('movement_edit', movement_id=m.id) }}" aria-label="Edit movement to {{ m | place }}">Edit</a>
+                {% if share %}<a class="btn btn-ghost btn-sm" href="{{ movement_url(m) }}" aria-label="View movement to {{ m | place }}">View</a>{% else %}
+                <a class="btn btn-ghost btn-sm" href="{{ movement_url(m) }}" aria-label="Edit movement to {{ m | place }}">Edit</a>
                 {% set receipts = '' if not m.doc_count else ' and its receipt' if m.doc_count == 1 else ' and its ' ~ m.doc_count ~ ' receipts' %}
-                {% if not (sync.auto and m.google_event_id and not m.sync_missing) %}{{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete', 'page': pager.page, 'sort': movement_order.sort, 'dir': movement_order.dir}, aria_label='Delete movement to ' ~ (m | place)) }}{% endif %}
+                {% if not (sync.auto and m.google_event_id and not m.sync_missing) %}{{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete', 'page': pager.page, 'sort': movement_order.sort, 'dir': movement_order.dir}, aria_label='Delete movement to ' ~ (m | place)) }}{% endif %}{% endif %}
               </div>
             </td>
           </tr>
@@ -144,7 +149,7 @@
     {% else %}
       <div class="empty">
         <p>No movements yet for {{ y.year }}.</p>
-        {% if sync.auto %}<span class="muted small">Movements come from your Google calendar &ldquo;{{ sync.name }}&rdquo;: add an event named after the place, like &ldquo;Italy&rdquo; or &ldquo;Rome, Italy&rdquo;.</span>{% else %}<a class="btn btn-primary btn-sm" href="{{ url_for('movement_new', year=y.year) }}">Log your first trip</a>{% endif %}
+        {% if share %}{% elif sync.auto %}<span class="muted small">Movements come from your Google calendar &ldquo;{{ sync.name }}&rdquo;: add an event named after the place, like &ldquo;Italy&rdquo; or &ldquo;Rome, Italy&rdquo;.</span>{% else %}<a class="btn btn-primary btn-sm" href="{{ url_for('movement_new', year=y.year) }}">Log your first trip</a>{% endif %}
       </div>
     {% endif %}
   </details>
@@ -164,9 +169,9 @@
   </dialog>
   {% endif %}
 
-  {# The calendar and the map are folded on every page load: a click on the head opens them
-     (a <details>, so it also works without JavaScript, and their contents leave the tab order
-     while closed). #}
+  {# The calendar opens on every page load, on the Nomad Life tab; the map is folded: a click
+     on a head folds or opens it (a <details>, so it also works without JavaScript, and its
+     contents leave the tab order while closed). #}
   {# The gear (Calendar Integration in Settings) lies over the head, outside the <details>: a
      link inside a <summary> is announced badly, and anything else inside is hidden while
      folded. An invisible copy of the title puts it right after the title; the summary keeps
@@ -193,13 +198,13 @@
     <span class="muted small fold-sub fold-ghost-text" aria-hidden="true">Your {{ y.year }} day-by-day plan</span>
   </div>
   <p class="visually-hidden" aria-live="polite" data-cal-status></p>
-  {% else %}
+  {% elif not share %}
   <div class="fold-tools">
     <span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar ({{ y.year }})</span>
     <a class="fold-gear" href="{{ url_for('settings', _anchor='calendar') }}" data-tip="Calendar Integration" aria-label="Calendar Integration"></a>
   </div>
   {% endif %}
-  <details class="card fold-card cal-card"{% if cal_open %} open{% endif %}>
+  <details class="card fold-card cal-card" open>
     {% if cal_link %}
     <summary class="card-head fold-summary fold-head-grid">
       <h2 id="calendar-title" class="title-icon icon-calendar">Calendar ({{ y.year }})<span class="fold-gear-space" aria-hidden="true"></span></h2>
@@ -216,10 +221,11 @@
     {% else %}
     <summary class="card-head fold-summary">
       <h2 id="calendar-title" class="title-icon icon-calendar">Calendar ({{ y.year }})</h2>
-      <span class="fold-gear-space" aria-hidden="true"></span>
-      <span class="muted small">Your {{ y.year }} day-by-day plan</span>
+      {% if not share %}<span class="fold-gear-space" aria-hidden="true"></span>{% endif %}
+      <span class="muted small">{{ 'The' if share else 'Your' }} {{ y.year }} day-by-day plan</span>
     </summary>
-    {% with cal=calendar, empty_label="Not logged", picker=true %}{% include "_calendar_grid.html" %}{% endwith %}
+    {# A delegate sees the owner's colors without the picker. #}
+    {% with cal=calendar, empty_label="Not logged", picker=not share %}{% include "_calendar_grid.html" %}{% endwith %}
     {% endif %}
   </details>
   </div>
@@ -228,7 +234,7 @@
   <details class="card fold-card map-card">
     <summary class="card-head fold-summary map-summary">
       <h2 id="map-title" class="title-icon icon-globe">Map</h2>
-      <span class="muted small">Your {{ y.year }} locations on the map</span>
+      <span class="muted small">{{ 'The' if share else 'Your' }} {{ y.year }} locations on the map</span>
     </summary>
     {# Zoom controls sit above the map, so they never cover a pin, and outside the summary,
        where a click would fold the card. Shown by theme.js, which does the zooming (no
@@ -246,7 +252,7 @@
         </button>
       </div>
     </div>
-    <div class="map" role="group" aria-label="World map of your base and stays in {{ y.year }}">
+    <div class="map" role="group" aria-label="World map of {{ 'the' if share else 'your' }} base and stays in {{ y.year }}">
       <div class="map-viewport" aria-hidden="true">
         <div class="map-land" style="--map-image: url('{{ url_for('static', filename='img/world.svg', v=asset_version) }}')"></div>
       </div>
@@ -273,7 +279,7 @@
   </details>
   </div>
 
-  <div class="side">
+  <div class="side{% if share %} side-shared{% endif %}">
   <section class="card days-card">
     <div class="card-head">
       <h2>Days per Country</h2>
@@ -297,6 +303,7 @@
     </ul>
   </section>
 
+  {% if not share %}
   <section class="card storage-card">
     <div class="card-head">
       <h2>Receipt Storage</h2>
@@ -318,19 +325,26 @@
     </div>
     <p class="muted small">{{ storage.used | usedsize(storage.quota) }} used of {{ storage.quota | filesize('down') }} across all years. Max {{ max_receipt_label }} per receipt.</p>
   </section>
+  {% endif %}
 
   <section class="card package-card" aria-labelledby="package-title">
     <div class="card-head">
       <h2 id="package-title">Accountant Package</h2>
-      {% if not current_plan.package %}<a class="btn btn-upgrade btn-sm" href="{{ url_for('plan') }}" aria-label="Upgrade to Pro for the accountant package">Upgrade</a>{% endif %}
+      {% if not package_ok and not share %}<a class="btn btn-upgrade btn-sm" href="{{ url_for('plan') }}" aria-label="Upgrade to Pro for the accountant package">Upgrade</a>{% endif %}
     </div>
+    {% if share %}
+    <p class="muted small">Everything for {{ y.year }} in one ZIP: a PDF summary, spreadsheets with the timeline and country totals, and all the receipts.</p>
+    {% else %}
     <p class="muted small">Everything for {{ y.year }} in one ZIP: a PDF summary, spreadsheets with your timeline and country totals, and all your receipts, ready to share with your accountant.</p>
-    {% if current_plan.package %}
-    <form method="get" action="{{ url_for('year_package', year=y.year) }}" class="package-form" data-download>
-      <label class="check"><input type="checkbox" name="notes" value="1"> Include my notes</label>
+    {% endif %}
+    {% if package_ok %}
+    <form method="get" action="{{ package_url(y.year) }}" class="package-form" data-download>
+      <label class="check"><input type="checkbox" name="notes" value="1"> Include {{ 'the' if share else 'my' }} notes</label>
       <input type="hidden" name="dl" value="">
       <button class="btn btn-primary" type="submit" data-tip="Download Accountant Package" aria-label="Download Accountant Package"><span class="btn-icon icon-download" aria-hidden="true"></span>Download</button>
     </form>
+    {% elif share %}
+    <p class="small">Not part of this account's plan.</p>
     {% else %}
     <p class="small">Available from the Pro plan.</p>
     {% endif %}

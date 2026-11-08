@@ -1,0 +1,18 @@
+Hi{% if first_name %} {{ first_name }}{% endif %},
+
+{{ owner }} invited you to view their Nomad Life account: their years, movements, notes and receipts. You can look and download, but not change anything.
+{% if has_account %}
+Sign in to Nomad Life with {{ email }} and accept the invitation under Shared with you:
+
+{{ shared }}
+{% else %}
+To accept, first create a free Nomad Life account with this address ({{ email }}):
+
+{{ signup }}
+
+Then sign in and accept the invitation under Shared with you: {{ shared }}
+{% endif %}
+If you do not know {{ owner }}, you can ignore this email: nothing is shared until you accept.
+
+Nomad Life
+{{ site_url }}

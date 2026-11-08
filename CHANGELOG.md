@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.0] - 2026-11-08
+
+### Added
+
+- **Delegates.** In Settings, under **Delegates**, invite up to 5 people, such as your accountant or your partner, to view your account: type their email and your password, and they get an invitation by email. They sign in with their own Nomad Life account under that address and accept it under **Shared with you**, a new item in the menu at the top (with a badge for invitations waiting). They then see your years, dashboard, map, Nomad Life calendar, movements, notes, receipts and base documents, and can download receipts and the accountant package when your plan has it. They cannot change anything, and never see your Google Calendar, your storage or your settings. A note at the top of every page says whose account they are viewing.
+- Each delegate shows the day they accepted and the last day they viewed your account. **Send again** emails a waiting invitation once more; **Remove** ends their access at once, and a delegate can leave with **Stop viewing**. You get a security email when someone accepts.
+- The documentation has a Delegates section, with a screenshot.
+
+### Changed
+
+- The dashboard's Calendar is open when the page opens, on the Nomad Life calendar. Click its title to fold it.
+- An account that only views other accounts lands on **Shared with you** after signing in.
+- Undoing an email change from the old address also removes every delegate, in case whoever changed it invited themselves.
+- The privacy policy, the landing page and the documentation say who else can see your data: the delegates you invite.
+
+### Fixed
+
+Found in a bug hunt of Delegates before release (13 bugs):
+
+- An invitation sent at the very moment the owner took the account back (undoing an email change) survived the undo, giving whoever knew the old password a way to view the account. The password and address are checked again when the invitation is saved.
+- An account whose only link was a waiting invitation was sent to Shared with you at every sign in, and no page led to starting its own year. A waiting invitation no longer does that, and Shared with you (and the note on shared pages) offers **Start your own year** to an account without years.
+- An account invited under two addresses (it changed its email in between) could accept both: removing one of them said access had ended while the other kept it. An account now holds one access per owner.
+- An owner who changed their own email to an address they had invited kept an invitation nobody could accept, and Send again mailed the owner an invitation to view themselves. It is removed with the change.
+- A waiting invitation showed the owner's name, which is free text, to a stranger before they accepted. It shows the owner's email, as the invitation email does; the name shows once accepted.
+- Removing and inviting the same address again could send it an invitation every minute and a half. An address gets at most 3 invitations in 15 minutes, whoever sends them.
+- Remove and Stop viewing asked "Delete ...? This permanently deletes ... It cannot be undone." with Delete buttons. The dialog now says Remove or Stop viewing, and what happens.
+- An invitee without an account was sent by the email's button to the sign in page. The button creates the account first.
+- A delegate's memory of having opened the overlap report mixed up the accounts they view and their own: triangles blinked again each time. Each account viewed remembers its own.
+- The overlap report and the "Not in Google Calendar" tag asked a delegate to fix the dates or delete the movement, which they cannot do. Those lines are left out for them.
+- The "Can view" tag had no color of its own, so it looked like "Invited".
+- The security email's last line said every change to delegates is emailed; only an accepted invitation is.
+- The documentation, the landing page and the privacy policy said only you see your notes, stays and receipts.
+
 ## [2.0.1] - 2026-11-07
 
 ### Changed

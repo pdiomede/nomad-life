@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v2.0.1**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v2.1.0**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -12,6 +12,7 @@ Nomad Life is a small self-hosted web app that helps digital nomads keep track o
 - Accountant package (Pro and Nomad+): one ZIP per year with a PDF summary, your timeline and country totals as spreadsheets, and every receipt.
 - Calendar Integration: connect a Google Calendar in Settings and choose one calendar Nomad Life can use.
 - AUTO movements (2.0.0): switch a year from MANUAL to AUTO next to its number, and its movements follow the connected Google calendar (events named after a place, like "Italy", "Rome, Italy" or "Austin, Texas"). Turning AUTO on first shows the differences to apply; Google Calendar wins afterwards, while notes and receipts stay. Disconnecting or changing the calendar puts AUTO years back to MANUAL until they are reviewed again.
+- Delegates (2.1.0): in Settings, invite up to 5 people, such as your accountant, to view your account read only with their own Nomad Life account: the dashboard, movements, notes, receipts and the accountant package. Remove them at any time.
 - Support tickets between users and the operator, and an admin area for accounts, plans and security activity.
 - A landing page, documentation at `/docs` and public guides at `/guides`, with SEO tags, share buttons and a 404 page.
 - Light and dark mode. Everything is stored locally: SQLite in `data/`, files in `uploads/`.

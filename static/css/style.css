@@ -420,6 +420,7 @@ main:focus { outline: none; }
 .sync-problem { margin: 6px 0 0; color: var(--error-text); }
 @media (forced-colors: active) { .sync-chip { border: 1px solid CanvasText; } }
 .tag-warn { background: var(--warning-bg); color: var(--text); border-color: var(--warning); }
+.tag.tag-ok { background: var(--success-bg); color: var(--success-text); border-color: transparent; }
 .sync-row-icon { display: inline-block; width: 14px; height: 14px; margin-left: 6px; vertical-align: -2px; border-radius: 3px; background: var(--muted);
   -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><rect x='3.5' y='5' width='17' height='15.5' rx='2'/><path d='M3.5 10h17M8 3v4M16 3v4'/><path d='M9.5 15.5l2 2 3.5-4'/></svg>") center / contain no-repeat; mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><rect x='3.5' y='5' width='17' height='15.5' rx='2'/><path d='M3.5 10h17M8 3v4M16 3v4'/><path d='M9.5 15.5l2 2 3.5-4'/></svg>") center / contain no-repeat; }
 .mv-sync-note, .sync-note { margin: 0 0 10px; }
@@ -458,6 +459,19 @@ main:focus { outline: none; }
 .side > .days-card { grid-column: 1; grid-row: 1 / span 2; }
 .side > .storage-card { grid-column: 2; grid-row: 1; }
 .side > .package-card { grid-column: 3; grid-row: 1; }
+/* A delegate's view has no Receipt Storage card: the package takes its place too. */
+.side.side-shared > .package-card { grid-column: 2 / span 2; }
+/* The account a delegate is viewing, above every shared page. */
+.share-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; margin-bottom: 16px; padding: 10px 14px; border-radius: 6px; border: 1px solid rgba(0, 98, 210, 0.2); background: var(--info-bg); color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
+.share-banner-links { display: flex; flex-wrap: wrap; gap: 4px 16px; font-weight: 600; }
+.share-list .passkey-info strong { overflow-wrap: anywhere; }
+/* A delegate's read only movement page: the fields as text. */
+.detail-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; margin: 0; }
+.detail-list dt { margin-bottom: 2px; font-size: 13px; color: var(--muted); }
+.detail-list dd { margin: 0; overflow-wrap: anywhere; }
+.detail-list .detail-wide { grid-column: 1 / -1; }
+.detail-notes { white-space: pre-wrap; }
+@media (max-width: 560px) { .detail-list { grid-template-columns: minmax(0, 1fr); } }
 .main-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .main-col > .card { margin-bottom: 0; min-width: 0; }
 
@@ -1002,14 +1016,15 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .user-menu-item:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 /* Menu icons: a mask over the text color, so they follow the theme. Drawn in CSS, no image files. */
 .user-menu-item { gap: 10px; }
-.menu-settings::before, .menu-support::before, .menu-docs::before, .menu-admin::before, .menu-tickets::before, .menu-signout::before {
+.menu-settings::before, .menu-shared::before, .menu-support::before, .menu-docs::before, .menu-admin::before, .menu-tickets::before, .menu-signout::before {
   content: ""; flex: none; width: 16px; height: 16px; background-color: currentColor; opacity: 0.8;
   -webkit-mask: var(--menu-icon) center / contain no-repeat; mask: var(--menu-icon) center / contain no-repeat;
 }
 @media (forced-colors: active) {
-  .menu-settings::before, .menu-support::before, .menu-docs::before, .menu-admin::before, .menu-tickets::before, .menu-signout::before { forced-color-adjust: none; opacity: 1; }
+  .menu-settings::before, .menu-shared::before, .menu-support::before, .menu-docs::before, .menu-admin::before, .menu-tickets::before, .menu-signout::before { forced-color-adjust: none; opacity: 1; }
 }
 .menu-settings { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 7h9M17 7h3M4 17h3M11 17h9'/><circle cx='15' cy='7' r='2'/><circle cx='9' cy='17' r='2'/></svg>"); }
+.menu-shared { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='9' cy='8' r='3.5'/><path d='M2.5 20a6.5 6.5 0 0 1 13 0'/><path d='M16 4.5a3.5 3.5 0 0 1 0 7'/><path d='M18.5 14.2A6.5 6.5 0 0 1 21.5 20'/></svg>"); }
 .menu-support { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z'/></svg>"); }
 .menu-docs { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9.5'/><path d='M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.5-2.7 4.1'/><path d='M12 17.6h.01'/></svg>"); }
 .menu-admin { --menu-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z'/></svg>"); }
@@ -1041,6 +1056,7 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
   .stats { grid-template-columns: repeat(2, 1fr); }
   .side { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; row-gap: 20px; align-items: start; }
   .side > .days-card, .side > .storage-card, .side > .package-card { grid-column: auto; grid-row: auto; }
+  .side.side-shared > .package-card { grid-column: auto; }
   .hero { grid-template-columns: minmax(0, 1fr); gap: 36px; padding-bottom: 40px; }
   .hero h1 { font-size: 40px; }
   .hero-preview { max-width: 520px; }

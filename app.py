@@ -54,7 +54,7 @@ from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1.0"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -223,6 +223,7 @@ DOCS_TOC = [
     ("plans", "Plans", [("billing", "Upgrade and billing")]),
     ("settings", "Settings", [("profile", "Name, password and email"),
                               ("calendar-integration", "Calendar integration"),
+                              ("delegates", "Delegates"),
                               ("two-factor", "Two-factor sign in"),
                               ("devices", "Devices and activity"),
                               ("delete-account", "Delete your account")]),
@@ -236,7 +237,7 @@ DOCS_TOC = [
 ]
 # Paths that need an account. Kept out of search engines via robots.txt.
 PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin",
-                 "/account", "/settings", "/plan", "/support"]
+                 "/account", "/settings", "/plan", "/support", "/shared"]
 ADMIN_USERS_PER_PAGE = 10
 # Free page that shows where an IP address is (city, country, network owner), opened from the
 # admin account page.
@@ -261,7 +262,10 @@ LIMITS = {("fail", "email"): 5, ("fail", "device"): 5, ("fail", "ip"): 20,
           # them, so typing the password again never buys more guesses.
           ("code", "email"): 5, ("code", "ip"): 20,
           # Support: new tickets and messages per account.
-          ("ticket", "email"): 5, ("ticket_msg", "email"): 30}
+          ("ticket", "email"): 5, ("ticket_msg", "email"): 30,
+          # Delegate invitation emails (Invite and Send again) per account, and per invited
+          # address whoever sends them (Remove and Invite again cannot flood a stranger).
+          ("delegate", "email"): 10, ("delegate_to", "email"): 3}
 DEVICE_COOKIE = "nomadlife_device"
 DEVICE_MAX_AGE = 365 * 24 * 3600
 # Sign up and sign in hash passwords with scrypt (about 32 MB of memory each), so only a few
@@ -273,6 +277,10 @@ PLACE_MAX = 100
 # First and last name on the Settings page, each.
 NAME_MAX = 60
 MOVEMENTS_MAX = 1000
+# Delegates (Settings): people an account lets view it, read only, invitations included.
+DELEGATES_MAX = 5
+# How often a delegate's visits update "last viewed" on the owner's Settings page.
+DELEGATE_SEEN_MINUTES = 60
 # Security history kept on the admin and Settings pages.
 AUDIT_DAYS = 365
 ADMIN_AUDIT_PER_PAGE = 20
@@ -847,7 +855,11 @@ def create_app(overrides=None):
                 if current_user.is_authenticated else None,
                 "site": site_meta(),
                 "support_unread": support_unread(current_user.id)
-                if current_user.is_authenticated else 0}
+                if current_user.is_authenticated else 0,
+                # Delegates: the header's Shared with you item, and the account being viewed.
+                "shared_menu": shared_counts(current_user)
+                if current_user.is_authenticated else None,
+                "share": viewing_share()}
 
     app.add_template_filter(parse_date, "todate")
     app.add_template_filter(day_date, "daydate")
@@ -862,6 +874,9 @@ def create_app(overrides=None):
     app.add_template_global(favorite_countries, "favorite_countries")
     app.add_template_global(CALENDAR_COLOR_NAMES, "calendar_colors")
     app.add_template_global(ip_lookup_url, "ip_lookup_url")
+    # Links that point to the shared pages while a delegate views an account (g.share).
+    for helper in (year_url, movement_url, base_url, document_url, package_url, own_years):
+        app.add_template_global(helper)
     app.add_template_filter(country_flag, "flag")
     app.add_template_filter(lambda m: place_label(m["city"], m["country"]), "place")
 
@@ -1261,6 +1276,10 @@ def serializer(salt="password-reset"):
 
 class LinkUsed(Exception):
     """Raised inside db.transaction() to undo it when a one time link lost a race."""
+
+
+class LimitReached(Exception):
+    """Raised inside db.transaction() to undo it when a cap (DELEGATES_MAX) is already met."""
 
 
 def purge_unverified(best_effort=False):
@@ -1929,6 +1948,11 @@ AUDIT_LABELS = {
     "calendar_chosen": "Google Calendar chosen",
     "calendar_unchosen": "Google Calendar choice removed",
     "calendar_disconnected": "Google Calendar disconnected",
+    "delegate_invited": "Delegate invited",
+    "delegate_accepted": "Delegate invitation accepted",
+    "delegate_declined": "Delegate invitation declined",
+    "delegate_removed": "Delegate removed",
+    "delegate_left": "Delegate stopped viewing",
     "account_deleted": "Account deleted",
     "admin_plan": "Plan changed by an admin",
     "admin_quota": "Storage quota changed by an admin",
@@ -2014,11 +2038,14 @@ def audit_rows(rows):
     return [dict(r, label=AUDIT_LABELS.get(r["event"], r["event"])) for r in rows]
 
 
-def security_alert(email, what, account=None, link=None, advice=None, button=None):
+def security_alert(email, what, account=None, link=None, advice=None, button=None, ip=None):
     """Tell the account's mailbox that something important changed, with a way to act if it
     was not them. Sent every time (no cooldown): each change needs the password or a link.
-    By default the way out is a password reset; callers may give another link and wording."""
-    ip = client_ip() if has_request_context() else ""
+    By default the way out is a password reset; callers may give another link and wording.
+    ip="" leaves the network address out (a change someone else made, such as a delegate
+    accepting: their address is not the owner's to see)."""
+    if ip is None:
+        ip = client_ip() if has_request_context() else ""
     ok = send_template_email(email, "Security alert for your Nomad Life account",
                              "security_alert", email=email, account=account or email, what=what,
                              ip=ip, when=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -2283,21 +2310,166 @@ def format_size(size, rounding="nearest"):
     return f"{step(size / (MB * 1024) * 10) / 10:.1f}".rstrip("0").rstrip(".") + " GB"
 
 
-def get_year_or_404(year):
+def get_year_or_404(year, user_id=None):
+    """A year of the signed in account (or of `user_id`, an owner a delegate views)."""
     row = db.query("SELECT * FROM years WHERE user_id = ? AND year = ?",
-                   (current_user.id, year), one=True)
+                   (current_user.id if user_id is None else user_id, year), one=True)
     if row is None:
         abort(404)
     return row
 
 
-def get_movement_or_404(movement_id):
+def get_movement_or_404(movement_id, user_id=None):
     row = db.query(
         "SELECT m.*, y.year FROM movements m JOIN years y ON y.id = m.year_id "
-        "WHERE m.id = ? AND y.user_id = ?", (movement_id, current_user.id), one=True)
+        "WHERE m.id = ? AND y.user_id = ?",
+        (movement_id, current_user.id if user_id is None else user_id), one=True)
     if row is None:
         abort(404)
     return row
+
+
+def get_document_or_404(doc_id, user_id=None):
+    row = db.query("SELECT * FROM documents WHERE id = ? AND user_id = ?",
+                   (doc_id, current_user.id if user_id is None else user_id), one=True)
+    if row is None:
+        abort(404)
+    return row
+
+
+# ---------- delegates (2.1.0) ----------
+# An owner lets other accounts view theirs, read only (Settings > Delegates). An invitation is
+# a delegates row for an address; the account signed in with that address accepts it on
+# /shared, and from then on the row names that account (delegate_id), also after it changes
+# its email. Every shared page goes through get_share_or_404(), and /shared/<id>/... has GET
+# routes only: every route that writes stays scoped to current_user, so nothing a delegate
+# sends can change the owner's data.
+
+# The owner a delegate may view: confirmed and not disabled (a disabled account's data is
+# not shown, as it cannot sign in itself).
+SHARE_OWNER_OK = "o.verified_at IS NOT NULL AND o.disabled = 0"
+
+
+def delegate_rows(owner_id):
+    """The owner's delegates for Settings, invitations first by date, with the address the
+    accepting account uses now (it may have changed it since)."""
+    return db.query(
+        "SELECT d.*, u.email AS delegate_email FROM delegates d "
+        "LEFT JOIN users u ON u.id = d.delegate_id WHERE d.owner_id = ? ORDER BY d.id",
+        (owner_id,))
+
+
+def shared_with(user):
+    """(invitations waiting for this account's address, accounts it may view)."""
+    rows = db.query(
+        "SELECT d.*, o.email AS owner_email, o.first_name, o.last_name, o.plan "
+        "FROM delegates d JOIN users o ON o.id = d.owner_id "
+        f"WHERE {SHARE_OWNER_OK} AND d.owner_id != ? "
+        "AND (d.delegate_id = ? OR (d.delegate_id IS NULL AND d.email = ?)) "
+        "ORDER BY d.id", (user.id, user.id, user.email))
+    return ([r for r in rows if r["delegate_id"] is None],
+            [r for r in rows if r["delegate_id"] == user.id])
+
+
+def shared_counts(user):
+    """For the header menu: {"total", "pending"} of shared_with(), or None when there is
+    nothing (most accounts: the menu item stays away)."""
+    row = db.query(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(d.delegate_id IS NULL), 0) AS pending "
+        "FROM delegates d JOIN users o ON o.id = d.owner_id "
+        f"WHERE {SHARE_OWNER_OK} AND d.owner_id != ? "
+        "AND (d.delegate_id = ? OR (d.delegate_id IS NULL AND d.email = ?))",
+        (user.id, user.id, user.email), one=True)
+    return {"total": row["n"], "pending": row["pending"]} if row and row["n"] else None
+
+
+def owner_label(row):
+    """How a shared account is named to its delegate: "Ada Lovelace (ada@example.com)", or
+    the email alone."""
+    name = full_name(row)
+    return f"{name} ({row['owner_email']})" if name else row["owner_email"]
+
+
+def get_share_or_404(share_id):
+    """The account the signed in delegate views through delegates row `share_id`, as
+    {"id", "owner_id", "owner_email", "label", "plan"}; also kept in g.share, which makes
+    the year, movement, base and receipt links point to the shared pages. A row that is not
+    this account's, not accepted, removed or whose owner is disabled is a 404, never a 403."""
+    row = db.query(
+        "SELECT d.id, d.owner_id, o.email AS owner_email, o.first_name, o.last_name, o.plan "
+        "FROM delegates d JOIN users o ON o.id = d.owner_id "
+        f"WHERE d.id = ? AND d.delegate_id = ? AND d.owner_id != ? AND {SHARE_OWNER_OK}",
+        (share_id, current_user.id, current_user.id), one=True)
+    if row is None:
+        abort(404)
+    g.share = {"id": row["id"], "owner_id": row["owner_id"], "owner_email": row["owner_email"],
+               "label": owner_label(row),
+               "plan": row["plan"] if row["plan"] in PLANS else "free"}
+    # "Last viewed" on the owner's Settings page; housekeeping, skipped when busy.
+    db.try_execute("UPDATE delegates SET last_viewed_at = CURRENT_TIMESTAMP WHERE id = ? AND "
+                   "(last_viewed_at IS NULL OR last_viewed_at <= datetime('now', ?))",
+                   (row["id"], f"-{DELEGATE_SEEN_MINUTES} minutes"))
+    return g.share
+
+
+def send_delegate_invite(owner_email, address):
+    """The invitation email. It names the owner by email only: a name is free text, and
+    whoever runs an account could otherwise write anything into our emails to strangers."""
+    has_account = db.query("SELECT 1 FROM users WHERE email = ? AND verified_at IS NOT NULL",
+                           (address,), one=True) is not None
+    # Without an account, the button creates one first; the text says where to go next.
+    return send_template_email(
+        address, f"{owner_email} shared their Nomad Life account with you", "delegate_invite",
+        owner=owner_email, has_account=has_account, shared=email_link("shared"),
+        signup=email_link("signup"),
+        link=email_link("shared") if has_account else email_link("signup"))
+
+
+def own_years():
+    """The signed in account has years of its own (where "Back to my account" can go)."""
+    return db.query("SELECT 1 FROM years WHERE user_id = ? LIMIT 1", (current_user.id,),
+                    one=True) is not None
+
+
+def viewing_share():
+    """The share being viewed in this request (get_share_or_404()), else None."""
+    return g.get("share") if has_request_context() else None
+
+
+def year_url(year, **values):
+    """A year's dashboard: the owner's own, or the shared one while a delegate views."""
+    share = viewing_share()
+    if share:
+        return url_for("shared_dashboard", share_id=share["id"], year=year, **values)
+    return url_for("dashboard", year=year, **values)
+
+
+def movement_url(m):
+    share = viewing_share()
+    if share:
+        return url_for("shared_movement", share_id=share["id"], movement_id=m["id"])
+    return url_for("movement_edit", movement_id=m["id"])
+
+
+def base_url(year):
+    share = viewing_share()
+    if share:
+        return url_for("shared_base", share_id=share["id"], year=year)
+    return url_for("base", year=year)
+
+
+def document_url(doc):
+    share = viewing_share()
+    if share:
+        return url_for("shared_document", share_id=share["id"], doc_id=doc["id"])
+    return url_for("document", doc_id=doc["id"])
+
+
+def package_url(year):
+    share = viewing_share()
+    if share:
+        return url_for("shared_package", share_id=share["id"], year=year)
+    return url_for("year_package", year=year)
 
 
 def documents_for(year_id, movement_id=None):
@@ -4210,8 +4382,9 @@ def movement_overlaps(movements, owner=None, limit=OVERLAP_REPORT_MAX):
     return pairs, total
 
 
-def overlap_report(year, pairs, movements, counted, total=None):
-    """The overlap alert's text: one numbered paragraph per pair, then the rule."""
+def overlap_report(year, pairs, movements, counted, total=None, viewer=False):
+    """The overlap alert's text: one numbered paragraph per pair, then the rule. viewer: a
+    delegate reads it, who cannot fix the dates, so it does not ask them to."""
     total = len(pairs) if total is None else total
     by_id = {m["id"]: m for m in movements}
 
@@ -4243,8 +4416,9 @@ def overlap_report(year, pairs, movements, counted, total=None):
     lines += ["", "How shared days count:",
               "- Each day counts once, for the stay that started later.",
               "- Same start day: the shorter stay. Same dates: the newest.",
-              "- A travel day (one stay ends, the next begins) is normal and not listed.",
-              "If you were not in both places, fix the dates."]
+              "- A travel day (one stay ends, the next begins) is normal and not listed."]
+    if not viewer:
+        lines.append("If you were not in both places, fix the dates.")
     return "\n".join(lines)
 
 
@@ -4407,7 +4581,7 @@ def dashboard_url(year, page=1, per_page=MOVEMENTS_PER_PAGE, anchor=True):
     # out when it is the default.
     order = movement_sort() if has_request_context() else None
     custom = order and (order["sort"], order["dir"]) != MOVEMENT_SORT_DEFAULT
-    return url_for("dashboard", year=year, page=page if page > 1 else None,
+    return year_url(year, page=page if page > 1 else None,
                    per_page=per_page if explicit else None,
                    sort=order["sort"] if custom else None, dir=order["dir"] if custom else None,
                    # The calendar tab chosen with a link (no JavaScript) stays for the pager.
@@ -5430,7 +5604,7 @@ def register_routes(app):
             movements_max=MOVEMENTS_MAX, per_page_options=PER_PAGE_OPTIONS,
             fail_limit=LIMITS[("fail", "email")], limit_minutes=LIMIT_WINDOW_MINUTES,
             code_limit=LIMITS[("code", "email")],
-            passkeys_max=PASSKEYS_MAX, refund_days=REFUND_DAYS,
+            passkeys_max=PASSKEYS_MAX, refund_days=REFUND_DAYS, delegates_max=DELEGATES_MAX,
             remember_days=app.config["REMEMBER_COOKIE_DURATION"].days,
             reset_minutes=RESET_TOKEN_MAX_AGE // 60, email_change_minutes=EMAIL_CHANGE_MAX_AGE // 60,
             revert_days=EMAIL_REVERT_MAX_AGE // 86400, idle_days=SESSION_IDLE_DAYS,
@@ -5495,6 +5669,11 @@ def register_routes(app):
         years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year DESC",
                          (current_user.id,))
         if not years:
+            # Someone who only views other accounts (an accountant) lands on those; an
+            # invitation alone does not stop a new account from starting its own year.
+            shares = shared_counts(current_user)
+            if shares and shares["total"] > shares["pending"]:
+                return redirect(url_for("shared"))
             return redirect(url_for("new_year"))
         wanted = date.today().year
         pick = wanted if any(r["year"] == wanted for r in years) else years[0]["year"]
@@ -5806,14 +5985,21 @@ def register_routes(app):
         if synced:
             flash(synced, category)
             year_row = get_year_or_404(year)  # its mode may have changed
+        return render_year(year_row, read=read, fresh=fresh)
+
+    def render_year(year_row, read=None, fresh=False, share=None):
+        """A year's dashboard: the owner's own, or, with `share` (get_share_or_404()), the
+        read only view of a delegate. The shared view never syncs, never reads Google (that
+        would use the owner's token, and the Google calendar holds more than stays) and hides
+        every control that changes something; the owner's colors and plan apply."""
+        year = year_row["year"]
+        owner_id = year_row["user_id"]
         movements = db.query(
             "SELECT m.*, (SELECT COUNT(*) FROM documents d WHERE d.movement_id = m.id) AS doc_count "
             "FROM movements m WHERE m.year_id = ? ORDER BY m.start_date, m.end_date DESC, m.id",
             (year_row["id"],))
         # The year tabs run from the earliest year forward.
-        years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year",
-                         (current_user.id,))
-        base_docs = documents_for(year_row["id"])
+        years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year", (owner_id,))
         # Stats always use every movement; only the table is sorted and paginated.
         order = movement_sort()
         pager = paginate(sort_movements(movements, order), request.args.get("page"),
@@ -5821,43 +6007,52 @@ def register_routes(app):
         stats = compute_stats(year_row, movements)
         # Every movement of the year, not only this page of the table.
         overlaps, overlap_total = movement_overlaps(movements, stats["day_owner"])
-        overlap_text = (overlap_report(year, overlaps, movements, stats["counted"], overlap_total)
-                        if overlaps else "")
+        overlap_text = (overlap_report(year, overlaps, movements, stats["counted"], overlap_total,
+                                       viewer=bool(share)) if overlaps else "")
         # The Calendar card's Nomad Life and Google Calendar tabs, only with a working
         # connection; ?cal=google shows the Google view at once (the tabs' links, without
         # JavaScript).
-        link = calendar_link(current_user.id)
+        link = None if share else calendar_link(owner_id)
         cal_tabs = calendar_tabs_on(link)
         cal = calendar_choice() if cal_tabs else None  # a tab's link: the card opens on it
-        chosen = country_colors(current_user.id)
+        chosen = country_colors(owner_id)
         palette = calendar_palette(movements, year_colors(stats, chosen))
-        google_view = (google_calendar_view(current_user.id, year, fresh=fresh,
+        google_view = (google_calendar_view(owner_id, year, fresh=fresh,
                                             palette=palette, places=calendar_places(movements),
                                             chosen=chosen, base=year_row["base_country"],
                                             read=read)
                        if cal == "google" else None)
         g.calendar_forms = cal_tabs  # CALENDAR_CSP: the Google tab's Connect again
+        if share:
+            # The mode as stored: what the owner chose, whatever their connection does now.
+            sync = {"auto": year_row["sync_mode"] == "auto", "can": False, "problem": "",
+                    "name": "", "synced_at": year_row["synced_at"]}
+        else:
+            sync = sync_status(year_row, link, read)
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
-                               movement_order=order,
+                               movement_order=order, share=share,
+                               # The owner's plan decides, also for a delegate.
+                               package_ok=plan_named(share["plan"] if share
+                                                     else current_user.plan)["package"],
                                # Movements starts folded; a link to a page, an order or a page
                                # size of its table opens it (#movements does, in theme.js).
                                movements_open=session.pop("movements_open", False)
                                or any(k in request.args for k in ("page", "per_page", "sort")),
                                cal_link=link if cal_tabs else None, google_view=google_view,
-                               # ?cal=local opens the card also without the tabs (the color
-                               # picker's answer without JavaScript)
-                               cal_open=cal is not None or request.args.get("cal") == "local",
                                cal_web=google_calendar_web_url(link, year) if cal_tabs else None,
                                overlaps=overlaps, overlap_total=overlap_total,
                                overlap_text=overlap_text,
                                # Changes with the overlaps: the triangle blinks again for new ones.
-                               overlap_key=f"{year}:" + hashlib.sha256(
+                               # theme.js remembers it per year and browser: a delegate's views
+                               # get their own memory, apart from their own year's.
+                               overlap_key=(f"s{share['id']}-" if share else "") + f"{year}:"
+                               + hashlib.sha256(
                                    overlap_text.encode()).hexdigest()[:16] if overlaps else "",
                                per_page_options=PER_PAGE_OPTIONS,
                                years=years, stats=stats,
-                               base_docs=base_docs, map=map_pins(year_row, movements, stats),
+                               map=map_pins(year_row, movements, stats),
                                calendar=year_calendar(year_row, movements, stats, chosen),
-                               sync=sync_status(year_row, link, read),
+                               sync=sync,
                                # stays outside the base (the card's line; the base is logged too)
                                abroad_movements=sum(
                                    1 for m in movements if fold(normalize_country(m["country"]))
@@ -6349,6 +6544,96 @@ def register_routes(app):
             return settings()
         return redirect(url_for("settings"))
 
+    def delegate_add(row, err):
+        """Settings > Delegates > Invite (the current password was checked: `err`)."""
+        address = request.form.get("delegate_email", "").strip().lower()
+        if err:
+            flash(err, "error")
+            return
+        if not valid_email(address):
+            flash("Type the email address of the person to invite.", "error")
+            return
+        if address == row["email"]:
+            flash("That is your own email address: invite someone else.", "error")
+            return
+        if not invitation_allowed(row, address):
+            return
+        try:
+            with db.transaction() as conn:
+                # The password checked above must still be the account's, under the write lock:
+                # an email change undone meanwhile (the owner taking the account back) removed
+                # the delegates and must not get one more from whoever knew the old password.
+                now = conn.execute("SELECT email, password_hash FROM users WHERE id = ?",
+                                   (row["id"],)).fetchone()
+                if not now or (now[0], now[1]) != (row["email"], row["password_hash"]):
+                    raise LinkUsed
+                # The cap is checked under the write lock, so two tabs cannot both pass it.
+                n = conn.execute("SELECT COUNT(*) FROM delegates WHERE owner_id = ?",
+                                 (row["id"],)).fetchone()[0]
+                if n >= DELEGATES_MAX:
+                    raise LimitReached
+                conn.execute("INSERT INTO delegates (owner_id, email) VALUES (?, ?)",
+                             (row["id"], address))
+        except LinkUsed:
+            flash("Your password or email address was changed elsewhere in the meantime, so "
+                  "nobody was invited.", "error")
+            return
+        except LimitReached:
+            flash(f"You have {DELEGATES_MAX} delegates, the most an account can have. Remove "
+                  "one to invite someone else.", "error")
+            return
+        except db.IntegrityError:
+            flash(f"{address} is already one of your delegates.", "info")
+            return
+        audit("delegate_invited", row["id"], row["email"], address)
+        if send_delegate_invite(row["email"], address):
+            flash(f"{address} was invited. Once they accept with a Nomad Life account under "
+                  "that address, they can view your account.", "success")
+        else:
+            flash(f"{address} was invited, but the email could not be sent. Try Send again in "
+                  "a minute; the invitation also shows when they sign in with that address.",
+                  "error")
+
+    def invitation_allowed(row, address):
+        """The invitation email limits: per account, then per invited address."""
+        for kind, key in (("delegate", f"#{row['id']}"), ("delegate_to", address)):
+            wait, scope, _ids = take_attempt(kind, key)
+            if wait:
+                flash(too_many_message(wait, scope, "invitations") if kind == "delegate" else
+                      f"{address} was sent several invitations in the last minutes. Please wait "
+                      f"{plural(wait, 'minute')} and try again.", "error")
+                return False
+        return True
+
+    def delegate_resend(row):
+        """Settings > Delegates > Send again, for an invitation still waiting."""
+        did = form_id("delegate_id")
+        waiting = db.query("SELECT email FROM delegates WHERE id = ? AND owner_id = ? AND "
+                           "delegate_id IS NULL", (did, row["id"]), one=True)
+        if waiting and not invitation_allowed(row, waiting["email"]):
+            return
+        if not db.execute_rowcount(
+                "UPDATE delegates SET invited_at = CURRENT_TIMESTAMP WHERE id = ? AND "
+                "owner_id = ? AND delegate_id IS NULL AND invited_at <= datetime('now', ?)",
+                (did, row["id"], f"-{EMAIL_COOLDOWN_SECONDS} seconds")):
+            d = db.query("SELECT * FROM delegates WHERE id = ? AND owner_id = ?",
+                         (did, row["id"]), one=True)
+            if not d:
+                flash("This invitation was withdrawn in the meantime.", "info")
+            elif d["delegate_id"]:
+                flash(f"{d['email']} accepted the invitation already.", "info")
+            else:
+                flash("The invitation was sent less than a minute ago. Please wait a moment "
+                      "before sending it again.", "info")
+            return
+        d = db.query("SELECT * FROM delegates WHERE id = ?", (did,), one=True)
+        if d and send_delegate_invite(row["email"], d["email"]):
+            flash(f"The invitation was sent to {d['email']} again.", "success")
+        elif d:
+            db.execute("UPDATE delegates SET invited_at = datetime('now', ?) WHERE id = ?",
+                       (f"-{EMAIL_COOLDOWN_SECONDS} seconds", did))
+            flash("The email could not be sent. Please try again in a minute.", "error")
+
     @app.route("/settings", methods=["GET", "POST"])
     @login_required
     def settings():
@@ -6400,6 +6685,26 @@ def register_routes(app):
                 else:
                     audit("passkey_renamed", row["id"], row["email"], name)
                     flash("The passkey was renamed.", "success")
+                return redirect(url_for("settings"))
+            if action == "delegate_resend":  # no password: an invitation already made
+                delegate_resend(row)
+                return redirect(url_for("settings"))
+            if action == "delegate_remove":  # only takes access away
+                if delete_confirmed():
+                    with db.transaction() as conn:
+                        gone = conn.execute(
+                            "SELECT d.*, u.email AS delegate_email FROM delegates d LEFT JOIN "
+                            "users u ON u.id = d.delegate_id WHERE d.id = ? AND d.owner_id = ?",
+                            (form_id("delegate_id"), row["id"])).fetchone()
+                        if gone:
+                            conn.execute("DELETE FROM delegates WHERE id = ?", (gone["id"],))
+                    if not gone:
+                        flash("This delegate was already removed.", "info")
+                    else:
+                        who = gone["delegate_email"] or gone["email"]
+                        audit("delegate_removed", row["id"], row["email"], who)
+                        flash(f"{who} can no longer view your account." if gone["delegate_id"]
+                              else f"The invitation to {who} was withdrawn.", "success")
                 return redirect(url_for("settings"))
             if action in ("calendar_choose", "calendar_unchoose", "calendar_refresh",
                           "calendar_disconnect"):
@@ -6655,6 +6960,8 @@ def register_routes(app):
                         flash(f"The passkey \u201c{name}\u201d was added. Signing in now asks for "
                               "it (or another two-factor method) after your password. Other "
                               "devices have been signed out.", "success")
+            elif action == "delegate_add":
+                delegate_add(row, err)
             elif action == "passkey_remove":
                 key = None
                 if not delete_confirmed():
@@ -6744,7 +7051,8 @@ def register_routes(app):
                                totp=totp, activity=activity, devices=max(devices, 1),
                                passkeys=passkeys, has_2fa=bool(row["totp_secret"] or passkeys),
                                passkeys_max=PASSKEYS_MAX, passkey_name=default_passkey_name(),
-                               idle_days=SESSION_IDLE_DAYS, name_max=NAME_MAX)
+                               idle_days=SESSION_IDLE_DAYS, name_max=NAME_MAX,
+                               delegates=delegate_rows(row["id"]), delegates_max=DELEGATES_MAX)
 
     @app.route("/settings/calendar/google/connect", methods=["POST"])
     @login_required
@@ -6923,6 +7231,10 @@ def register_routes(app):
                                     (new, row["id"], row["email"], new,
                                      row["password_hash"])).rowcount:
                     raise LinkUsed
+                # An invitation of this account to its own new address could never be accepted
+                # (and Send again would mail the owner an invitation to view themselves).
+                conn.execute("DELETE FROM delegates WHERE owner_id = ? AND email = ? AND "
+                             "delegate_id IS NULL", (row["id"], new))
                 # The change's number, for its undo link (see email_changes in db.py).
                 change = conn.execute("INSERT INTO email_changes (user_id, old_email, new_email) "
                                       "VALUES (?, ?, ?)", (row["id"], row["email"], new)).lastrowid
@@ -7004,6 +7316,9 @@ def register_routes(app):
                     (data["old"], locked_hash, row["id"], current["email"]))
                 # The same for passkeys: theirs would let them past the owner's new password.
                 conn.execute("DELETE FROM passkeys WHERE user_id = ?", (row["id"],))
+                # And delegates: one of them could be whoever changed the address, keeping a
+                # view of the account after the owner takes it back.
+                conn.execute("DELETE FROM delegates WHERE owner_id = ?", (row["id"],))
                 # And a Google Calendar they connected: the owner's stays could go to it.
                 gcal = conn.execute("SELECT account, refresh_token FROM calendar_links WHERE "
                                     "user_id = ?", (row["id"],)).fetchone()
@@ -8056,14 +8371,166 @@ def register_routes(app):
                                admin_view=True, kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
                                draft="", owner_name=full_name(ticket))
 
-    # --- documents ---
+    # --- delegates: the accounts shared with me (read only) ---
 
-    def get_document_or_404(doc_id):
-        row = db.query("SELECT * FROM documents WHERE id = ? AND user_id = ?",
-                       (doc_id, current_user.id), one=True)
-        if row is None:
-            abort(404)
-        return row
+    def share_entry(row):
+        # A waiting invitation names the owner by email only, as its email does: the name is
+        # free text a stranger could fill with anything; once accepted, the full label.
+        return {"id": row["id"], "invited_at": row["invited_at"],
+                "accepted_at": row["accepted_at"],
+                "label": owner_label(row) if row["delegate_id"] else row["owner_email"]}
+
+    @app.route("/shared")
+    @login_required
+    def shared():
+        """Shared with you: invitations waiting for this account's address (Accept, Decline)
+        and the accounts it may view (Open, Stop viewing)."""
+        pending, views = shared_with(current_user)
+        return render_template("shared.html", pending=[share_entry(r) for r in pending],
+                               views=[share_entry(r) for r in views])
+
+    def pending_invitation(conn, share_id):
+        """An invitation still waiting for the signed in account's address, read under the
+        write lock, with its owner."""
+        return conn.execute(
+            "SELECT d.id, d.owner_id, d.invited_at, d.accepted_at, o.email AS owner_email, "
+            "o.first_name, o.last_name FROM delegates d JOIN users o ON o.id = d.owner_id "
+            f"WHERE d.id = ? AND d.delegate_id IS NULL AND d.email = ? AND d.owner_id != ? "
+            f"AND {SHARE_OWNER_OK}", (share_id, current_user.email, current_user.id)).fetchone()
+
+    @app.route("/shared/<int:share_id>/accept", methods=["POST"])
+    @login_required
+    def shared_accept(share_id):
+        already = None
+        with db.transaction() as conn:
+            row = pending_invitation(conn, share_id)
+            if row:
+                # One row per account and owner: an account invited under two addresses (it
+                # changed its email since) keeps the access it has, so Remove ends it for good.
+                already = conn.execute("SELECT id FROM delegates WHERE owner_id = ? AND "
+                                       "delegate_id = ?", (row["owner_id"], current_user.id)
+                                       ).fetchone()
+                if already:
+                    conn.execute("DELETE FROM delegates WHERE id = ?", (row["id"],))
+                else:
+                    conn.execute("UPDATE delegates SET delegate_id = ?, accepted_at = "
+                                 "CURRENT_TIMESTAMP WHERE id = ? AND delegate_id IS NULL",
+                                 (current_user.id, row["id"]))
+        if not row:  # removed by the owner, or accepted in another tab, meanwhile
+            flash("This invitation is no longer waiting: it was accepted already, or "
+                  "withdrawn.", "info")
+            return redirect(url_for("shared"))
+        if already:
+            flash(f"You can already view the account of {row['owner_email']}.", "info")
+            return redirect(url_for("shared_home", share_id=already[0]))
+        audit("delegate_accepted", row["owner_id"], row["owner_email"], current_user.email,
+              actor=current_user.email)
+        audit("delegate_accepted", current_user.id, current_user.email, row["owner_email"])
+        security_alert(row["owner_email"],
+                       f"{current_user.email} accepted your invitation and can now view your "
+                       "Nomad Life account: your years, movements, notes and receipts. They "
+                       "cannot change anything.",
+                       link=email_link("settings", _anchor="delegates"),
+                       advice=("If you invited them, there is nothing to do. To stop sharing, "
+                               "remove them under Delegates on the Settings page. If you did "
+                               "not invite them, remove them and change your password."),
+                       button="See your delegates", ip="")
+        flash(f"You can now view the account of {row['owner_email']}.", "success")
+        return redirect(url_for("shared_home", share_id=row["id"]))
+
+    @app.route("/shared/<int:share_id>/decline", methods=["POST"])
+    @login_required
+    def shared_decline(share_id):
+        with db.transaction() as conn:
+            row = pending_invitation(conn, share_id)
+            if row:
+                conn.execute("DELETE FROM delegates WHERE id = ? AND delegate_id IS NULL",
+                             (row["id"],))
+        if not row:
+            flash("This invitation is no longer waiting.", "info")
+        else:
+            audit("delegate_declined", row["owner_id"], row["owner_email"], current_user.email,
+                  actor=current_user.email)
+            flash(f"You declined the invitation of {row['owner_email']}.", "success")
+        return redirect(url_for("shared"))
+
+    @app.route("/shared/<int:share_id>/leave", methods=["POST"])
+    @login_required
+    def shared_leave(share_id):
+        if not delete_confirmed():
+            return redirect(url_for("shared"))
+        with db.transaction() as conn:
+            row = conn.execute(
+                "SELECT d.id, d.owner_id, o.email AS owner_email, o.first_name, o.last_name "
+                "FROM delegates d JOIN users o ON o.id = d.owner_id "
+                "WHERE d.id = ? AND d.delegate_id = ?", (share_id, current_user.id)).fetchone()
+            if row:
+                conn.execute("DELETE FROM delegates WHERE id = ?", (row["id"],))
+        if not row:
+            flash("You no longer view this account.", "info")
+        else:
+            audit("delegate_left", row["owner_id"], row["owner_email"], current_user.email,
+                  actor=current_user.email)
+            audit("delegate_left", current_user.id, current_user.email, row["owner_email"])
+            flash(f"You no longer view the account of {owner_label(row)}.", "success")
+        return redirect(url_for("shared"))
+
+    @app.route("/shared/<int:share_id>")
+    @login_required
+    def shared_home(share_id):
+        """An account shared with me: its year of today, else its latest, like /app."""
+        share = get_share_or_404(share_id)
+        years = db.query("SELECT year FROM years WHERE user_id = ? ORDER BY year DESC",
+                         (share["owner_id"],))
+        if not years:
+            flash(f"{share['label']} has no years yet.", "info")
+            return redirect(url_for("shared"))
+        wanted = date.today().year
+        pick = wanted if any(r["year"] == wanted for r in years) else years[0]["year"]
+        return redirect(url_for("shared_dashboard", share_id=share_id, year=pick))
+
+    @app.route("/shared/<int:share_id>/year/<int:year>")
+    @login_required
+    def shared_dashboard(share_id, year):
+        share = get_share_or_404(share_id)
+        return render_year(get_year_or_404(year, share["owner_id"]), share=share)
+
+    @app.route("/shared/<int:share_id>/movements/<int:movement_id>")
+    @login_required
+    def shared_movement(share_id, movement_id):
+        share = get_share_or_404(share_id)
+        m = get_movement_or_404(movement_id, share["owner_id"])
+        year_row = get_year_or_404(m["year"], share["owner_id"])
+        return render_template("shared_place.html", y=year_row, m=m,
+                               docs=documents_for(year_row["id"], m["id"]),
+                               back_url=back_to_movement(year_row, m["id"]))
+
+    @app.route("/shared/<int:share_id>/year/<int:year>/base")
+    @login_required
+    def shared_base(share_id, year):
+        share = get_share_or_404(share_id)
+        year_row = get_year_or_404(year, share["owner_id"])
+        return render_template("shared_place.html", y=year_row, m=None,
+                               docs=documents_for(year_row["id"]),
+                               back_url=dashboard_url(year, anchor=False))
+
+    @app.route("/shared/<int:share_id>/documents/<int:doc_id>")
+    @login_required
+    def shared_document(share_id, doc_id):
+        share = get_share_or_404(share_id)
+        return send_document(get_document_or_404(doc_id, share["owner_id"]))
+
+    @app.route("/shared/<int:share_id>/year/<int:year>/package")
+    @login_required
+    def shared_package(share_id, year):
+        share = get_share_or_404(share_id)
+        year_row = get_year_or_404(year, share["owner_id"])
+        if not plan_named(share["plan"])["package"]:
+            flash("The accountant package is not part of this account's plan.", "error")
+            return redirect(year_url(year))
+        return send_package(year_row)
+
+    # --- documents ---
 
     def document_gone(message):
         """A receipt form left open after the receipt (or its stay or year) was deleted in
@@ -8082,6 +8549,12 @@ def register_routes(app):
             flash("The accountant package is available from the Pro plan. See Upgrade on "
                   "your plan page.", "error")
             return redirect(url_for("dashboard", year=year))
+        return send_package(year_row)
+
+    def send_package(year_row):
+        """The package of a year whose access was checked (the owner, or a delegate of an
+        owner whose plan has it): everything comes from the year's account."""
+        year = year_row["year"]
         data = build_package_data(year_row, include_notes=request.args.get("notes") == "1")
         entries = package.prepare(data)
         resp = Response(package.stream(data, entries), mimetype="application/zip")
@@ -8097,8 +8570,11 @@ def register_routes(app):
     @app.route("/documents/<int:doc_id>")
     @login_required
     def document(doc_id):
-        doc = get_document_or_404(doc_id)
-        folder = os.path.join(app.config["UPLOAD_DIR"], str(current_user.id))
+        return send_document(get_document_or_404(doc_id))
+
+    def send_document(doc):
+        """A receipt as a ZIP, from its account's folder (the owner's, also for a delegate)."""
+        folder = os.path.join(app.config["UPLOAD_DIR"], str(doc["user_id"]))
         download_name = f"{stem(zip_member_name(doc['original_name'], doc_format(doc)))}.zip"
         if doc["stored_name"].endswith(".zip"):
             resp = send_from_directory(folder, doc["stored_name"], mimetype="application/zip",

@@ -68,8 +68,9 @@ class TabsReviewTests(TabsCase):
         html = self.dashboard("?cal=local")
         self.assertIn('<details class="card fold-card cal-card" open>', html)
         self.assertIn('<div class="cal-panel" data-cal-panel="local">', html)
-        self.assertIn('<details class="card fold-card cal-card">', self.dashboard())  # folded
-        self.assertIn('<details class="card fold-card cal-card">', self.dashboard("?cal=other"))
+        # Open by default since 2.1.0, on the Nomad Life tab, whatever the link asks.
+        self.assertIn('<details class="card fold-card cal-card" open>', self.dashboard())
+        self.assertIn('<details class="card fold-card cal-card" open>', self.dashboard("?cal=other"))
 
     def test_7_an_event_from_last_year_started_earlier(self):
         # Clipped to January 1 first, an event that began in December looked as if it started

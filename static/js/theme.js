@@ -145,8 +145,10 @@
         e.preventDefault();
         var what = form.getAttribute("data-confirm-delete");
         var need = form.getAttribute("data-confirm-type");
-        if (!window.confirm("Delete " + what + "?")) return;
-        if (!window.confirm("Are you sure? This permanently deletes " + what + ". It cannot be undone.")) return;
+        var verb = form.getAttribute("data-confirm-verb") || "Delete";
+        var last = form.getAttribute("data-confirm-final") || ("This permanently deletes " + what + ". It cannot be undone.");
+        if (!window.confirm(verb + " " + what + "?")) return;
+        if (!window.confirm("Are you sure? " + last)) return;
         var typed = "";
         if (need) {
           typed = (window.prompt("Type " + need + " to confirm.") || "").trim();
@@ -179,19 +181,22 @@
       step = n;
       var what = pending.getAttribute("data-confirm-delete");
       var need = pending.getAttribute("data-confirm-type");
+      // Remove a delegate, Stop viewing: their own word, and nothing "deleted permanently".
+      var verb = pending.getAttribute("data-confirm-verb");
+      var last = pending.getAttribute("data-confirm-final");
       dStep.textContent = "Step " + n + " of 2";
       if (n === 1) {
-        dTitle.textContent = "Delete " + what + "?";
-        dText.textContent = "You will be asked once more before anything is deleted.";
-        dNext.textContent = "Delete";
+        dTitle.textContent = (verb || "Delete") + " " + what + "?";
+        dText.textContent = verb ? "You will be asked once more." : "You will be asked once more before anything is deleted.";
+        dNext.textContent = verb || "Delete";
         dTypeField.hidden = true;
         dNext.disabled = false;
         if (dLive) dLive.textContent = "";
         dCancel.focus();
       } else {
         dTitle.textContent = "Are you sure?";
-        dText.textContent = "This permanently deletes " + what + ". It cannot be undone.";
-        dNext.textContent = "Yes, delete permanently";
+        dText.textContent = last || ("This permanently deletes " + what + ". It cannot be undone.");
+        dNext.textContent = verb ? "Yes, " + verb.toLowerCase() : "Yes, delete permanently";
         dTypeField.hidden = !need;
         dTypeValue.textContent = need || "";
         dTypeInput.value = "";

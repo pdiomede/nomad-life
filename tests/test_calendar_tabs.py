@@ -79,7 +79,7 @@ class TabsShownTests(TabsCase):
 
     def test_the_card_without_tabs_is_unchanged(self):
         html = self.dashboard()
-        self.assertIn('<details class="card fold-card cal-card">', html)
+        self.assertIn('<details class="card fold-card cal-card" open>', html)
         self.assertIn('<summary class="card-head fold-summary">', html)
         self.assertNotIn("fold-head-grid", html)
         self.assertNotIn("cal-panel", html)
@@ -88,7 +88,7 @@ class TabsShownTests(TabsCase):
         self.connect()
         self.choose()
         html = self.dashboard()
-        summary = html[html.index('<details class="card fold-card cal-card">'):]
+        summary = html[html.index('<details class="card fold-card cal-card" open>'):]
         summary = summary[:summary.index("</summary>")]
         self.assertNotIn("<a ", summary)  # the real tabs lie outside the summary
         self.assertIn('<span class="cal-tabs cal-tabs-ghost" aria-hidden="true"><span class="cal-tab">Nomad Life</span>'

@@ -27,6 +27,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 OUT = os.path.join(ROOT, "static", "img", "docs")
 USER, ADMIN = "alex@example.com", "support@example.com"
+DELEGATE = "sam.ledger@example.com"  # the demo account's accountant (Settings > Delegates)
 
 
 def pdf(title):
@@ -113,6 +114,20 @@ def seed(app, tmp, password):
                                    "later, so 6 March goes to Italy. The Spain row shows "
                                    "\"3 counted\" for that reason."})
     user.post("/support/2026-1", data={"action": "reply", "body": "Clear, thank you!"})
+    # Settings > Delegates: an accountant who accepted, and a partner still invited.
+    conn = sqlite3.connect(app.config["DATABASE_PATH"])
+    conn.execute("INSERT INTO users (email, password_hash, first_name, last_name, verified_at) "
+                 "VALUES (?, ?, 'Sam', 'Ledger', datetime('now'))", (DELEGATE, hashed))
+    conn.execute("INSERT INTO delegates (owner_id, email, delegate_id, created_at, invited_at, "
+                 "accepted_at, last_viewed_at) SELECT o.id, d.email, d.id, datetime('now', "
+                 "'-21 days'), datetime('now', '-21 days'), datetime('now', '-20 days'), "
+                 "datetime('now', '-2 days') FROM users o, users d WHERE o.email = ? AND "
+                 "d.email = ?", (USER, DELEGATE))
+    conn.execute("INSERT INTO delegates (owner_id, email, created_at, invited_at) SELECT id, "
+                 "'jordan.rivera@example.com', datetime('now', '-1 days'), datetime('now', "
+                 "'-1 days') FROM users WHERE email = ?", (USER,))
+    conn.commit()
+    conn.close()
     # A file for the upload screenshot, chosen in the browser but never sent.
     sample = os.path.join(tmp, "flight-lis-bcn.pdf")
     with open(sample, "wb") as fh:

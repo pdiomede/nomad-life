@@ -26,10 +26,11 @@ class CalendarTests(AppTestCase):
         """{iso date: (color class, hover text)} for every day cell of the year's page."""
         return {m.group(4): (m.group(1), FLAG.sub("", m.group(3))) for m in DAY.finditer(self.page(year))}
 
-    def test_the_card_is_folded_between_movements_and_map(self):
+    def test_the_card_is_open_between_movements_and_map(self):
+        # Open by default since 2.1.0, on the Nomad Life calendar.
         self.new_year(2027)
         html = self.page(2027)
-        self.assertIn('<details class="card fold-card cal-card">', html)  # no "open"
+        self.assertIn('<details class="card fold-card cal-card" open>', html)
         self.assertIn('<h2 id="calendar-title" class="title-icon icon-calendar">Calendar (2027)</h2>', html)
         self.assertLess(html.index('id="movements"'), html.index('id="calendar-title"'))
         self.assertLess(html.index('id="calendar-title"'), html.index('id="map-title"'))

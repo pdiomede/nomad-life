@@ -10,7 +10,7 @@ From network address: {{ ip }}{% endif %}
 
 {{ link }}
 
-You get this email for every change to your password, email address or two-factor sign in.
+You get this email for every change to your password, email address or two-factor sign in, and when someone accepts your invitation to view your account.
 
 Nomad Life
 {{ site_url }}

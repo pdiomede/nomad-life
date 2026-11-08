@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+{% block title %}Shared with you | Nomad Life{% endblock %}
+{% block content %}
+<div class="narrow">
+  {% set mine = own_years() %}
+  {% if mine %}<a class="back" href="{{ url_for('index') }}">&larr; Back to my account</a>{% endif %}
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Delegates</p>
+      <h1>Shared with you</h1>
+      <p class="muted">Nomad Life accounts whose owners invited {{ current_user.email }} to view them. You can look and download, but not change anything.</p>
+    </div>
+  </div>
+
+  {% if pending %}
+  <section class="card" aria-labelledby="pending-title">
+    <div class="card-head"><h2 id="pending-title">Invitations</h2><span class="muted small">{{ pending | length }} waiting</span></div>
+    <ul class="passkey-list share-list">
+      {% for s in pending %}
+      <li class="passkey-item">
+        <div class="passkey-info">
+          <strong dir="auto">{{ s.label }}</strong>
+          <span class="muted small">Invited you on {{ s.invited_at | localdate }} to view their account</span>
+        </div>
+        <div class="passkey-actions">
+          <form method="post" action="{{ url_for('shared_accept', share_id=s.id) }}" data-submit-once>
+            {{ ui.csrf() }}
+            <button class="btn btn-primary btn-sm" type="submit" aria-label="Accept the invitation of {{ s.label }}">Accept</button>
+          </form>
+          <form method="post" action="{{ url_for('shared_decline', share_id=s.id) }}" data-submit-once>
+            {{ ui.csrf() }}
+            <button class="btn btn-ghost btn-sm" type="submit" aria-label="Decline the invitation of {{ s.label }}">Decline</button>
+          </form>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <section class="card" aria-labelledby="views-title">
+    <div class="card-head"><h2 id="views-title">Accounts you can view</h2></div>
+    {% if views %}
+    <ul class="passkey-list share-list">
+      {% for s in views %}
+      <li class="passkey-item">
+        <div class="passkey-info">
+          <strong dir="auto">{{ s.label }}</strong>
+          <span class="muted small">Since {{ s.accepted_at | localdate }}</span>
+        </div>
+        <div class="passkey-actions">
+          <a class="btn btn-primary btn-sm" href="{{ url_for('shared_home', share_id=s.id) }}" aria-label="Open the account of {{ s.label }}">Open</a>
+          {{ ui.delete_form(url_for('shared_leave', share_id=s.id), 'the account of ' ~ s.label, label='Stop viewing', aria_label='Stop viewing the account of ' ~ s.label, verb='Stop viewing', final='You can no longer view the account of ' ~ s.label ~ ', unless they invite you again.') }}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">{% if pending %}Accept an invitation above to view that account here.{% else %}No account is shared with you. When someone adds {{ current_user.email }} as a delegate in their Settings, the invitation shows here.{% endif %}</p>
+    {% endif %}
+  </section>
+
+  {% if not mine %}
+  <section class="card" aria-labelledby="own-title">
+    <div class="card-head"><h2 id="own-title">Your own days</h2></div>
+    <p class="muted small card-intro">Track where you spend your own year too, with your receipts, in your own account.</p>
+    <div><a class="btn btn-ghost" href="{{ url_for('new_year') }}">Start your own year</a></div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

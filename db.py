@@ -289,6 +289,28 @@ CREATE INDEX IF NOT EXISTS idx_ticket_messages ON ticket_messages(ticket_id, id)
 -- every deleted account read every message, holding the write lock (seconds for a bulk delete).
 CREATE INDEX IF NOT EXISTS idx_ticket_messages_author ON ticket_messages(author_id);
 
+-- Delegates (2.1.0): people the owner lets view the account, read only. email is the invited
+-- address (lowercased, like users.email); delegate_id the account that accepted (NULL while the
+-- invitation waits), so access stays with that account when it changes its email later.
+-- invited_at is the last invitation email (the Send again cooldown); last_viewed_at is stamped
+-- at most once an hour while the delegate views.
+CREATE TABLE IF NOT EXISTS delegates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    delegate_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    invited_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    accepted_at TEXT,
+    last_viewed_at TEXT,
+    UNIQUE (owner_id, email)
+);
+CREATE INDEX IF NOT EXISTS idx_delegates_delegate ON delegates(delegate_id);
+-- One row per account and owner (shared_accept keeps the access an account already has).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_delegates_owner_delegate ON delegates(owner_id, delegate_id)
+    WHERE delegate_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_delegates_email ON delegates(email);
+
 CREATE INDEX IF NOT EXISTS idx_movements_year ON movements(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_year ON documents(year_id);
 CREATE INDEX IF NOT EXISTS idx_documents_movement ON documents(movement_id);

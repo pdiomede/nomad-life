@@ -62,6 +62,7 @@
             <div class="user-menu-panel">
               <a class="plan-chip" href="{{ url_for('plan') }}" title="Your plan: {{ current_plan.name }}" aria-label="Your plan: {{ current_plan.name }}">{{ current_plan.name }}</a>
               <a class="user-menu-item menu-settings" href="{{ url_for('settings') }}">Settings</a>
+              {% if shared_menu %}<a class="user-menu-item menu-shared" href="{{ url_for('shared') }}">Shared with you{% if shared_menu.pending %} <span class="menu-badge">{{ shared_menu.pending }}<span class="visually-hidden"> invitation{{ '' if shared_menu.pending == 1 else 's' }} waiting</span></span>{% endif %}</a>{% endif %}
               <a class="user-menu-item menu-support" href="{{ url_for('support') }}">Support{% if support_unread %} <span class="menu-badge">{{ support_unread }}<span class="visually-hidden"> ticket{{ '' if support_unread == 1 else 's' }} with a new reply</span></span>{% endif %}</a>
               <a class="user-menu-item menu-docs" href="{{ url_for('docs') }}">Documentation</a>
               {% if current_user.is_admin %}<a class="user-menu-item menu-admin" href="{{ url_for('admin') }}">Admin</a>
@@ -79,6 +80,13 @@
   </header>
 
   <main class="container main">
+    {% if share %}
+    {# A delegate viewing someone else's account: always said, on every shared page. #}
+    <div class="share-banner" role="note">
+      <span class="share-banner-text">You are viewing the account of <strong dir="auto">{{ share.label }}</strong>. Read only.</span>
+      <span class="share-banner-links"><a href="{{ url_for('shared') }}">Shared with you</a> {% if own_years() %}<a href="{{ url_for('index') }}">Back to my account</a>{% else %}<a href="{{ url_for('new_year') }}">Start your own year</a>{% endif %}</span>
+    </div>
+    {% endif %}
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         <div class="flashes">

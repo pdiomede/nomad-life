@@ -16,6 +16,7 @@
   <nav class="settings-nav" aria-label="Settings sections">
     <a href="#profile">Profile</a>
     <a href="#calendar">Calendar</a>
+    <a href="#delegates">Delegates</a>
     <a href="#plan">Plan</a>
     <a href="#password">Password</a>
     <a href="#two-factor">Two-factor</a>
@@ -114,6 +115,61 @@
         <button class="btn btn-ghost" type="submit">Disconnect Google account</button>
       </form>
     </div>
+    {% endif %}
+  </section>
+
+  {# Delegates: other Nomad Life accounts that may view this one, read only. Inviting needs the
+     password (it opens every receipt to someone); Send again and Remove do not. #}
+  <section class="card" id="delegates" aria-labelledby="delegates-title">
+    <div class="card-head"><h2 id="delegates-title">Delegates</h2><span class="muted small">{{ delegates | length }} of {{ delegates_max }}</span></div>
+    <p class="small card-intro">People who can view your account, such as your accountant: your years, movements, notes and receipts, and the accountant package when your plan has it. They sign in with their own Nomad Life account and cannot change anything.</p>
+    {% if delegates %}
+    <ul class="passkey-list delegate-list">
+      {% for d in delegates %}
+      {% set who = d.delegate_email or d.email %}
+      <li class="passkey-item">
+        <div class="passkey-info">
+          <strong dir="auto">{{ who }}</strong>
+          {% if d.delegate_id %}
+          <span class="muted small"><span class="tag tag-ok">Can view</span> since {{ d.accepted_at | localdate }}{% if d.last_viewed_at %}, last viewed {{ d.last_viewed_at | localdate }}{% else %}, not viewed yet{% endif %}{% if d.delegate_email and d.delegate_email != d.email %} (invited as {{ d.email }}){% endif %}</span>
+          {% else %}
+          <span class="muted small"><span class="tag">Invited</span> on {{ d.invited_at | localdate }}, waiting for them to accept</span>
+          {% endif %}
+        </div>
+        <div class="passkey-actions">
+          {% if not d.delegate_id %}
+          <form method="post" data-submit-once>
+            {{ ui.csrf() }}
+            <input type="hidden" name="action" value="delegate_resend">
+            <input type="hidden" name="delegate_id" value="{{ d.id }}">
+            <button class="btn btn-ghost btn-sm" type="submit" aria-label="Send the invitation to {{ who }} again">Send again</button>
+          </form>
+          {% endif %}
+          {{ ui.delete_form(url_for('settings'), ('the delegate ' if d.delegate_id else 'the invitation to ') ~ who, label='Remove', extra={'action': 'delegate_remove', 'delegate_id': d.id}, aria_label='Remove ' ~ who, verb='Remove', final=(who ~ ' can no longer view your account. You can invite them again later.') if d.delegate_id else ('The invitation to ' ~ who ~ ' stops working. You can invite them again later.')) }}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if delegates | length < delegates_max %}
+    <form method="post" class="stack" data-submit-once>
+      {{ ui.csrf() }}
+      <input type="hidden" name="action" value="delegate_add">
+      <div class="grid-2">
+        <div class="field">
+          <label for="delegate-email">Email of the person to invite</label>
+          <input id="delegate-email" name="delegate_email" type="email" maxlength="254" autocomplete="off" required>
+        </div>
+        <div class="field">
+          <label for="delegate-password">Current password</label>
+          <input id="delegate-password" name="current_password" type="password" autocomplete="current-password" required>
+        </div>
+      </div>
+      <p class="muted small">We email them an invitation. Nothing is shared until they accept with a Nomad Life account under that address, and you can remove them at any time.</p>
+      <div><button class="btn btn-primary" type="submit">Invite</button></div>
+    </form>
+    {% else %}
+    <p class="muted small">You have {{ delegates_max }} delegates, the most an account can have. Remove one to invite someone else.</p>
     {% endif %}
   </section>
 

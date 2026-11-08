@@ -1,0 +1,14 @@
+{% extends "email/_layout.html" %}
+{% set p = "margin:0 0 14px; font-size:15px; line-height:1.6; color:#303549;" %}
+{% block preheader %}{{ owner }} invited you to view their Nomad Life account.{% endblock %}
+{% block heading %}An account was shared with you{% endblock %}
+{% block body %}
+<p class="nl-text" style="{{ p }}"><strong style="word-break:break-word; overflow-wrap:anywhere;">{{ owner }}</strong> invited you to view their Nomad Life account: their years, movements, notes and receipts. You can look and download, but not change anything.</p>
+{% if has_account %}
+<p class="nl-text" style="{{ p }}">Sign in with <strong style="word-break:break-word; overflow-wrap:anywhere;">{{ email }}</strong> and accept the invitation under <strong>Shared with you</strong>.</p>
+{% else %}
+<p class="nl-text" style="{{ p }}">To accept, first create a free Nomad Life account with this address (<strong style="word-break:break-word; overflow-wrap:anywhere;">{{ email }}</strong>) with the button below. Then sign in and accept the invitation under <a class="nl-link" href="{{ shared }}" style="color:#A13A8C;">Shared with you</a>.</p>
+{% endif %}
+{% endblock %}
+{% block button %}{{ 'Open Shared with you' if has_account else 'Create your free account' }}{% endblock %}
+{% block note %}If you do not know {{ owner }}, you can ignore this email: nothing is shared until you accept.{% endblock %}

@@ -113,7 +113,7 @@
             <li><strong>The country is what counts</strong>; the city is optional. Without one, the movement shows as its country, such as <strong>Italy</strong>.</li>
             <li>Pick <strong>From</strong> and <strong>To</strong> in the calendar that opens on each date (an empty To opens on the month of From). <strong>Both dates count.</strong> From 1 March to 3 March is 3 days.</li>
             <li>The dates must fall inside the year. A trip over New Year is two movements: 28 to 31 December in one year, 1 to 5 January in the next.</li>
-            <li>Notes are optional, up to {{ '{:,}'.format(notes_max) }} characters, and only you see them (the accountant package leaves them out unless you ask).</li>
+            <li>Notes are optional, up to {{ '{:,}'.format(notes_max) }} characters, and only you and the <a href="#delegates">delegates</a> you invite see them (the accountant package leaves them out unless you ask).</li>
           </ul>
         </section>
         <section id="country-picker" class="doc-sub" data-doc-title="The country picker">
@@ -236,7 +236,7 @@
           <h3>The calendar</h3>
           {{ shot('calendar', 'The calendar of 2026, four months a row, with the Lisbon days in pink, the stays in Spain, Italy, Japan, France and Thailand each in its own color, the last weeks without a movement in grey, and a legend with their days; the Nomad Life and Google Calendar tabs sit in the middle of the head', 'Each day in the color of the country it counts for.') }}
           <ul>
-            <li>The calendar starts folded: click <strong>Calendar</strong> to open it, and again to fold it. It shows the year of the tab you are on.</li>
+            <li>The calendar is open when the dashboard opens, on the <strong>Nomad Life</strong> calendar: click <strong>Calendar</strong> to fold it, and again to open it. It shows the year of the tab you are on.</li>
             <li>Each day has the color of the country it counts for, the same days as in Days per Country: a day shared by two stays has the color of the stay that started later.</li>
             <li>Grey days have no movement: they count for no country until you add one, at your base too.</li>
             <li>Point at a day to see its date and its country with the flag; screen readers read them with each day. Today has an outline.</li>
@@ -365,6 +365,17 @@
             <li>While no calendar is chosen, <strong>Refresh list</strong> reads your calendars again, for example after creating one in Google Calendar. <strong>Disconnect Google account</strong> removes the connection and Nomad Life's access to your Google account; deleting your account does the same.</li>
             <li>If you remove Nomad Life's access in your Google account, the section says so: press <strong>Connect again</strong>.</li>
           </ul>
+        </section>
+        <section id="delegates" class="doc-sub" data-doc-title="Delegates">
+          <h3>Delegates</h3>
+          {{ shot('delegates', 'The Delegates card in Settings: an accountant who can view the account, with the day they accepted and last viewed it, an invitation still waiting with Send again, a Remove button on each, and the form to invite someone with their email and your password', 'Invite someone with their email and your password; Remove ends their access at once.') }}
+          <p>A delegate is someone who can view your account, such as your accountant or your partner: your years, the dashboard, your movements and notes, your receipts and base documents, and the accountant package when your plan has it. A delegate cannot change anything, and never sees your Google Calendar or your settings.</p>
+          <ol>
+            <li>In Settings, under <strong>Delegates</strong>, type the email address of the person and your password, and press <strong>Invite</strong>. You can have up to {{ delegates_max }} delegates, invitations included.</li>
+            <li>They get an email. They sign in with that address (or first create a free account with it), open <strong>Shared with you</strong> in the menu at the top, and press <strong>Accept</strong>. You get an email when they do.</li>
+            <li>From then on, <strong>Shared with you</strong> lists your account for them: <strong>Open</strong> shows it read only, with a note at the top saying whose account it is.</li>
+          </ol>
+          <p>Your list shows each delegate with the day they accepted and the last day they viewed your account. <strong>Send again</strong> emails a waiting invitation once more, and <strong>Remove</strong> ends their access at once. A delegate can also leave with <strong>Stop viewing</strong>. Undoing an email change from the old address removes every delegate too, in case whoever changed it invited themselves.</p>
         </section>
         <section id="two-factor" class="doc-sub" data-doc-title="Two-factor sign in">
           <h3>Two-factor sign in</h3>

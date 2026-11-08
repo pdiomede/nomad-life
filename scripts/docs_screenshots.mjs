@@ -75,6 +75,7 @@ const SHOTS = [
       // A demo account's key, blurred so nobody adds it to an app by mistake.
       document.querySelector(".tfa-qr").style.filter = "blur(2.5px)";
       document.querySelector(".tfa-key").style.filter = "blur(3px)";` },
+  { name: "delegates", path: "/settings", select: ["#delegates"] },
   { name: "support-ticket", path: "/support/2026-1", select: ["#shot-target"], prep: `
       __target(document.getElementById("conversation-title").closest("section"));` },
 ].filter((s) => !opts.only.length || opts.only.includes(s.name));
