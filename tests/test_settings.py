@@ -67,7 +67,7 @@ class SettingsPageTests(AppTestCase):
         self.save("<b>Ada</b>", "Lovelace")
         html = self.client.get("/settings").get_data(as_text=True)
         self.assertIn('<span class="topnav-email" dir="auto">&lt;b&gt;Ada&lt;/b&gt; Lovelace</span>', html)
-        self.assertIn('title="a@example.com"', html)
+        self.assertIn('data-tip="a@example.com"', html)
         self.assertNotIn("<b>Ada</b>", html)
 
     def test_without_a_name_the_email_is_shown(self):

@@ -55,12 +55,12 @@
         {% include "_theme_toggle.html" %}
         {% if current_user.is_authenticated %}
           <details class="user-menu" data-user-menu>
-            <summary class="user-menu-trigger" aria-label="Account menu for {{ current_user.name ~ " (" ~ current_user.email ~ ")" if current_user.name else current_user.email }}" title="{{ current_user.email }}">
+            <summary class="user-menu-trigger tip tip-end" aria-label="Account menu for {{ current_user.name ~ " (" ~ current_user.email ~ ")" if current_user.name else current_user.email }}" data-tip="{{ current_user.email }}">
               <span class="topnav-email" dir="auto">{{ current_user.name or current_user.email }}</span>
               <svg class="user-menu-arrow" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </summary>
             <div class="user-menu-panel">
-              <a class="plan-chip" href="{{ url_for('plan') }}" title="Your plan: {{ current_plan.name }}" aria-label="Your plan: {{ current_plan.name }}">{{ current_plan.name }}</a>
+              <a class="plan-chip tip" href="{{ url_for('plan') }}" data-tip="Your plan: {{ current_plan.name }}" aria-label="Your plan: {{ current_plan.name }}">{{ current_plan.name }}</a>
               <a class="user-menu-item menu-settings" href="{{ url_for('settings') }}">Settings</a>
               {% if shared_menu %}<a class="user-menu-item menu-shared" href="{{ url_for('shared') }}">Shared with you{% if shared_menu.pending %} <span class="menu-badge">{{ shared_menu.pending }}<span class="visually-hidden"> invitation{{ '' if shared_menu.pending == 1 else 's' }} waiting</span></span>{% endif %}</a>{% endif %}
               <a class="user-menu-item menu-support" href="{{ url_for('support') }}">Support{% if support_unread %} <span class="menu-badge">{{ support_unread }}<span class="visually-hidden"> ticket{{ '' if support_unread == 1 else 's' }} with a new reply</span></span>{% endif %}</a>

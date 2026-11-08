@@ -29,7 +29,7 @@
       {% for r in years %}
         <a class="year-tab {% if r.year == y.year %}active{% endif %}" href="{{ year_url(r.year) }}"{% if r.year == y.year %} aria-current="page"{% endif %}>{{ r.year }}</a>
       {% endfor %}
-      {% if not share %}<a class="year-tab add" href="{{ url_for('new_year', back=y.year) }}" title="Add a year">+ Year</a>{% endif %}
+      {% if not share %}<a class="year-tab add tip tip-end" href="{{ url_for('new_year', back=y.year) }}" data-tip="Add a year" aria-label="Add a year">+ Year</a>{% endif %}
     </nav>
     {% if not sync.auto and not share %}<a class="btn btn-primary" href="{{ url_for('movement_new', year=y.year) }}">+ Add movement</a>{% endif %}
   </div>
@@ -117,10 +117,10 @@
           {% for m in pager.rows %}
           <tr class="{% if m.start_date <= today <= m.end_date %}current{% endif %}">
             <td class="dates"><time class="nowrap" datetime="{{ m.start_date }}">{{ m.start_date | daydate }}</time> <span class="muted">to</span> <time class="nowrap" datetime="{{ m.end_date }}">{{ m.end_date | daydate }}</time></td>
-            <td><a class="loc-link" href="{{ movement_url(m) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a>{% if m.google_event_id %} <span class="sync-row-icon" title="From Google Calendar" aria-label="From Google Calendar" role="img"></span>{% endif %}{% if m.sync_missing and sync.auto and share %} <span class="tag tag-warn" title="The event is no longer in Google Calendar. The movement is kept for its receipts.">Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar. The movement is kept for its receipts.</span></span>{% elif m.sync_missing and sync.auto %} <span class="tag tag-warn" title="The event is no longer in Google Calendar. The movement is kept for its receipts: delete it when you no longer need it.">Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar. The movement is kept for its receipts; delete it when you no longer need it.</span></span>{% endif %}</td>
+            <td><a class="loc-link" href="{{ movement_url(m) }}"{% if m.city %} aria-label="{{ m.country }}, {{ m.city }}"{% endif %}>{{ ui.flag(m.country) }}<strong>{{ m.country }}</strong>{% if m.city %} <span class="loc-sep" aria-hidden="true">|</span> <span class="loc-city">{{ m.city }}</span>{% endif %}</a>{% if m.google_event_id %} <span class="tip" data-tip="From Google Calendar"><span class="sync-row-icon" aria-label="From Google Calendar" role="img"></span></span>{% endif %}{% if m.sync_missing and sync.auto and share %} <span class="tag tag-warn tip" tabindex="0" data-tip="The event is no longer in Google Calendar. The movement is kept for its receipts.">Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar. The movement is kept for its receipts.</span></span>{% elif m.sync_missing and sync.auto %} <span class="tag tag-warn tip" tabindex="0" data-tip="The event is no longer in Google Calendar. The movement is kept for its receipts: delete it when you no longer need it.">Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar. The movement is kept for its receipts; delete it when you no longer need it.</span></span>{% endif %}</td>
             {% set length = ((m.end_date | todate) - (m.start_date | todate)).days + 1 %}
             {% set counted = stats.counted.get(m.id, 0) %}
-            <td class="num">{{ length }}{% if counted != length %}<div class="muted small" title="A day shared with another stay counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest)">{{ counted }} counted</div>{% endif %}</td>
+            <td class="num">{{ length }}{% if counted != length %}<div class="muted small tip tip-end counted-note" tabindex="0" data-tip="A day shared with another stay counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest)">{{ counted }} counted<span class="visually-hidden">: a day shared with another stay counts toward the stay that started later (on the same start day, the shorter stay; with identical dates, the newest)</span></div>{% endif %}</td>
             <td class="num hide-sm">{{ m.doc_count }}</td>
             <td class="right hide-sm">
               <div class="row-actions">
@@ -241,13 +241,13 @@
        JavaScript, no buttons). #}
     <div class="map-tools">
       <div class="map-zoom" hidden>
-        <button type="button" class="map-zoom-btn" data-map-zoom="in" aria-label="Zoom in" title="Zoom in">
+        <button type="button" class="map-zoom-btn tip tip-end" data-map-zoom="in" aria-label="Zoom in" data-tip="Zoom in">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
-        <button type="button" class="map-zoom-btn" data-map-zoom="out" aria-label="Zoom out" title="Zoom out">
+        <button type="button" class="map-zoom-btn tip tip-end" data-map-zoom="out" aria-label="Zoom out" data-tip="Zoom out">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
-        <button type="button" class="map-zoom-btn" data-map-zoom="reset" aria-label="Reset zoom to the whole world" title="Whole world">
+        <button type="button" class="map-zoom-btn tip tip-end" data-map-zoom="reset" aria-label="Reset zoom to the whole world" data-tip="Whole world">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
         </button>
       </div>

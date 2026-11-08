@@ -68,7 +68,7 @@ class ColorPickerTests(AppTestCase):
         form = html[html.index('data-key="thailand"'):]
         form = form[:form.index("</form>")]
         self.assertEqual(form.count('class="cal-color-opt '), 15)
-        self.assertIn('<button type="submit" name="color" value="cal-1" class="cal-color-opt cal-1" aria-label="Blue" title="Blue" aria-pressed="true">', form)
+        self.assertIn('<button type="submit" name="color" value="cal-1" class="cal-color-opt tip cal-1" aria-label="Blue" data-tip="Blue" aria-pressed="true">', form)
         self.assertIn('>Automatic</button>', form)
         self.assertIn('data-c="thailand"', html)
 

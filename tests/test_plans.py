@@ -30,7 +30,7 @@ class PlanTests(AppTestCase):
         html = self.page("/year/2026")
         self.assertIn('aria-label="Your plan: Free"', html)
         menu = html[html.index('class="user-menu-panel"'):html.index("</details>")]
-        self.assertIn('class="plan-chip"', menu)
+        self.assertIn('class="plan-chip tip"', menu)
 
     def test_chip_follows_the_plan(self):
         self.set_plan("pro")

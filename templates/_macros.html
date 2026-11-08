@@ -70,7 +70,7 @@
   <li class="doc">
     <span class="doc-icon" aria-hidden="true">{{ 'PDF' if (d.format or d.original_name.lower().rsplit('.', 1)[-1]) == 'pdf' else 'IMG' }}</span>
     <div class="doc-main">
-      <a href="{{ document_url(d) }}" title="Download {{ d.original_name }} as a ZIP file">{{ d.original_name }}</a>
+      <a class="tip" href="{{ document_url(d) }}" data-tip="Download {{ d.original_name }} as a ZIP file" aria-label="Download {{ d.original_name }} as a ZIP file">{{ d.original_name }}</a>
       <div class="muted small">
         <span class="tag">{{ document_kinds.get(d.kind, 'Other') }}</span>
         {{ (d.file_size or d.size) | filesize }}{% if d.stored_name.endswith('.zip') %} (ZIP {{ d.size | filesize }}){% endif %}, uploaded {{ d.uploaded_at | localdate }}
@@ -229,4 +229,4 @@
    location (local, private and documentation ranges) stay plain text (app.py ip_lookup_url).
    The screen reader text is an aria-label, not hidden text, so copying the link gives only
    the address. #}
-{% macro ip_link(ip) %}{% set url = ip_lookup_url(ip) %}{% if url %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer" aria-label="{{ ip }}, location on ipinfo.io, opens in a new tab" title="Location on ipinfo.io (opens in a new tab)">{{ ip }}</a>{% else %}{{ ip }}{% endif %}{% endmacro %}
+{% macro ip_link(ip) %}{% set url = ip_lookup_url(ip) %}{% if url %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer" class="tip" aria-label="{{ ip }}, location on ipinfo.io, opens in a new tab" data-tip="Location on ipinfo.io (opens in a new tab)">{{ ip }}</a>{% else %}{{ ip }}{% endif %}{% endmacro %}

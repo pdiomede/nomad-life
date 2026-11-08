@@ -31,7 +31,7 @@ class WordingTests(AppTestCase):
                       "for the stay that started later (starting the same day: the shorter one; "
                       "same dates: the newest).", html)
         dash = self.client.get("/year/2025").data.decode()
-        self.assertIn('title="A day shared with another stay counts toward the stay that started '
+        self.assertIn('data-tip="A day shared with another stay counts toward the stay that started '
                       'later (on the same start day, the shorter stay', dash)
 
 

@@ -13,6 +13,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - Turning a year to AUTO no longer erases a city you typed when the matching event names only the country: "Rome, Italy" against an event "Italy" on the same days is now linked as it is, and a change of dates keeps Rome (the review shows the city kept).
+- Every tooltip in the app is now a styled CSS tooltip, like the gear and calendar ones, instead of the browser's plain one: the "From Google Calendar" icon and the "Not in Google Calendar" tag in Movements, the "counted" days note, + Year, the map zoom buttons, the account menu, the plan chip, receipt links, the calendar colors and weekdays, the date picker, the country picker's base and favorite icons, and the admin's IP links. They show on hover, and on focus for the keyboard.
 - Saving a synced movement writes only its notes (and its city when it is yours), never the place and dates read when the page opened, so a sync meanwhile always wins.
 
 ### Fixed

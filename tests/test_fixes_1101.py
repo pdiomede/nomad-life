@@ -62,8 +62,8 @@ class IpLinkTests(AppTestCase):
             conn.execute("INSERT INTO audit_log (event, email, ip) "
                          "VALUES ('login_failed', 'x@example.com', '8.8.8.8')")
         html = admin.get("/admin").get_data(as_text=True)
-        self.assertIn('aria-label="8.8.8.8, location on ipinfo.io, opens in a new tab" '
-                      'title="Location on ipinfo.io (opens in a new tab)">8.8.8.8</a>', html)
+        self.assertIn('class="tip" aria-label="8.8.8.8, location on ipinfo.io, opens in a new tab" '
+                      'data-tip="Location on ipinfo.io (opens in a new tab)">8.8.8.8</a>', html)
         self.assertNotIn("(location on ipinfo.io, opens in a new tab)</span>", html)
 
 

@@ -17,7 +17,7 @@
         <input type="hidden" name="back" value="{{ url_for('dashboard', year=y.year, cal=tab or 'local', _anchor='calendar') }}">
         <button type="button" class="cal-swatch cal-color-btn {{ c.color }}" aria-haspopup="true" aria-expanded="false" aria-label="Color of {{ label }}: {{ calendar_colors[c.color] }}" data-label="{{ label }}"></button>
         <div class="cal-color-menu" role="group" aria-label="Choose a color for {{ label }}">
-          {% for key, name in calendar_colors.items() %}<button type="submit" name="color" value="{{ key }}" class="cal-color-opt {{ key }}" aria-label="{{ name }}" title="{{ name }}"{% if key == c.color %} aria-pressed="true"{% endif %}></button>{% endfor %}
+          {% for key, name in calendar_colors.items() %}<button type="submit" name="color" value="{{ key }}" class="cal-color-opt tip {{ key }}" aria-label="{{ name }}" data-tip="{{ name }}"{% if key == c.color %} aria-pressed="true"{% endif %}></button>{% endfor %}
           <button type="submit" name="color" value="auto" class="cal-color-auto">Automatic</button>
         </div>
       </form>{% else %}<i class="cal-swatch {{ c.color }}" aria-hidden="true"{% if keyed and c.key %} data-legend-key="{{ c.key }}"{% endif %}></i>{% endif %}<span dir="auto">{{ c.country }}</span> <span class="muted">{{ c.days }} day{{ '' if c.days == 1 else 's' }}</span></li>
@@ -30,7 +30,7 @@
       {% for m in cal.months %}
       <table class="cal-month">
         <caption>{{ m.name }}</caption>
-        <thead><tr>{% for short, full in [("M", "Monday"), ("T", "Tuesday"), ("W", "Wednesday"), ("T", "Thursday"), ("F", "Friday"), ("S", "Saturday"), ("S", "Sunday")] %}<th scope="col"><abbr title="{{ full }}">{{ short }}</abbr></th>{% endfor %}</tr></thead>
+        <thead><tr>{% for short, full in [("M", "Monday"), ("T", "Tuesday"), ("W", "Wednesday"), ("T", "Thursday"), ("F", "Friday"), ("S", "Saturday"), ("S", "Sunday")] %}<th scope="col" aria-label="{{ full }}"><span class="tip" data-tip="{{ full }}" aria-hidden="true">{{ short }}</span></th>{% endfor %}</tr></thead>
         <tbody>
           {% for week in ([none] * m.blanks + m.days) | batch(7) %}
           <tr>{% for d in week %}{% if d %}<td class="cal-day {{ d.color }}{% if d.today %} cal-today{% endif %}" data-tip="{{ d.tip }}"{% if (picker or keyed) and d.key %} data-c="{{ d.key }}"{% endif %}{% if d.today %} aria-current="date"{% endif %}><time datetime="{{ d.iso }}">{{ d.day }}</time><span class="visually-hidden">, {{ d.where }}</span></td>{% else %}<td></td>{% endif %}{% endfor %}</tr>

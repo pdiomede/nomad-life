@@ -560,6 +560,27 @@ main:focus { outline: none; }
 }
 .fold-gear:hover { color: var(--text); background: var(--surface-2); text-decoration: none; }
 .fold-gear:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+/* Tooltips: every tooltip of the app is CSS, never the title attribute. class "tip" and
+   data-tip; tip-end aligns it to the right edge, tip-up puts it above, tip-side to the left.
+   display: none until shown (an invisible one past the edge would still widen phones). A
+   CSS mask hides its own ::after, so a masked icon carries the tooltip on a wrapper. */
+.tip { position: relative; }
+.tip[data-tip]::after {
+  content: attr(data-tip); display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 40;
+  width: max-content; max-width: min(260px, 70vw); padding: 5px 9px; border-radius: 6px;
+  background: var(--primary); color: var(--primary-text); font-size: 12px; font-weight: 600; font-style: normal;
+  line-height: 1.3; white-space: normal; text-align: left; text-transform: none; letter-spacing: normal;
+  box-shadow: var(--shadow); pointer-events: none;
+}
+@media (hover: hover) { .tip[data-tip]:hover::after { display: block; } }
+.tip[data-tip]:focus-visible::after, .tip[tabindex][data-tip]:focus::after { display: block; }
+.tip-end[data-tip]::after { left: auto; right: 0; }
+.tip-up[data-tip]::after { top: auto; bottom: calc(100% + 6px); }
+.tip-side[data-tip]::after { top: 50%; left: auto; right: calc(100% + 6px); transform: translateY(-50%); }
+.user-menu[open] > .user-menu-trigger.tip::after { display: none !important; }  /* the panel shows instead */
+.combo-tip { display: inline-flex; flex: none; }
+.combo-star-tip { margin-left: auto; }
+.counted-note { display: inline-block; cursor: help; }
 .fold-gear[data-tip]::after {
   content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 50%; z-index: 30;
   transform: translate(-50%, -2px); padding: 5px 9px; border-radius: 6px; white-space: nowrap;
@@ -670,7 +691,6 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .cal-month { width: 100%; border-collapse: separate; border-spacing: 3px; table-layout: fixed; font-size: 13px; }
 .cal-month caption { text-align: left; font-weight: 600; padding: 0 3px 4px; color: var(--link); }
 .cal-month th { font-weight: 500; font-size: 11px; color: var(--muted); padding: 0 0 2px; }
-.cal-month abbr { text-decoration: none; }
 .cal-day { position: relative; height: 28px; text-align: center; border-radius: 5px; color: var(--cal-text); font-variant-numeric: tabular-nums; cursor: default; }
 /* Today's ring in the day number's own color: readable on every one of the 15 colors. */
 .cal-today { box-shadow: inset 0 0 0 2px currentColor; font-weight: 700; }
@@ -869,7 +889,6 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .date-nav[aria-disabled="true"] { color: var(--muted); opacity: 0.4; cursor: default; background: none; }
 .date-grid { width: 100%; border-collapse: separate; border-spacing: 2px; table-layout: fixed; }
 .date-grid th { padding: 2px 0 4px; font-size: 11px; font-weight: 500; color: var(--muted); }
-.date-grid abbr { text-decoration: none; }
 .date-grid td { padding: 0; text-align: center; }
 .date-day { width: 100%; height: 36px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--text); font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; cursor: pointer; }
 .date-day:hover { background: var(--surface-2); }

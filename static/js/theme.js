@@ -443,10 +443,14 @@
         label.textContent = e.name;
         li.appendChild(f); li.appendChild(label);
         if (e === base) {  // the year's base: a home icon, and "base" for screen readers
+          // The tooltip sits on a wrapper: the icon is a CSS mask, which would hide it.
+          var homeTip = document.createElement("span");
+          homeTip.className = "combo-tip tip tip-side";
+          homeTip.setAttribute("data-tip", "Your base country");
           var home = document.createElement("span");
           home.className = "combo-home";
-          home.title = "Your base country";
-          li.appendChild(home);
+          homeTip.appendChild(home);
+          li.appendChild(homeTip);
           var baseText = document.createElement("span");
           baseText.className = "visually-hidden"; baseText.textContent = ", your base country";
           li.appendChild(baseText);
@@ -467,10 +471,13 @@
           star.className = "combo-star";
           star.setAttribute("aria-hidden", "true");
           star.setAttribute("aria-pressed", on ? "true" : "false");
-          star.title = on ? "Remove from favorites" : "Add to favorites";
+          var starTip = document.createElement("span");  // see the home icon
+          starTip.className = "combo-tip combo-star-tip tip tip-side";
+          starTip.setAttribute("data-tip", on ? "Remove from favorites" : "Add to favorites");
           star.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
           star.addEventListener("click", function (ev) { ev.stopPropagation(); toggleFavorite(e); });
-          li.appendChild(star);
+          starTip.appendChild(star);
+          li.appendChild(starTip);
           if (on) {
             var favText = document.createElement("span");
             favText.className = "visually-hidden"; favText.textContent = ", favorite";
@@ -779,7 +786,11 @@
     DAYS.forEach(function (name) {
       var th = document.createElement("th");
       th.scope = "col";
-      th.innerHTML = '<abbr title="' + name + '">' + name.slice(0, 2) + "</abbr>";
+      th.setAttribute("aria-label", name);
+      var short = document.createElement("span");
+      short.className = "tip"; short.setAttribute("data-tip", name); short.setAttribute("aria-hidden", "true");
+      short.textContent = name.slice(0, 2);
+      th.appendChild(short);
       hrow.appendChild(th);
     });
     thead.appendChild(hrow); grid.appendChild(thead);

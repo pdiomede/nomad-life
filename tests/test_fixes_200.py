@@ -208,7 +208,8 @@ class LeftoverFixTests(SyncCase):
         self.add_receipt(mid)
         self.events()
         html = self.dashboard()
-        self.assertIn('class="sync-row-icon" title="From Google Calendar" aria-label="From Google Calendar" role="img"', html)
+        self.assertIn('<span class="tip" data-tip="From Google Calendar"><span class="sync-row-icon" '
+                      'aria-label="From Google Calendar" role="img"></span></span>', html)
         self.assertIn('Not in Google Calendar<span class="visually-hidden">: the event is no longer in Google Calendar.', html)
         self.assertIn("Its event is no longer in your Google calendar.", self.client.get(f"/movements/{mid}").get_data(as_text=True))
         css = open("static/css/style.css", encoding="utf-8").read()

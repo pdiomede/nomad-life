@@ -16,7 +16,8 @@ class YearTabsTests(AppTestCase):
         html = self.client.get("/year/2026").get_data(as_text=True)
         tabs = re.findall(r'class="year-tab[^"]*" href="/year/(\d{4})"', html)
         self.assertEqual(tabs, ["2025", "2026", "2027"])
-        self.assertIn('<a class="year-tab add" href="/year/new?back=2026" title="Add a year">+ Year</a>', html)
+        self.assertIn('<a class="year-tab add tip tip-end" href="/year/new?back=2026" data-tip="Add a year" '
+                      'aria-label="Add a year">+ Year</a>', html)
 
 
 class SetUpYearPageTests(AppTestCase):
