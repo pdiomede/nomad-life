@@ -82,13 +82,13 @@
     <div class="row between wrap gap-sm">
       <div>
         <h2>Delete movement</h2>
-        <p class="muted small">This removes the movement and all its receipts.</p>
+        <p class="muted small">This removes the movement and all its receipts.{% if synced and not m.sync_missing and gcal_delete %} Its event in Google Calendar is deleted too.{% elif m.google_event_id and not m.sync_missing and gcal_delete %} You can delete its event in Google Calendar too.{% endif %}</p>
       </div>
       {% set receipts = '' if not docs else ' and its receipt' if docs|length == 1 else ' and its ' ~ docs|length ~ ' receipts' %}
-      {% if synced and not m.sync_missing %}
+      {% if synced and not m.sync_missing and not gcal_delete %}
       <p class="muted small">It comes from Google Calendar: delete the event there, or switch {{ y.year }} to MANUAL.</p>
       {% else %}
-      {{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete'}, button_class='btn btn-danger') }}
+      {{ ui.movement_delete(m, 'the movement to ' ~ (m | place) ~ receipts, {'action': 'delete'}, gcal_delete, synced, button_class='btn btn-danger') }}
       {% endif %}
     </div>
   </section>

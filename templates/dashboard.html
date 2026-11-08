@@ -127,7 +127,7 @@
                 {% if share %}<a class="btn btn-ghost btn-sm" href="{{ movement_url(m) }}" aria-label="View movement to {{ m | place }}">View</a>{% else %}
                 <a class="btn btn-ghost btn-sm" href="{{ movement_url(m) }}" aria-label="Edit movement to {{ m | place }}">Edit</a>
                 {% set receipts = '' if not m.doc_count else ' and its receipt' if m.doc_count == 1 else ' and its ' ~ m.doc_count ~ ' receipts' %}
-                {% if not (sync.auto and m.google_event_id and not m.sync_missing) %}{{ ui.delete_form(url_for('movement_edit', movement_id=m.id), 'the movement to ' ~ (m | place) ~ receipts, extra={'action': 'delete', 'page': pager.page, 'sort': movement_order.sort, 'dir': movement_order.dir}, aria_label='Delete movement to ' ~ (m | place)) }}{% endif %}{% endif %}
+                {{ ui.movement_delete(m, 'the movement to ' ~ (m | place) ~ receipts, {'action': 'delete', 'page': pager.page, 'sort': movement_order.sort, 'dir': movement_order.dir}, gcal_delete, sync.auto, aria_label='Delete movement to ' ~ (m | place)) }}{% endif %}
               </div>
             </td>
           </tr>

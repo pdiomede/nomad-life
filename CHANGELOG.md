@@ -8,10 +8,23 @@ All notable changes to this project are documented in this file.
 
 - **A city of your own on AUTO movements.** When the Google Calendar event names only a country ("Italy"), the movement's page now lets you type its city. The city stays in Nomad Life only (the movements table, the Nomad Life calendar and the map), nothing is written to Google, and every sync keeps it. When the event names a city ("Rome, Italy"), Google's city wins and the field stays locked, like the dates. If the event later moves to another country, the typed city is cleared; if it names the same city, the field locks quietly.
 
+- **Delete a movement's event in Google Calendar too.** In AUTO, a synced movement can be deleted again: its event in Google Calendar goes with it (otherwise the next sync would bring it back), and the second confirmation says so. In MANUAL, a movement that came from an event offers **Also delete its event in Google Calendar** in the second confirmation, unticked. Nomad Life asks Google for the permission to change your calendar (`calendar.events`) only the first time a delete needs it, for the Google account already connected; then press Delete again. Connecting Google Calendar still asks for reading only, and a movement you typed yourself has no event to delete.
+
 ### Changed
 
 - Turning a year to AUTO no longer erases a city you typed when the matching event names only the country: "Rome, Italy" against an event "Italy" on the same days is now linked as it is, and a change of dates keeps Rome (the review shows the city kept).
 - Saving a synced movement writes only its notes (and its city when it is yours), never the place and dates read when the page opened, so a sync meanwhile always wins.
+
+### Fixed
+
+Deleting events from MANUAL years, before release:
+
+- An event changed in Google Calendar after its year left AUTO (another place or other dates) could be deleted with a movement it no longer matched, taking another trip with it. The event is now read first and deleted only while it is still the movement's stay; otherwise nothing is deleted and the message says why. The same check covers AUTO between two syncs.
+- After allowing the permission, the message said only to press Delete again: in MANUAL the box must be ticked again, and it now says so.
+- Cancelling on Google's permission page showed "Google Calendar was not connected." on Settings: it now goes back to the movement (or the dashboard page) and says nothing was deleted.
+- Google failing after its permission page (an error, or no token) also sent you to Settings with a connection message: same fix.
+- The second confirmation in MANUAL did not warn that an event reaching into another year is deleted there too (AUTO did): it now does.
+- An event already deleted in Google Calendar was reported as "deleted, and its event in Google Calendar": the message now says it was already gone.
 
 ## [2.1.0] - 2026-11-08
 

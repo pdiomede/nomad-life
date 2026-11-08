@@ -99,7 +99,7 @@
   // (and, for a year, to type it). Only then the form gets confirm_delete=2, which the server
   // requires before deleting anything.
   var dialog = document.getElementById("confirm-dialog");
-  var confirmAndSubmit = function (form, typed) {
+  var confirmAndSubmit = function (form, typed, option) {
     var setHidden = function (name, value) {
       var field = form.querySelector('input[name="' + name + '"]');
       if (!field) {
@@ -109,6 +109,8 @@
       field.value = value;
     };
     setHidden("confirm_delete", "2");
+    // A choice step 2 offered ("Also delete its event in Google Calendar"): "1" when ticked.
+    if (form.getAttribute("data-confirm-option")) setHidden(form.getAttribute("data-confirm-option-name"), option ? "1" : "");
     // The typed value goes to confirm_year (years) or the field the form names (accounts).
     if (form.getAttribute("data-confirm-type")) setHidden(form.getAttribute("data-confirm-field") || "confirm_year", typed);
     form.querySelectorAll("[type=submit]").forEach(function (b) { b.disabled = true; });
@@ -154,7 +156,8 @@
           typed = (window.prompt("Type " + need + " to confirm.") || "").trim();
           if (typed.toLowerCase() !== need.toLowerCase()) return;
         }
-        confirmAndSubmit(form, typed);
+        var label = form.getAttribute("data-confirm-option");
+        confirmAndSubmit(form, typed, label ? window.confirm(label + "?") : false);
       });
     });
   }
@@ -168,6 +171,9 @@
     var dCancel = document.getElementById("confirm-cancel");
     var dNext = document.getElementById("confirm-next");
     var dLive = document.getElementById("confirm-live");
+    var dOptionField = document.getElementById("confirm-option-field");
+    var dOption = document.getElementById("confirm-option");
+    var dOptionLabel = document.getElementById("confirm-option-label");
     var pending = null, opener = null, step = 1, armed = false, armTimer = null;
 
     var typedOk = function () {
@@ -190,6 +196,7 @@
         dText.textContent = verb ? "You will be asked once more." : "You will be asked once more before anything is deleted.";
         dNext.textContent = verb || "Delete";
         dTypeField.hidden = true;
+        if (dOptionField) dOptionField.hidden = true;
         dNext.disabled = false;
         if (dLive) dLive.textContent = "";
         dCancel.focus();
@@ -199,6 +206,13 @@
         dNext.textContent = verb ? "Yes, " + verb.toLowerCase() : "Yes, delete permanently";
         dTypeField.hidden = !need;
         dTypeValue.textContent = need || "";
+        // A choice offered with the delete, always unticked at first.
+        var option = pending.getAttribute("data-confirm-option");
+        if (dOptionField) {
+          dOptionField.hidden = !option;
+          dOption.checked = false;
+          dOptionLabel.textContent = option || "";
+        }
         dTypeInput.value = "";
         // A year gets the number pad; an email address the normal keyboard.
         dTypeInput.setAttribute("inputmode", /^\d+$/.test(need || "") ? "numeric" : "email");
@@ -232,8 +246,9 @@
       if (!armed || !typedOk()) return;
       var form = pending;
       var typed = dTypeInput.value.trim();
+      var option = !!(dOption && !dOptionField.hidden && dOption.checked);
       dialog.close("confirmed");
-      confirmAndSubmit(form, typed);
+      confirmAndSubmit(form, typed, option);
     });
     dialog.addEventListener("close", function () {
       clearTimeout(armTimer);

@@ -177,9 +177,10 @@ class UiFixTests(SyncCase):
         row = self.rows()[0]
         self.assertEqual((row["city"], row["country"], row["notes"]), ("Rome", "Italy", "Flat"))
 
-    def test_14_no_row_delete_for_a_synced_movement(self):
+    def test_14_a_synced_row_delete_says_the_event_goes(self):
+        # Since 2.1.1 a synced movement can be deleted: its event in Google Calendar goes too.
         html = self.dashboard()
-        self.assertNotIn('data-confirm-delete="the movement to', html)
+        self.assertIn("and its event in your Google calendar", html)
 
     def test_15_the_review_after_auto_goes_back_to_the_dashboard(self):
         resp = self.client.get("/year/2026/sync")

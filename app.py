@@ -2928,6 +2928,9 @@ GOOGLE_SCOPE = "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
 # The chosen calendar's events, read only, for the Google tab of the dashboard calendar. Not
 # needed to connect: without it the tab asks to connect again.
 GOOGLE_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly"
+# Deleting a movement's event in Google Calendar (2.1.1): asked only the first time a delete
+# needs it, never at connect (google_consent with want "write").
+GOOGLE_WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/{}/events"
 GOOGLE_EVENTS_PAGES = 10  # of 1000 events each (a page of 2500 could pass google_api's 1 MB)
 GOOGLE_EVENTS_PAGE_SIZE = 1000
@@ -3087,6 +3090,94 @@ def grant_in_use(account):
 def calendar_events_ok(link):
     """The connection may read the chosen calendar's events (granted since 1.12.13)."""
     return GOOGLE_EVENTS_SCOPE in (link.get("scopes") or "").split()
+
+
+def calendar_write_ok(link):
+    """The connection may change the calendar's events: delete a movement's event (2.1.1)."""
+    return GOOGLE_WRITE_SCOPE in (link.get("scopes") or "").split()
+
+
+def google_delete_calendar(year_row, link):
+    """The calendar ({id, name}) a year's movements were synced with, when Nomad Life can
+    delete their events there: the connection works and the calendar is still one the
+    account may edit (event ids belong to their calendar). Else None."""
+    calendar = year_row["sync_calendar"]
+    if not link or link["broken"] or not calendar:
+        return None
+    return next(({"id": c["id"], "name": c["name"]} for c in link["calendars"]
+                 if c["id"] == calendar), None)
+
+
+def google_delete_target(m, year_row, link):
+    """The calendar id holding a movement's event, when Nomad Life can delete that event:
+    the movement came from an event that is still there (not sync_missing), and see
+    google_delete_calendar. Else None."""
+    if not m["google_event_id"] or m["sync_missing"]:
+        return None
+    found = google_delete_calendar(year_row, link)
+    return found["id"] if found else None
+
+
+def google_delete_event(link, calendar_id, m, year):
+    """Delete a movement's event in Google Calendar, only while that event still is the
+    movement's stay: read first, since it may have been changed in Google after its year
+    left AUTO (or since the last sync), and deleting another trip is not what was asked.
+    "ok" (deleted), "gone" (no longer in Google Calendar), "changed" (now another place or
+    other dates: kept), "scope" (Google refused: the edit permission was taken back),
+    "broken" (the access was removed) or "error" (Google did not answer)."""
+    token = google_access_token(link["refresh_token"])
+    if not token:
+        return "broken" if g.get("google_error") == "invalid_grant" else "error"
+    event_id = m["google_event_id"]
+    url = f"{GOOGLE_EVENTS_URL.format(quote(calendar_id, safe=''))}/{quote(event_id, safe='')}"
+
+    def refused():
+        status = g.get("google_status")
+        if status in (404, 410):
+            return "gone"  # deleted in Google Calendar meanwhile
+        return "scope" if status in (401, 403) else "error"
+
+    item = google_api("GET", f"{url}?{urlencode({'fields': 'id,summary,status,start,end'})}",
+                      token=token)
+    if item is None:
+        return refused()
+    if item.get("status") == "cancelled":
+        return "gone"
+    start, end = _event_day(item.get("start")), _event_day(item.get("end"), end=True)
+    title = clean_name(item["summary"]) if isinstance(item.get("summary"), str) else ""
+    now = sync_events(year, [{"gid": event_id, "title": title,
+                              "start_date": start.isoformat() if start else "",
+                              "end_date": max(end, start).isoformat() if start and end else ""}]) \
+        if start and end else []
+    if not now or not _place_fits(m, now[0]) or m["start_date"] != now[0]["start_date"] \
+            or m["end_date"] != now[0]["end_date"]:
+        return "changed"
+    if google_api("DELETE", url, token=token) is not None:
+        return "ok"
+    return refused()
+
+
+def google_consent(scope, back=None, want=None, login_hint=None, prompt="consent select_account",
+                   tick=False):
+    """Send the person to Google's consent page (OAuth with PKCE). The state, the verifier,
+    who asked, where to come back and what for (want: "write" asks only to delete events,
+    for the connected Google account; tick: the delete came from MANUAL's box, which must be
+    ticked again) are kept in the session until Google sends them back."""
+    state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
+    session["gcal"] = {"state": state, "verifier": verifier, "uid": current_user.id,
+                       "fp": current_user.fingerprint, "t": int(time.time()), "back": back,
+                       "want": want, "tick": bool(tick)}
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    params = {"client_id": current_app.config["GOOGLE_CLIENT_ID"],
+              "redirect_uri": google_redirect_uri(), "response_type": "code",
+              "scope": scope, "access_type": "offline",
+              # consent every time, so Google always hands over a refresh token
+              "prompt": prompt, "include_granted_scopes": "true", "state": state,
+              "code_challenge": challenge, "code_challenge_method": "S256"}
+    if login_hint:
+        params["login_hint"] = login_hint
+    return redirect(f"{GOOGLE_AUTH_URL}?{urlencode(params)}", 303)
 
 
 def google_calendar_web_url(link, year):
@@ -3320,6 +3411,13 @@ def remember_events(key, events):
 
 
 _events_failures = {}  # cache key: when Google last failed to answer for it
+
+
+def forget_events(user_id):
+    """Drop this process's cached reads of an account's calendars (an event just deleted)."""
+    with _events_cache_lock:
+        for k in [k for k in _events_cache if k[0] == user_id]:
+            del _events_cache[k]
 
 
 def note_failure(key):
@@ -6060,6 +6158,7 @@ def register_routes(app):
                                movements_open=session.pop("movements_open", False)
                                or any(k in request.args for k in ("page", "per_page", "sort")),
                                cal_link=link if cal_tabs else None, google_view=google_view,
+                               gcal_delete=None if share else google_delete_calendar(year_row, link),
                                cal_web=google_calendar_web_url(link, year) if cal_tabs else None,
                                overlaps=overlaps, overlap_total=overlap_total,
                                overlap_text=overlap_text,
@@ -6442,13 +6541,17 @@ def register_routes(app):
         year_row = get_year_or_404(m["year"])
         # AUTO: a synced movement's place and dates are Google's (notes and receipts stay
         # yours); it is deleted in Google Calendar, unless Google no longer has it.
-        synced = bool(m["google_event_id"]) and year_auto(year_row, calendar_link(current_user.id))
+        link = calendar_link(current_user.id)
+        synced = bool(m["google_event_id"]) and year_auto(year_row, link)
         # Its city is yours when the event names only a country ("Italy"): typed here, it
         # stays in Nomad Life (2.1.1). "Rome, Italy" gives the city, locked like the dates.
         city_open = synced and not m["city_from_event"]
         if request.method == "POST":
             action = request.form.get("action")
-            if action == "delete" and synced and not m["sync_missing"]:
+            # Deleting a movement linked to a Google event can delete the event too (2.1.1):
+            # always in AUTO (else the sync brings the movement back), when ticked in MANUAL.
+            google_target = google_delete_target(m, year_row, link)
+            if action == "delete" and synced and not m["sync_missing"] and not google_target:
                 flash("This movement comes from Google Calendar: delete the event there, or "
                       "switch the year to MANUAL.", "error")
                 return redirect(url_for("movement_edit", movement_id=movement_id))
@@ -6470,7 +6573,8 @@ def register_routes(app):
                     return render_template("movement.html", y=year_row, m=m, form=form,
                                            docs=documents_for(year_row["id"], movement_id),
                                            back_url=back_to_movement(year_row, movement_id),
-                                           synced=synced, city_open=city_open)
+                                           synced=synced, city_open=city_open,
+                                           gcal_delete=google_delete_calendar(year_row, link))
                 else:
                     city_lost = False
                     if synced:
@@ -6522,19 +6626,80 @@ def register_routes(app):
                 per_page = page_size()
                 page = to_int(request.form.get("page"), 0) or movement_page(
                     year_row["id"], movement_id, per_page, movement_sort())
+                # Where the dashboard row (it sends its page) or the movement page come back to
+                # when the event stays: nothing is deleted then.
+                here = (dashboard_url(m["year"], page, per_page, anchor=False)
+                        if request.form.get("page") else
+                        url_for("movement_edit", movement_id=movement_id))
+                want_google = (synced and not m["sync_missing"]) or \
+                    request.form.get("google") == "1"
+                event_deleted, event_left, event_gone = False, False, False
+                if want_google and not google_target:
+                    event_left = True  # no longer linked, or no calendar to delete it in
+                elif want_google and not calendar_write_ok(link):
+                    # Asked once, for the Google account already connected: Google's page,
+                    # then back here to press Delete again (in MANUAL, ticking the box again).
+                    return google_consent(GOOGLE_WRITE_SCOPE, back=here, want="write",
+                                          login_hint=link["account"] or None, prompt="consent",
+                                          tick=not synced)
+                elif want_google:
+                    result = google_delete_event(link, google_target, m, m["year"])
+                    if result == "broken":
+                        lose_calendar(current_user.id, link["refresh_token"])
+                        flash("Google Calendar no longer lets Nomad Life in, so nothing was "
+                              "deleted. Connect it again in Settings.", "error")
+                        return redirect(here)
+                    if result == "scope":
+                        # The permission was taken back in the Google account: ask again.
+                        kept = " ".join(x for x in (link["scopes"] or "").split()
+                                        if x != GOOGLE_WRITE_SCOPE)
+                        db.execute_rowcount("UPDATE calendar_links SET scopes = ? WHERE "
+                                            "user_id = ? AND refresh_token = ?",
+                                            (kept, current_user.id, link["refresh_token"]))
+                        flash("Google Calendar no longer lets Nomad Life delete events, so "
+                              "nothing was deleted. Press Delete again to allow it.", "error")
+                        return redirect(here)
+                    if result == "changed":
+                        flash("Its event in Google Calendar is now another place or other dates, "
+                              "so nothing was deleted. " + ("Open the year again to sync it, then "
+                              "delete it." if synced else "Delete the movement without its event, "
+                              "or change the event in Google Calendar."), "error")
+                        return redirect(here)
+                    if result not in ("ok", "gone"):
+                        flash("Google Calendar did not answer, so nothing was deleted. Try "
+                              "again in a moment.", "error")
+                        return redirect(here)
+                    event_deleted, event_gone = result == "ok", result == "gone"
                 with db.transaction() as conn:  # see the year delete
                     docs = conn.execute("SELECT * FROM documents WHERE movement_id = ?",
                                         (movement_id,)).fetchall()
                     conn.execute("DELETE FROM movements WHERE id = ?", (movement_id,))
+                    if event_deleted or event_gone:
+                        # A read of Google from before (each process keeps one a minute) still
+                        # holds the event: AUTO skips reads older than this, so it never comes
+                        # back.
+                        conn.execute("UPDATE years SET synced_read_at = MAX(synced_read_at, ?) "
+                                     "WHERE id = ?", (time.time(), year_row["id"]))
                 remove_files(docs)
-                flash("Movement deleted.", "info")
+                if event_deleted or event_gone:
+                    forget_events(current_user.id)
+                if event_deleted:
+                    flash("Movement deleted, and its event in Google Calendar.", "info")
+                elif event_gone:
+                    flash("Movement deleted. Its event was already gone from Google Calendar.",
+                          "info")
+                elif event_left:
+                    flash("Movement deleted. Its event in Google Calendar could not be deleted: "
+                          "it is no longer linked to a calendar Nomad Life can change.", "info")
+                else:
+                    flash("Movement deleted.", "info")
                 session["movements_open"] = True  # back on the dashboard, the table stays open
                 return redirect(dashboard_url(m["year"], page, per_page, anchor=False))
             return redirect(url_for("movement_edit", movement_id=movement_id))
         return render_template("movement.html", y=year_row, m=m, form=m,
                                docs=documents_for(year_row["id"], movement_id),
                                back_url=back_to_movement(year_row, movement_id), synced=synced,
-                               city_open=city_open)
+                               city_open=city_open, gcal_delete=google_delete_calendar(year_row, link))
 
     # --- account ---
 
@@ -7107,23 +7272,64 @@ def register_routes(app):
         if not google_calendar_on():
             flash("Calendar Integration is not set up on this server.", "error")
             return redirect(url_for("settings"))
-        state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
         # Where to come back to: the dashboard's Google tab when its Allow events was pressed
-        # (only a dashboard path of this site), else Settings.
+        # (only a dashboard path of this site), else Settings. The account chooser, so someone
+        # signed in to Google can pick another account.
         back = safe_next(request.form.get("back", ""))
-        session["gcal"] = {"state": state, "verifier": verifier, "uid": current_user.id,
-                           "fp": current_user.fingerprint, "t": int(time.time()),
-                           "back": back if back and back.startswith("/year/") else None}
-        challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
-        params = {"client_id": current_app.config["GOOGLE_CLIENT_ID"],
-                  "redirect_uri": google_redirect_uri(), "response_type": "code",
-                  "scope": f"{GOOGLE_SCOPE} {GOOGLE_EVENTS_SCOPE}", "access_type": "offline",
-                  # consent every time, so Google always hands over a refresh token, and the
-                  # account chooser, so someone signed in to Google can pick another account
-                  "prompt": "consent select_account", "include_granted_scopes": "true", "state": state,
-                  "code_challenge": challenge, "code_challenge_method": "S256"}
-        return redirect(f"{GOOGLE_AUTH_URL}?{urlencode(params)}", 303)
+        return google_consent(f"{GOOGLE_SCOPE} {GOOGLE_EVENTS_SCOPE}",
+                              back=back if back and back.startswith("/year/") else None)
+
+    def write_back(pending):
+        """Where the permission to delete events comes back to: the movement page or the
+        dashboard page its Delete was pressed on (paths of this site only), else Settings."""
+        back = pending.get("back") if isinstance(pending.get("back"), str) else ""
+        if back and safe_next(back) and back.startswith(("/movements/", "/year/")):
+            return back
+        return url_for("settings")
+
+    def calendar_write_granted(pending, tokens, access, refresh):
+        """The callback of the permission to delete events, asked by a movement's Delete: only
+        the connection's token and permissions change (calendars, the choice and AUTO years
+        stay), and only for the Google account already connected. Nothing is deleted here:
+        the person presses Delete again (a redirect from Google never deletes)."""
+        back = write_back(pending)
+        granted = str(tokens.get("scope", "")).split()
+        if GOOGLE_WRITE_SCOPE not in granted:
+            flash("Google did not allow Nomad Life to change your calendar, so nothing was "
+                  "deleted.", "error")
+            return redirect(back)
+        calendars = google_calendars(access)
+        if calendars is None:
+            flash("Google did not answer, so nothing was deleted. Try again in a moment.", "error")
+            return redirect(back)
+        account = google_account(calendars)
+        with db.transaction() as conn:
+            user = conn.execute("SELECT email FROM users WHERE id = ?",
+                                (current_user.id,)).fetchone()
+            updated = 0
+            if user and account:
+                updated = conn.execute(
+                    "UPDATE calendar_links SET refresh_token = ?, scopes = ?, broken = 0, "
+                    "updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND account = ?",
+                    (refresh, " ".join(granted), current_user.id, account)).rowcount
+                if updated:
+                    audit("calendar_connected", current_user.id, user["email"], account,
+                          conn=conn)
+        if not user:
+            return account_gone()
+        if not updated:
+            # Another Google account was picked (or the connection went meanwhile): its new
+            # access is of no use, unless another connection uses that Google account.
+            revoke_after_answer(refresh, account)
+            link = calendar_link(current_user.id)
+            flash(f"Choose {link['account']} on Google's page to let Nomad Life delete its "
+                  "events. Nothing was deleted." if link and link["account"] else CALENDAR_GONE,
+                  "error")
+            return redirect(back)
+        flash("Google Calendar now lets Nomad Life delete events. Press Delete again" +
+              (" and tick \u201cAlso delete its event in Google Calendar\u201d" if pending.get("tick")
+               else "") + " to delete the movement and its event.", "success")
+        return redirect(back)
 
     @app.route("/settings/calendar/google/callback")
     @login_required
@@ -7143,11 +7349,21 @@ def register_routes(app):
             flash("This Google connection expired or was not started here. Press Connect Google "
                   "Calendar again.", "error")
             return redirect(url_for("settings"))
+        writing = pending.get("want") == "write"
+        if writing and request.args.get("error") == "access_denied":
+            # Cancelled on Google's page, asked by a movement's Delete: back to it.
+            flash("Google was not allowed to change your calendar, so nothing was deleted.",
+                  "info")
+            return redirect(write_back(pending))
         if request.args.get("error") == "access_denied":
             flash("Google Calendar was not connected.", "info")
             return redirect(url_for("settings"))
         code = request.args.get("code", "")
         if request.args.get("error") or not code:
+            if writing:
+                flash("Google did not answer, so nothing was deleted. Try again in a moment.",
+                      "error")
+                return redirect(write_back(pending))
             flash("Google did not connect the calendar. Try again in a moment.", "error")
             return redirect(url_for("settings"))
         cfg = current_app.config
@@ -7159,9 +7375,15 @@ def register_routes(app):
         refresh = tokens.get("refresh_token") if tokens else None
         if not isinstance(access, str) or not access or not isinstance(refresh, str) \
                 or not refresh:
+            if writing:
+                flash("Google did not answer, so nothing was deleted. Try again in a moment.",
+                      "error")
+                return redirect(write_back(pending))
             flash("Google did not answer, so your calendar was not connected. Try again in a "
                   "moment.", "error")
             return redirect(url_for("settings"))
+        if writing:
+            return calendar_write_granted(pending, tokens, access, refresh)
         # A failed connection stores nothing and revokes nothing: the new token belongs to the
         # same grant as a working connection to this Google account (here or another account).
         if GOOGLE_SCOPE not in str(tokens.get("scope", "")).split():

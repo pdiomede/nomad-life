@@ -196,9 +196,9 @@ class AutoSyncTests(SyncCase):
         html = self.client.get(f"/movements/{self.mid}").get_data(as_text=True)
         self.assertIn("This movement comes from your Google calendar", html)
         self.assertIn('placeholder="Indonesia" required disabled>', html)
-        resp = self.client.post(f"/movements/{self.mid}", data={"action": "delete", "confirm_delete": "2"},
-                                follow_redirects=True)
-        self.assertIn("delete the event there", resp.get_data(as_text=True))
+        # Since 2.1.1 Delete deletes the event too: the first time, Google asks for the permission.
+        resp = self.client.post(f"/movements/{self.mid}", data={"action": "delete", "confirm_delete": "2"})
+        self.assertTrue(resp.headers["Location"].startswith(appmod.GOOGLE_AUTH_URL))
         self.assertEqual(len(self.rows()), 1)
 
     def test_a_broken_connection_reads_manual_and_touches_nothing(self):

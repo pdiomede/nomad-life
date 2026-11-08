@@ -5,13 +5,31 @@
 {# Delete forms are intercepted by the two step confirmation dialog (static/js/theme.js). #}
 {# verb and final: for what is not deleted for good (Remove a delegate, Stop viewing): the
    dialog's word ("Remove the delegate x?", "Yes, remove") and its second step's sentence. #}
-{% macro delete_form(action, what, label="Delete", extra={}, type_to_confirm=None, button_class="btn btn-danger-ghost btn-sm", aria_label=None, type_field=None, verb=None, final=None) %}
-<form method="post" action="{{ action }}" data-confirm-delete="{{ what }}"{% if type_to_confirm %} data-confirm-type="{{ type_to_confirm }}"{% endif %}{% if type_field %} data-confirm-field="{{ type_field }}"{% endif %}{% if verb %} data-confirm-verb="{{ verb }}"{% endif %}{% if final %} data-confirm-final="{{ final }}"{% endif %}>
+{% macro delete_form(action, what, label="Delete", extra={}, type_to_confirm=None, button_class="btn btn-danger-ghost btn-sm", aria_label=None, type_field=None, verb=None, final=None, option=None, option_name="google") %}
+<form method="post" action="{{ action }}" data-confirm-delete="{{ what }}"{% if type_to_confirm %} data-confirm-type="{{ type_to_confirm }}"{% endif %}{% if type_field %} data-confirm-field="{{ type_field }}"{% endif %}{% if verb %} data-confirm-verb="{{ verb }}"{% endif %}{% if final %} data-confirm-final="{{ final }}"{% endif %}{% if option %} data-confirm-option="{{ option }}" data-confirm-option-name="{{ option_name }}"{% endif %}>
   {{ csrf() }}
   {% for k, v in extra.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
   <input type="hidden" name="confirm_delete" value="">
   <button class="{{ button_class }}" type="submit"{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}>{{ label }}</button>
 </form>
+{% endmacro %}
+
+{# A movement's Delete (2.1.1). Linked to a Google event that Nomad Life can delete (gcal: the
+   year's calendar, google_delete_calendar): in AUTO the event always goes too, so step 2 says
+   so; in MANUAL step 2 offers it, unticked. AUTO without that calendar: no Delete (the sync
+   would bring it back). #}
+{% macro movement_delete(m, what, extra, gcal, auto, button_class="btn btn-danger-ghost btn-sm", aria_label=None) %}
+{%- set linked = m.google_event_id and not m.sync_missing -%}
+{%- set action = url_for('movement_edit', movement_id=m.id) -%}
+{%- if auto and linked and gcal -%}
+{%- set other_year = m.start_date[5:] == '01-01' or m.end_date[5:] == '12-31' -%}
+{{ delete_form(action, what, extra=extra, button_class=button_class, aria_label=aria_label, final='This permanently deletes ' ~ what ~ ' here, and its event in your Google calendar “' ~ gcal.name ~ '”. It cannot be undone.' ~ (' The event may also cover days of another year: they are deleted in Google Calendar too.' if other_year else '')) }}
+{%- elif linked and gcal -%}
+{%- set other_year = m.start_date[5:] == '01-01' or m.end_date[5:] == '12-31' -%}
+{{ delete_form(action, what, extra=extra, button_class=button_class, aria_label=aria_label, final='This permanently deletes ' ~ what ~ '. It cannot be undone. Tick the box to delete its event in your Google calendar “' ~ gcal.name ~ '” too.' ~ (' The event may also cover days of another year: they would be deleted in Google Calendar too.' if other_year else ''), option='Also delete its event in Google Calendar') }}
+{%- elif not (auto and linked) -%}
+{{ delete_form(action, what, extra=extra, button_class=button_class, aria_label=aria_label) }}
+{%- endif -%}
 {% endmacro %}
 
 {% macro size_attrs() %}data-max-bytes="{{ max_receipt_bytes }}" data-max-label="{{ max_receipt_label }}" data-left-bytes="{{ storage.left }}" data-left-label="{{ storage.left | filesize('down') }}"{% endmacro %}
