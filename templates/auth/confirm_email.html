@@ -6,6 +6,13 @@
 <form method="post" class="stack" data-submit-once>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <p class="muted small">From then on you sign in with {{ new }}. We tell {{ old }} about the change, with a link to undo it.</p>
+  {% if ask_password %}
+  <div class="field">
+    <label for="confirm-password">Current password of the account</label>
+    <input id="confirm-password" name="current_password" type="password" autocomplete="current-password" required>
+    <span class="hint">The password of the Nomad Life account that asked for this change (the one now using {{ old }}).</span>
+  </div>
+  {% endif %}
   <button class="btn btn-primary btn-block" type="submit">Confirm my new email</button>
 </form>
 {% endblock %}

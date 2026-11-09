@@ -1,12 +1,17 @@
-"""Back up Nomad Life: the database and its secret key, and the receipts on request.
+"""Back up Nomad Life: the database, and the receipts or the secret key on request.
 
     .venv/bin/python scripts/backup.py --dest /home/paolo/backup/nomadlife --keep 14
     .venv/bin/python scripts/backup.py --dest /home/paolo/backup/nomadlife --with-receipts
 
-Writes <dest>/nomadlife-YYYY-MM-DD_HHMMSS.tar.gz (mode 600) holding nomad.db and .secret_key
-(when the app created one), then deletes all but the newest --keep archives of this kind; other
-files in <dest> are left alone. The paths come from config.env, read the same way as the app
-reads them.
+Writes <dest>/nomadlife-YYYY-MM-DD_HHMMSS.tar.gz (mode 600) holding nomad.db, then deletes all
+but the newest --keep archives of this kind; other files in <dest> are left alone. The paths
+come from config.env, read the same way as the app reads them.
+
+The secret key (data/.secret_key, which signs the session cookies and every emailed link) is
+NOT in the archive unless --with-secret-key is given: with the key and a copy of the users table
+anyone can forge a session for any account, so the two must not travel together to an off-site
+copy. Keep the key somewhere else, once (a password manager). Restoring without it only makes
+the app create a new one: everyone signs in again and links emailed earlier stop working.
 
 Receipts are left out unless --with-receipts is given. A receipt never changes once saved (the
 app writes a temporary file and renames it), so the nightly off-site copy should take
@@ -22,8 +27,8 @@ temporary file left by a run that was killed (no finally block runs then) is rem
 run once it is hours old.
 
 To restore: stop the app, delete nomad.db-wal and nomad.db-shm if they are there (they belong
-to the database being replaced), put nomad.db and .secret_key back in the database folder and
-the receipts in UPLOAD_DIR (owned by the app's user, mode 700), start the app. Never copy
+to the database being replaced), put nomad.db (and .secret_key, if you kept it) back in the
+database folder and the receipts in UPLOAD_DIR (owned by the app's user, mode 700), start the app. Never copy
 nomad.db by hand while the app runs: recent changes may still be in nomad.db-wal.
 """
 import argparse
@@ -134,13 +139,16 @@ def prune(dest, keep):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Back up the Nomad Life database and secret key.")
+    parser = argparse.ArgumentParser(description="Back up the Nomad Life database.")
     parser.add_argument("--dest", required=True, help="folder that holds the backups")
     parser.add_argument("--keep", type=int, default=8, help="how many backups to keep (default 8)")
     parser.add_argument("--config", default=os.path.join(ROOT, "config.env"),
                         help="the app's config.env (default: the one next to app.py)")
     parser.add_argument("--with-receipts", action="store_true",
                         help="also put every receipt in the archive (a one-off complete copy)")
+    parser.add_argument("--with-secret-key", action="store_true",
+                        help="also put data/.secret_key in the archive (not with the users table "
+                             "to an off-site copy: together they allow forged sessions)")
     args = parser.parse_args(argv)
     if args.keep < 1:
         parser.error("--keep must be at least 1")
@@ -174,7 +182,7 @@ def main(argv=None):
             copy_database(db_path, db_copy)
             with tarfile.open(partial, "w:gz") as tar:
                 tar.add(db_copy, arcname="nomad.db")
-                if os.path.isfile(secret_key):
+                if args.with_secret_key and os.path.isfile(secret_key):
                     tar.add(secret_key, arcname=".secret_key")
                 receipts = None
                 if args.with_receipts:

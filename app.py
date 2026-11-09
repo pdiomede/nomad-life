@@ -55,7 +55,7 @@ from countries_geo import COUNTRY_POINTS
 import mailer
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "2.1.2"
+APP_VERSION = "2.1.3"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -266,7 +266,17 @@ LIMITS = {("fail", "email"): 5, ("fail", "device"): 5, ("fail", "ip"): 20,
           ("ticket", "email"): 5, ("ticket_msg", "email"): 30,
           # Delegate invitation emails (Invite and Send again) per account, and per invited
           # address whoever sends them (Remove and Invite again cannot flood a stranger).
-          ("delegate", "email"): 10, ("delegate_to", "email"): 3}
+          ("delegate", "email"): 10, ("delegate_to", "email"): 3,
+          # hCaptcha answers checked per network: each check is a blocking call to hCaptcha
+          # before any other limit, so one address posting made up answers must not be able to
+          # tie up workers or get this server rate limited there (which refuses everyone).
+          ("captcha", "ip"): 30,
+          # "You already have an account" mails per address: sign up is open to anyone.
+          ("exists", "email"): 2,
+          # Checkout and portal sessions asked from Stripe, per account.
+          ("billing", "email"): 10,
+          # Accountant packages built per account (each reads and re-compresses every receipt).
+          ("package", "email"): 6}
 DEVICE_COOKIE = "nomadlife_device"
 DEVICE_MAX_AGE = 365 * 24 * 3600
 # Sign up and sign in hash passwords with scrypt (about 32 MB of memory each), so only a few
@@ -278,6 +288,17 @@ PLACE_MAX = 100
 # First and last name on the Settings page, each.
 NAME_MAX = 60
 MOVEMENTS_MAX = 1000
+# Receipts per year and per account. The storage quota counts bytes of ZIP, and a tiny file
+# still takes a disk block and an inode, so tens of thousands of them could fill the disk, and
+# every page listing them would render a row for each.
+RECEIPTS_YEAR_MAX = 1000
+RECEIPTS_ACCOUNT_MAX = 5000
+# The quota counts the ZIP, but the accountant package unpacks, hashes and packs every receipt
+# again and is sent whole: a 25 MB file of zeros is a 25 KB ZIP. Real receipts (PDFs, photos)
+# compress a few times at most, so a file of RECEIPT_RATIO_FROM bytes or more that compresses
+# more than RECEIPT_MAX_RATIO times is refused.
+RECEIPT_RATIO_FROM = 1024 * 1024
+RECEIPT_MAX_RATIO = 25
 # Delegates (Settings): people an account lets view it, read only, invitations included.
 DELEGATES_MAX = 5
 # How often a delegate's visits update "last viewed" on the owner's Settings page.
@@ -766,30 +787,33 @@ def create_app(overrides=None):
             return None
         if row["disabled"]:  # disabling an account ends its open sessions too
             return None
-        if sid:
-            # Signed out (here or with "Sign out everywhere else") or unused for too long.
-            seen = db.query("SELECT last_seen_at < datetime('now', '-1 hour') AS stale "
-                            "FROM user_sessions WHERE id = ? AND user_id = ? AND "
-                            "last_seen_at >= datetime('now', ?)",
-                            (sid, row["id"], f"-{SESSION_IDLE_DAYS} days"), one=True)
-            if not seen:
-                return None
-            # At most once an hour, and never a reason to fail the page: an UPDATE takes the
-            # database write lock even when it changes nothing, so a page view would otherwise
-            # wait for (and fail behind) any other request that is writing.
-            # A stamp skipped because the database was busy waits a minute before the next try,
-            # so the following pages do not each wait for the lock again.
-            if seen["stale"] and time.monotonic() - stamp_skipped.get(sid, -60.0) >= 60:
-                if db.try_execute("UPDATE user_sessions SET last_seen_at = CURRENT_TIMESTAMP "
-                                  "WHERE id = ?", (sid,)) is None:
-                    if len(stamp_skipped) > 10000:
-                        stamp_skipped.clear()
-                    stamp_skipped[sid] = time.monotonic()
-                else:
-                    stamp_skipped.pop(sid, None)
-        # Sessions from before 1.2.10 carry no sid; they end with the password or a
-        # "Sign out everywhere else", as they always did.
-        return User(row, sid or None)
+        if not sid:
+            # Every sign in since 1.2.10 carries the id of its user_sessions row. A cookie
+            # without one is refused: it would never be checked against that table, so sign
+            # out and "Sign out everywhere else" could not end it, and anyone who held the
+            # signing key and a copy of the users table could forge one for any account.
+            return None
+        # Signed out (here or with "Sign out everywhere else") or unused for too long.
+        seen = db.query("SELECT last_seen_at < datetime('now', '-1 hour') AS stale "
+                        "FROM user_sessions WHERE id = ? AND user_id = ? AND "
+                        "last_seen_at >= datetime('now', ?)",
+                        (sid, row["id"], f"-{SESSION_IDLE_DAYS} days"), one=True)
+        if not seen:
+            return None
+        # At most once an hour, and never a reason to fail the page: an UPDATE takes the
+        # database write lock even when it changes nothing, so a page view would otherwise
+        # wait for (and fail behind) any other request that is writing.
+        # A stamp skipped because the database was busy waits a minute before the next try,
+        # so the following pages do not each wait for the lock again.
+        if seen["stale"] and time.monotonic() - stamp_skipped.get(sid, -60.0) >= 60:
+            if db.try_execute("UPDATE user_sessions SET last_seen_at = CURRENT_TIMESTAMP "
+                              "WHERE id = ?", (sid,)) is None:
+                if len(stamp_skipped) > 10000:
+                    stamp_skipped.clear()
+                stamp_skipped[sid] = time.monotonic()
+            else:
+                stamp_skipped.pop(sid, None)
+        return User(row, sid)
 
     # Unconfirmed accounts are removed once their time is up. The auth pages purge on every
     # request, so a late link or sign in never sees them; this hook cleans up in between.
@@ -901,6 +925,11 @@ def create_app(overrides=None):
 
     @app.errorhandler(413)
     def too_large(_e):
+        if cross_site_request():
+            # Another site posted a body this big: answer without touching the session, as
+            # csrf_error does (a message would send a new session cookie that replaces this
+            # one, so any site could sign people out), and never to its Referer.
+            return redirect(url_for("index"))
         # Also raised for oversized text fields, so do not claim a file was sent.
         flash(f"This form was too large to save. Receipts can be at most "
               f"{format_size(receipt_limit(), 'down')} each.", "error")
@@ -1352,8 +1381,24 @@ def client_ip():
     return request.remote_addr or "unknown"
 
 
+def ip_limit_key(ip):
+    """The address the per network limits count under: an IPv6 address stands for its /64
+    network, which is what one subscriber or server is handed (rotating the rest of the
+    address would otherwise give an attacker billions of "networks"); an IPv4 address mapped
+    into IPv6 counts as the IPv4 address. Anything else is kept as it is."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6:
+        if addr.ipv4_mapped:
+            return str(addr.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return str(addr)
+
+
 def limit_keys(kind, email=None, device=None):
-    keys = [("ip", f"ip:{client_ip()}")]
+    keys = [("ip", f"ip:{ip_limit_key(client_ip())}")]
     if device:
         # The account is part of the key, so a password reset can lift every device's lock.
         keys.append(("device", f"device:{email}:{device}"))
@@ -1739,6 +1784,11 @@ def captcha_passed():
     token = request.form.get("h-captcha-response", "").strip()
     if not token or len(token) > 8192:
         return False
+    wait, _scope, _ids = take_attempt("captcha")
+    if wait:  # refused here, without asking hCaptcha
+        current_app.logger.warning("Too many captcha answers from %s: refused for %s more "
+                                   "minutes", client_ip(), wait)
+        return False
     return hcaptcha_verify(token) is not False
 
 
@@ -1872,7 +1922,7 @@ def notify_admins(ticket, event, user_email):
         if not send_template_email(admin, f"Support ticket #{ref} needs an answer",
                                    "ticket_admin", ticket_ref=ref, event=event,
                                    user_email=user_email, link=link):
-            current_app.logger.error("Could not email %s about ticket %s", admin, ref)
+            current_app.logger.error("Could not email %s about ticket %s", mailer.mail_domain(admin), ref)
 
 
 def notify_user(ticket, event):
@@ -1886,7 +1936,8 @@ def notify_user(ticket, event):
     if not send_template_email(owner["email"], subject, "ticket_user", ticket_ref=ref,
                                event=event, link=email_link("support_ticket",
                                                             **ticket_args(ticket))):
-        current_app.logger.error("Could not email %s about ticket %s", owner["email"], ref)
+        current_app.logger.error("Could not email %s about ticket %s", mailer.mail_domain(owner["email"]),
+                                 ref)
 
 
 CHAT_GROUP_SECONDS = 600  # messages of one side closer than this share a bubble group
@@ -2030,7 +2081,8 @@ def audit(event, user_id=None, email="", detail="", actor="", conn=None, ip=None
     try:
         db.execute(sql, args)
     except Exception as exc:  # noqa: BLE001 - the history must never break sign in
-        current_app.logger.error("Could not record %s for %s: %s", event, email, exc)
+        current_app.logger.error("Could not record %s for %s: %s", event, mailer.mail_domain(email),
+                                 exc)
 
 
 AUDIT_CSV_HEADER = ["Time (UTC)", "Event", "Event key", "Email", "Actor", "Detail", "IP",
@@ -2090,7 +2142,7 @@ def security_alert(email, what, account=None, link=None, advice=None, button=Non
                              # account could otherwise write "ignore this alert" into it.
                              first_name="")
     if not ok:
-        current_app.logger.error("Could not send the security alert to %s", email)
+        current_app.logger.error("Could not send the security alert to %s", mailer.mail_domain(email))
     return ok
 
 
@@ -2754,6 +2806,9 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
     left = max(quota - storage_used(current_user.id), 0)
     if left == 0:  # the exact check, with the size on disk, comes after compressing
         return quota_message(name, size, left, quota)
+    full = receipts_full(db.get_db(), year_id)  # asked again under the write lock below
+    if full:
+        return full
     file.stream.seek(0)
     data = file.stream.read()
     shrunk = shrink_photo(data, ext)
@@ -2767,6 +2822,10 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
     path = os.path.join(user_dir, stored)
     try:
         size = write_receipt_zip(path, zip_member_name(name, ext), data)
+        if len(data) >= RECEIPT_RATIO_FROM and len(data) > RECEIPT_MAX_RATIO * size:
+            os.remove(path)
+            return (f"{name} is mostly empty space, not a receipt: it shrinks more than "
+                    f"{RECEIPT_MAX_RATIO} times. Please upload the original file.")
     except OSError as exc:
         current_app.logger.error("Could not store upload %s: %s", path, exc)
         if os.path.exists(path):
@@ -2780,6 +2839,9 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
                                 (current_user.id,)).fetchone()[0]
             if used + size > quota:
                 raise QuotaExceeded(max(quota - used, 0))
+            full = receipts_full(conn, year_id)
+            if full:
+                raise ReceiptsFull(full)
             conn.execute(
                 "INSERT INTO documents (user_id, year_id, movement_id, kind, original_name, "
                 "stored_name, mime, size, format, file_size) "
@@ -2789,6 +2851,9 @@ def save_upload(file, kind, year_id, movement_id=None, required=True):
     except QuotaExceeded as exc:
         os.remove(path)
         return quota_message(name, size, exc.left, quota)
+    except ReceiptsFull as exc:
+        os.remove(path)
+        return str(exc)
     except db.IntegrityError:
         os.remove(path)  # the stay or year was deleted while the file was uploading
         return UPLOAD_GONE
@@ -2945,6 +3010,26 @@ class QuotaExceeded(Exception):
     def __init__(self, left):
         super().__init__(left)
         self.left = left
+
+
+class ReceiptsFull(Exception):
+    """Too many receipts in the year or the account; the message says which."""
+
+
+def receipts_full(conn, year_id):
+    """The message to show when the year or the account holds as many receipts as allowed
+    (RECEIPTS_YEAR_MAX, RECEIPTS_ACCOUNT_MAX), else None."""
+    in_year = conn.execute("SELECT COUNT(*) FROM documents WHERE year_id = ?",
+                           (year_id,)).fetchone()[0]
+    if in_year >= RECEIPTS_YEAR_MAX:
+        return (f"This year already holds {plural(RECEIPTS_YEAR_MAX, 'receipt')}, the most one "
+                "year can hold. Delete receipts you no longer need to upload new ones.")
+    in_account = conn.execute("SELECT COUNT(*) FROM documents WHERE user_id = ?",
+                              (current_user.id,)).fetchone()[0]
+    if in_account >= RECEIPTS_ACCOUNT_MAX:
+        return (f"Your account already holds {plural(RECEIPTS_ACCOUNT_MAX, 'receipt')}, the "
+                "most an account can hold. Delete receipts you no longer need to upload new ones.")
+    return None
 
 
 # ---------- Google Calendar (Settings, Calendar Integration) ----------
@@ -3250,6 +3335,16 @@ def _event_day(value, end=False):
     return day
 
 
+def _invite_answer(item):
+    """The owner's answer to an invitation, when it is not an acceptance: "declined" or
+    "needsAction", else "" (their own event, a calendar without guests, accepted, maybe)."""
+    for guest in item.get("attendees") or ():
+        if isinstance(guest, dict) and guest.get("self") is True:
+            answer = guest.get("responseStatus")
+            return answer if answer in ("declined", "needsAction") else ""
+    return ""
+
+
 def google_events(access_token, calendar_id, year):
     """The chosen calendar's events of the year: ({"stays": [{id, title, start_date, end_date}],
     "truncated": bool}), the dates real (google_year_calendar clips them to the year), or None
@@ -3262,7 +3357,11 @@ def google_events(access_token, calendar_id, year):
               "maxResults": GOOGLE_EVENTS_PAGE_SIZE,
               "timeMin": f"{first - timedelta(days=1)}T00:00:00Z",
               "timeMax": f"{last + timedelta(days=2)}T00:00:00Z",
-              "fields": "items(id,summary,status,start,end),nextPageToken"}
+              # attendees: only the answer of this calendar's owner ("self"); maxAttendees 1
+              # returns just that entry for an event with a long guest list.
+              "maxAttendees": 1,
+              "fields": "items(id,summary,status,start,end,attendees(self,responseStatus)),"
+                        "nextPageToken"}
     stays, seen, truncated = [], set(), False
     for n in range(GOOGLE_EVENTS_PAGES):
         answer = google_api("GET", f"{url}?{urlencode(params)}", token=access_token)
@@ -3287,7 +3386,10 @@ def google_events(access_token, calendar_id, year):
                           # AUTO sync links a movement to it.
                           # (never cut: two long ids would become one)
                           "gid": gid if isinstance(gid, str) and len(gid) <= GOOGLE_NAME_MAX
-                          else ""})
+                          else "",
+                          # "declined" or "needsAction": an invitation the owner turned down
+                          # or never answered (the sync leaves these out, see sync_events).
+                          "invite": _invite_answer(item)})
         page = answer.get("nextPageToken")
         if not isinstance(page, str) or not page or page in seen:
             break
@@ -3657,6 +3759,11 @@ def sync_events(year, stays):
     first, last = date(year, 1, 1), date(year, 12, 31)
     found, seen = [], set()
     for s in stays:
+        if s.get("invite"):
+            # Anyone who knows the address can send an invitation, and Google adds it to the
+            # calendar: a stay the owner declined or never answered must not become a
+            # movement that takes days from a real one.
+            continue
         place = event_place(s["title"])
         if not place or not s.get("gid") or s["gid"] in seen:
             continue  # an id read twice (pages shifting while Google is read): the first
@@ -3669,6 +3776,10 @@ def sync_events(year, stays):
                       "start_date": start.isoformat(), "end_date": end.isoformat()})
     found.sort(key=lambda e: (e["start_date"], e["end_date"], e["gid"]))
     return found
+
+
+# Most comparisons the review makes between typed movements and events that only share days.
+SYNC_MATCH_PAIRS = 300_000
 
 
 def _place_fits(m, e):
@@ -3743,36 +3854,85 @@ def sync_changes(movements, receipts, events, reviewing=False, complete=True):
     if reviewing:
         free = [e for e in events if e["gid"] not in used]
 
-        def same_country(m, e):
-            return fold(normalize_country(m["country"])) == fold(e["country"])
-
         def same_days(m, e):
             return m["start_date"] == e["start_date"] and m["end_date"] == e["end_date"]
-
-        def shared(m, e):
-            """Days the movement and the event have in common (0: none)."""
-            start = max(parse_date(m["start_date"]), parse_date(e["start_date"]))
-            end = min(parse_date(m["end_date"]), parse_date(e["end_date"]))
-            return max((end - start).days + 1, 0)
 
         # Typed movements are matched to the free events, the closest match first: the same
         # place and days, the same country and days, the same place on shared days, the same
         # country on shared days (then the event sharing the most days), so a shifted travel
-        # day never swaps two stays.
-        passes = [lambda m, e: _place_fits(m, e) and same_days(m, e),
-                  lambda m, e: same_country(m, e) and same_days(m, e),
-                  lambda m, e: _place_fits(m, e) and shared(m, e),
-                  lambda m, e: same_country(m, e) and shared(m, e)]
+        # day never swaps two stays. The keys are worked out once (fold() is slow), the passes
+        # on the same days look their events up, and the passes on shared days stop after
+        # SYNC_MATCH_PAIRS comparisons: a year with a thousand stays against ten thousand
+        # events held the database write lock for a minute (a real year is nowhere near).
+        def day(value):
+            d = parse_date(value)
+            return d.toordinal() if d else 0
+
+        def mkey(m):  # country, city, first day, last day
+            return (fold(normalize_country(m["country"])), fold(m["city"] or ""),
+                    day(m["start_date"]), day(m["end_date"]))
+
+        def ekey(e):  # city None: the event names a country alone
+            return (fold(e["country"]), fold(e["city"]) if e["city"] else None,
+                    day(e["start_date"]), day(e["end_date"]))
+
+        def fits(mk, ek):  # _place_fits on keys
+            return mk[0] == ek[0] and (ek[1] is None or mk[1] == ek[1])
+
+        def shared(mk, ek):
+            """Days the movement and the event have in common (0: none)."""
+            return max(min(mk[3], ek[3]) - max(mk[2], ek[2]) + 1, 0)
+
+        free_keys = {e["gid"]: ekey(e) for e in free}
+        by_country, by_days = {}, {}  # events in their order, by country / by country and days
+        for pos, e in enumerate(free):
+            k = free_keys[e["gid"]]
+            by_country.setdefault(k[0], []).append(e)
+            by_days.setdefault((k[0], k[2], k[3]), []).append((pos, e))
+        typed_keys = {m["id"]: mkey(m) for m in typed}
         matched = {}
-        for test in passes:
+
+        def take(m, e):
+            used.add(e["gid"])
+            matched[m["id"]] = e
+
+        def first_unused(options, accept=lambda ek: True):
+            return next(((pos, e) for pos, e in options if e["gid"] not in used
+                         and accept(free_keys[e["gid"]])), None)
+
+        for same_place in (True, False):  # the same days: the place, then the country
             for m in typed:
                 if m["id"] in matched:
                     continue
-                options = [e for e in free if e["gid"] not in used and test(m, e)]
-                if options:
-                    e = max(options, key=lambda e: shared(m, e))
-                    used.add(e["gid"])
-                    matched[m["id"]] = e
+                mk = typed_keys[m["id"]]
+                days = (mk[0], mk[2], mk[3])
+                # All of them share the same days, so the first in the events' order wins.
+                found = first_unused(by_days.get(days, ()),
+                                     (lambda ek: fits(mk, ek)) if same_place else
+                                     (lambda ek: True))
+                if found:
+                    take(m, found[1])
+        budget = SYNC_MATCH_PAIRS
+        for same_place in (True, False):  # shared days: the place, then the country
+            for m in typed:
+                if m["id"] in matched:
+                    continue
+                mk = typed_keys[m["id"]]
+                best, best_days = None, 0
+                for e in by_country.get(mk[0], ()):
+                    if budget <= 0:
+                        break
+                    budget -= 1
+                    if e["gid"] in used:
+                        continue
+                    ek = free_keys[e["gid"]]
+                    if same_place and not fits(mk, ek):
+                        continue
+                    n = shared(mk, ek)
+                    if n > best_days:  # the first of the most shared days, as max() gave
+                        best, best_days = e, n
+                if best:
+                    take(m, best)
         for m in typed:
             e = matched.get(m["id"])
             if e is None:
@@ -4020,6 +4180,29 @@ def flash_manual_years(years):
         flash(f"{names} {'is' if len(years) == 1 else 'are'} back to MANUAL, with all "
               f"{'its' if len(years) == 1 else 'their'} movements kept. Turn AUTO on again next "
               "to the year to review the changes.", "info")
+
+
+def end_google_link(user_id, email):
+    """Disconnect Google Calendar, and put the AUTO years back to MANUAL, when the account is
+    secured (a password reset or change, "Sign out everywhere else"). Connecting Google needs
+    only a signed in session, so a session someone else held may have connected their Google
+    account: its link would otherwise outlive the password reset that ended the session, and
+    AUTO would go on writing their calendar's events into the owner's stays. The owner
+    connects again in a click if the connection was theirs."""
+    with db.transaction() as conn:
+        gone = conn.execute("SELECT account, refresh_token FROM calendar_links WHERE "
+                            "user_id = ?", (user_id,)).fetchone()
+        manual = []
+        if gone:
+            conn.execute("DELETE FROM calendar_links WHERE user_id = ?", (user_id,))
+            audit("calendar_disconnected", user_id, email, gone["account"], conn=conn)
+            manual = end_auto_years(conn, user_id)
+    if not gone:
+        return
+    revoke_after_answer(gone["refresh_token"], gone["account"])
+    flash_manual_years(manual)
+    flash("Google Calendar was disconnected too, as a precaution: connect it again in Settings "
+          "if the connection was yours.", "info")
 
 
 def auto_sync(year_row, fresh=False):
@@ -4802,18 +4985,36 @@ def stripe_api(method, path, data=None, idempotency_key=None):
     return None
 
 
+def billing_limited():
+    """True, with the reason flashed, when this account asked Stripe for too many checkouts
+    or portals lately: each one is a call (or three) to Stripe, whose quota is shared by every
+    customer, and a thread of ours waiting for the answer."""
+    wait, scope, _ids = take_attempt("billing", current_user.email)
+    if wait:
+        flash(too_many_message(wait, scope, "billing requests"), "error")
+    return bool(wait)
+
+
 def stripe_signature_ok(payload, header, secret, now=None):
-    """Stripe's webhook signature: t=<time>,v1=<HMAC SHA-256 of "t.payload">, recent."""
+    """Stripe's webhook signature: t=<time>,v1=<HMAC SHA-256 of "t.payload">, recent. Any
+    header at all gives True or False, never an error: this route is open to anyone, and an
+    exception here would be a 500 with a traceback in the log for every bad request."""
     fields = [part.split("=", 1) for part in (header or "").split(",") if "=" in part]
     times = [v for k, v in fields if k == "t"]
-    signatures = [v for k, v in fields if k == "v1"]
-    if len(times) != 1 or not times[0].isdigit() or not signatures or not secret:
+    # ASCII only: "\u00b2".isdigit() is True but int() refuses it, and hmac.compare_digest
+    # refuses a str with other than ASCII characters.
+    signatures = [v for k, v in fields if k == "v1" and v.isascii()]
+    if (len(times) != 1 or not times[0].isascii() or not times[0].isdigit()
+            or not signatures or not secret):
         return False
-    if abs((now or time.time()) - int(times[0])) > STRIPE_TOLERANCE_SECONDS:
+    try:
+        if abs((now or time.time()) - int(times[0])) > STRIPE_TOLERANCE_SECONDS:
+            return False
+        expected = hmac.new(secret.encode(), times[0].encode() + b"." + payload,
+                            hashlib.sha256).hexdigest()
+        return any(hmac.compare_digest(expected, s) for s in signatures)
+    except (ValueError, TypeError, OverflowError):
         return False
-    expected = hmac.new(secret.encode(), times[0].encode() + b"." + payload,
-                        hashlib.sha256).hexdigest()
-    return any(hmac.compare_digest(expected, s) for s in signatures)
 
 
 def new_stripe_customer(row, retry=False):
@@ -5221,11 +5422,12 @@ def register_routes(app):
                                 "signup_ip) VALUES (?, ?, CURRENT_TIMESTAMP, ?)",
                                 (email, pw_hash, client_ip())).lastrowid
                 if old and (old["verified_at"] is not None or old["disabled"]):
-                    if not old["disabled"] and email_allowed(old["id"]):
-                        old_id = old["id"]
+                    # Its own limit, not the account's email cooldown (email_allowed): anyone
+                    # can sign up with this address, and spending the cooldown every minute
+                    # would make the owner's "Forgot password" silently send nothing.
+                    if not old["disabled"] and not take_attempt("exists", email)[0]:
                         send_template_email(email, "You already have a Nomad Life account",
                                             "account_exists", background=True,
-                                            on_failure=lambda: release_email_wait(old_id),
                                             email=email, link=email_link("login"),
                                             forgot_link=email_link("forgot"))
                     flash(sent, "info")
@@ -5649,6 +5851,7 @@ def register_routes(app):
                     audit("password_reset", row["id"], row["email"])
                     security_alert(row["email"], "The password of your Nomad Life account was "
                                    "reset with a link sent to this address.")
+                    end_google_link(row["id"], row["email"])
                 flash("Your password has been updated. Please sign in.", "success")
                 return redirect(url_for("login"))
         return render_template("auth/reset.html", token=token)
@@ -5751,7 +5954,8 @@ def register_routes(app):
             plans=plan_catalog(), threshold=RESIDENCE_THRESHOLD,
             verify_minutes=VERIFY_MINUTES, notes_max=NOTES_MAX, place_max=PLACE_MAX,
             favorites_max=FAVORITES_MAX,
-            movements_max=MOVEMENTS_MAX, per_page_options=PER_PAGE_OPTIONS,
+            movements_max=MOVEMENTS_MAX, receipts_year_max=RECEIPTS_YEAR_MAX,
+            receipts_account_max=RECEIPTS_ACCOUNT_MAX, per_page_options=PER_PAGE_OPTIONS,
             fail_limit=LIMITS[("fail", "email")], limit_minutes=LIMIT_WINDOW_MINUTES,
             code_limit=LIMITS[("code", "email")],
             passkeys_max=PASSKEYS_MAX, refund_days=REFUND_DAYS, delegates_max=DELEGATES_MAX,
@@ -5866,6 +6070,8 @@ def register_routes(app):
             flash("You already have a plan with us. Switch or renew it with Manage billing.",
                   "info")
             return redirect(url_for("plan"))
+        if billing_limited():
+            return redirect(url_for("plan"))
         customer, customer_renewed = row["stripe_customer_id"], False
         if customer:
             # Asked of Stripe, not only of the subscriptions table: a payment whose webhook is
@@ -5963,6 +6169,8 @@ def register_routes(app):
                        one=True)
         if not billing_on() or not row or not row["stripe_customer_id"]:
             flash("There is no billing account to manage yet.", "info")
+            return redirect(url_for("plan"))
+        if billing_limited():
             return redirect(url_for("plan"))
         portal = stripe_api("POST", "billing_portal/sessions", {
             "customer": row["stripe_customer_id"], "return_url": site_base() + url_for("plan")})
@@ -6797,6 +7005,19 @@ def register_routes(app):
         if address == row["email"]:
             flash("That is your own email address: invite someone else.", "error")
             return
+        # Refusals that send nothing are answered before the invitation limits count anything:
+        # retyping an address that is already a delegate must not use up the 3 invitations that
+        # address can get (it would lock it out for every owner). Both are checked again
+        # under the write lock below.
+        if db.query("SELECT 1 FROM delegates WHERE owner_id = ? AND email = ?",
+                    (row["id"], address), one=True):
+            flash(f"{address} is already one of your delegates.", "info")
+            return
+        if db.query("SELECT COUNT(*) AS n FROM delegates WHERE owner_id = ?", (row["id"],),
+                    one=True)["n"] >= DELEGATES_MAX:
+            flash(f"You have {DELEGATES_MAX} delegates, the most an account can have. Remove "
+                  "one to invite someone else.", "error")
+            return
         if not invitation_allowed(row, address):
             return
         try:
@@ -6849,8 +7070,16 @@ def register_routes(app):
     def delegate_resend(row):
         """Settings > Delegates > Send again, for an invitation still waiting."""
         did = form_id("delegate_id")
-        waiting = db.query("SELECT email FROM delegates WHERE id = ? AND owner_id = ? AND "
-                           "delegate_id IS NULL", (did, row["id"]), one=True)
+        waiting = db.query("SELECT email, invited_at > datetime('now', ?) AS cooling FROM "
+                           "delegates WHERE id = ? AND owner_id = ? AND delegate_id IS NULL",
+                           (f"-{EMAIL_COOLDOWN_SECONDS} seconds", did, row["id"]), one=True)
+        if waiting and waiting["cooling"]:
+            # Said before the invitation limits count anything: no email goes out now, so the
+            # press must not use up the few invitations an address can get (the claim below
+            # still decides when two presses arrive together).
+            flash("The invitation was sent less than a minute ago. Please wait a moment "
+                  "before sending it again.", "info")
+            return
         if waiting and not invitation_allowed(row, waiting["email"]):
             return
         if not db.execute_rowcount(
@@ -6867,10 +7096,13 @@ def register_routes(app):
                 flash("The invitation was sent less than a minute ago. Please wait a moment "
                       "before sending it again.", "info")
             return
-        d = db.query("SELECT * FROM delegates WHERE id = ?", (did,), one=True)
-        if d and send_delegate_invite(row["email"], d["email"]):
+        d = db.query("SELECT * FROM delegates WHERE id = ? AND owner_id = ?", (did, row["id"]),
+                     one=True)
+        if not d:  # withdrawn between the claim above and now: nothing to send
+            flash("This invitation was withdrawn in the meantime.", "info")
+        elif send_delegate_invite(row["email"], d["email"]):
             flash(f"The invitation was sent to {d['email']} again.", "success")
-        elif d:
+        else:
             db.execute("UPDATE delegates SET invited_at = datetime('now', ?) WHERE id = ?",
                        (f"-{EMAIL_COOLDOWN_SECONDS} seconds", did))
             flash("The email could not be sent. Please try again in a minute.", "error")
@@ -6912,6 +7144,7 @@ def register_routes(app):
                     return account_gone()
                 audit("sessions_revoked", row["id"], row["email"])
                 flash("Every other browser and device has been signed out.", "success")
+                end_google_link(row["id"], row["email"])
                 return redirect(url_for("settings"))
             if action == "passkey_rename":  # only a label: no password needed
                 name = clean_name(request.form.get("name", ""))
@@ -6983,6 +7216,7 @@ def register_routes(app):
                     audit("password_changed", row["id"], row["email"])
                     security_alert(row["email"], "The password of your Nomad Life account was "
                                    "changed.")
+                    end_google_link(row["id"], row["email"])
                     flash("Your password has been changed. Other devices have been signed out."
                           + (f" Your change of email to {row['pending_email']} was cancelled: ask "
                              "for it again." if row["pending_email"] else ""), "success")
@@ -7511,10 +7745,22 @@ def register_routes(app):
                 or row["email"] != data.get("old") or row["pending_email"] != new):
             flash("This link is no longer valid. Please ask for the email change again.", "error")
             return redirect(url_for("settings") if current_user.is_authenticated else url_for("login"))
+        # The link proves the new mailbox is read by whoever opens it, not that they own the
+        # account: a mistyped address (alice@gmial.com) belongs to a stranger, who could confirm
+        # it and then reset the password there. So the account's owner is asked for: the one
+        # signed in to it, or whoever knows its current password.
+        proved = current_user.is_authenticated and current_user.id == row["id"]
         if request.method == "GET":
             # Company mail scanners open every link in incoming mail: only the button confirms,
             # or a mistyped address whose mailbox is scanned would take the account.
-            return render_template("auth/confirm_email.html", old=row["email"], new=new)
+            return render_template("auth/confirm_email.html", old=row["email"], new=new,
+                                   ask_password=not proved)
+        if not proved:
+            err = check_current_password(row)
+            if err:
+                flash(err, "error")
+                return render_template("auth/confirm_email.html", old=row["email"], new=new,
+                                       ask_password=True)
         try:
             with db.transaction() as conn:
                 # Pressing the button proves this mailbox is theirs: an unconfirmed sign up with
@@ -7642,6 +7888,21 @@ def register_routes(app):
         if current_user.is_authenticated and current_user.id == row["id"]:
             sign_out()
         audit("email_reverted", row["id"], data["old"], f"{current['email']} to {data['old']}")
+        if current["email"] != data["old"]:
+            # The account moved away from the address it used until now: tell that address.
+            # Whoever reads the old mailbox can take the account back with this link (that is
+            # what it is for), and the person who moved it on purpose would otherwise find the
+            # account gone with no word. The old address gets the reset link below.
+            security_alert(
+                current["email"],
+                f"The email address change of your Nomad Life account was undone from the "
+                f"previous address, {data['old']}. The account no longer uses this address, "
+                "its password was replaced, and two-factor sign in, passkeys, delegates and "
+                "the Google Calendar link were removed.",
+                account=data["old"], link=f"mailto:{SUPPORT_EMAIL}", button="Contact support",
+                advice=("If you undid the change yourself, there is nothing to do. If you did "
+                        f"not, someone with access to {data['old']} has the account now: write "
+                        f"to {SUPPORT_EMAIL} from this address at once."))
         if gcal:
             revoke_after_answer(gcal["refresh_token"], gcal["account"])
         stripe_sync_email(row["id"])
@@ -8853,6 +9114,10 @@ def register_routes(app):
         """The package of a year whose access was checked (the owner, or a delegate of an
         owner whose plan has it): everything comes from the year's account."""
         year = year_row["year"]
+        wait, scope, _ids = take_attempt("package", current_user.email)
+        if wait:  # each package reads and packs every receipt of the year
+            flash(too_many_message(wait, scope, "package downloads"), "error")
+            return redirect(year_url(year))
         data = build_package_data(year_row, include_notes=request.args.get("notes") == "1")
         entries = package.prepare(data)
         resp = Response(package.stream(data, entries), mimetype="application/zip")

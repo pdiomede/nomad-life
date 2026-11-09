@@ -67,7 +67,7 @@ GMAIL_USER=you@gmail.com
 GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
 # Another provider instead (Hostinger): the mailbox in GMAIL_USER, its password above, and
 # SMTP_HOST=smtp.hostinger.com
-# SMTP_PORT=465
+# SMTP_PORT=587   (not 465: Hetzner and others block outgoing ports 25 and 465)
 ADMIN_EMAILS=admin@example.com
 PROXY_COUNT=1
 PWNED_CHECK=1
@@ -82,7 +82,7 @@ chmod 600 /var/www/nomad-life/config.env
 
 - `APP_BASE_URL` must be the public `https://` address: emailed links are built from it, and it turns on secure cookies.
 - `PROXY_COUNT=1` because nginx sits in front: without it every visitor would share nginx's address and the sign in limits would lock everyone out together.
-- Leave `SECRET_KEY` empty: the app creates `data/.secret_key` (mode 600) on first start. Keep that file in your backups; losing it signs everybody out.
+- Leave `SECRET_KEY` empty: the app creates `data/.secret_key` (mode 600) on first start. Keep a copy of that file in your password manager, not in the backups (since 2.1.3 `scripts/backup.py` leaves it out): with it and a copy of the database anyone can forge a session for any account. Losing it only signs everybody out and ends the links emailed earlier.
 - Set `PWNED_CHECK=0` only if the server cannot reach the internet.
 
 ## 6. gunicorn as a systemd service
@@ -400,7 +400,7 @@ chronyc tracking     # "System time" should be a few milliseconds off at most
 
 The database and the receipts are everything. Back them up every night, keep copies off the server, encrypted, and try a restore once.
 
-The database needs a proper copy; the receipts do not. `scripts/backup.py` writes one small archive per run with the database and its secret key, and keeps the newest `--keep` archives. It reads the paths from `config.env`, is safe while the app runs (SQLite's online backup) and needs nothing beyond the app's own `.venv`. Run it as `paolo`, who owns the data:
+The database needs a proper copy; the receipts do not. `scripts/backup.py` writes one small archive per run with the database (not the secret key since 2.1.3: add `--with-secret-key` for a one-off copy that holds it), and keeps the newest `--keep` archives. It reads the paths from `config.env`, is safe while the app runs (SQLite's online backup) and needs nothing beyond the app's own `.venv`. Run it as `paolo`, who owns the data:
 
 ```bash
 sudo install -d -o paolo -g paolo -m 700 /var/backups/nomad-life
@@ -451,7 +451,7 @@ Restore when the database is damaged, data was lost or changed by mistake, or on
 
    If the server's own copies are gone (a new server), get them back from the off-site copy first, for example with restic: `restic snapshots`, then `restic restore latest --target /tmp/restore --include /var/backups/nomad-life` and use the archive under `/tmp/restore`.
 
-5. Unpack it into `data/`. It holds `nomad.db` and, when the app created one, `.secret_key`; both replace the current files:
+5. Unpack it into `data/`. It holds `nomad.db` (and `.secret_key` only if the archive was made with `--with-secret-key`, or before 2.1.3); they replace the current files:
 
    ```bash
    tar -xzf /var/backups/nomad-life/nomadlife-YYYY-MM-DD_HHMMSS.tar.gz -C /var/www/nomad-life/data
@@ -476,7 +476,7 @@ Restore when the database is damaged, data was lost or changed by mistake, or on
 
 Good to know:
 
-- With the archive's `.secret_key` back, everyone who was signed in when the archive was made stays signed in. Without it (a new key is made), everyone signs in again; nothing else is lost.
+- With the secret key back (from your password manager, or an archive made with `--with-secret-key`), everyone who was signed in when the archive was made stays signed in. Without it (a new key is made), everyone signs in again and links emailed earlier stop working; nothing else is lost.
 - `config.env` is not in the archive (it holds the Gmail App Password). On a new server, set it up again from section 5, or keep a copy in your password manager.
 - Receipts uploaded after the archive stay on disk without a row pointing to them: they use space but nobody sees them. Receipts deleted after the archive are listed as missing in the accountant package.
 - The app turns the restored database back to write-ahead log mode on start (section 11); nothing to do.
@@ -562,7 +562,8 @@ The database is upgraded by the app on start (new columns are added automaticall
 - **2.0.1**: nothing to install.
 - **2.1.0** adds the `delegates` table on start; nothing to install.
 - **2.1.1** adds the `movements.city_from_event` column on start; nothing to install. Deleting a movement's event asks Google for `calendar.events`: add that scope to the OAuth consent screen (google_calendar.md).
-- **2.1.2** lets `config.env` choose the mail server (`SMTP_HOST`, `SMTP_PORT`: a mailbox that is not Gmail, such as Hostinger, `smtp.hostinger.com` and `465`; before 2.1.2 the server ignores both and always logs in to Gmail) and writes a log file, `data/nomadlife.log` (emails sent or failed with the reason). After the upgrade, check the mail settings with `.venv/bin/flask --app app test-email you@example.com`; nothing to install.
+- **2.1.3**: nothing to install. `scripts/backup.py` no longer puts `data/.secret_key` in its archives (add `--with-secret-key` for one that does): copy the key once into your password manager (`cat /var/www/nomad-life/data/.secret_key`), and take it out of any off-site copy you made earlier. Session cookies without a session id stop working, so anyone signed in before 1.2.10 (none, after 30 days) signs in again.
+- **2.1.2** lets `config.env` choose the mail server (`SMTP_HOST`, `SMTP_PORT`: a mailbox that is not Gmail, such as Hostinger, `smtp.hostinger.com` and `587`; before 2.1.2 the server ignores both and always logs in to Gmail) and writes a log file, `data/nomadlife.log` (emails sent or failed with the reason). After the upgrade, check the mail settings with `.venv/bin/flask --app app test-email you@example.com`; nothing to install.
 - **1.12.15** needs nothing beyond the usual upgrade steps.
 - **1.12.14** needs nothing beyond the usual upgrade steps.
 - **1.12.13** adds the `scopes` column to `calendar_links` on start. In Google Cloud, add the scope `calendar.events.readonly` to the consent screen (Data access, see google_calendar.md); each user who connected before presses **Allow events** once in the dashboard's Google Calendar tab.

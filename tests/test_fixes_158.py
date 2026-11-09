@@ -310,7 +310,8 @@ class StaleCancelAndLongNameTests(AppTestCase):
         self.client.post("/settings", data={"action": "email", "email": "b@example.com",
                                             "current_password": "password1"})
         self.client.get("/settings")  # the page with "Cancel this change", left open
-        self.app.test_client().post(self.last_link("b@example.com", kind="account/email"))
+        self.app.test_client().post(self.last_link("b@example.com", kind="account/email"),
+                                    data={"current_password": "password1"})
         html = self.client.post("/settings", data={"action": "cancel_email"},
                                 follow_redirects=True).get_data(as_text=True)
         # It said nothing at all, on a page that now showed another address.

@@ -127,7 +127,13 @@ class AccountFixTests(AppTestCase):
         self.assertIn("Confirm my new email</button>", html)
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT email FROM users").fetchone()[0], "a@example.com")
+        # Since 2.1.3 pressing the button also takes the account's password (here the
+        # owner, on another device): a stranger at a mistyped address has none.
+        self.assertIn('name="current_password"', html)
         scanner.post(link)
+        with self.db() as conn:
+            self.assertEqual(conn.execute("SELECT email FROM users").fetchone()[0], "a@example.com")
+        scanner.post(link, data={"current_password": "password1"})
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT email FROM users").fetchone()[0],
                              "typo@example.org")

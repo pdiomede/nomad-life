@@ -2,11 +2,42 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.3] - 2026-11-09
+
+Fifteen security fixes from an audit of 2.1.2, and three delegate fixes.
+
+### Security
+
+- **A session cookie needs the id of a live session.** Cookies without one (from before 1.2.10, long expired) were never looked up in `user_sessions`, so signing out could not end them, and anyone holding the signing key and a copy of the users table could forge one for any account, an admin included. They are refused now.
+- **The backup no longer includes the secret key.** `scripts/backup.py` leaves `data/.secret_key` out unless `--with-secret-key` is given, so the key and the users table do not travel together to an off-site copy. Keep the key in a password manager (section 3 of `setup_vps.md`); restoring without it only signs everyone in again and ends links emailed earlier.
+- **Undoing an email change alerts the address the account used until then.** Whoever reads the old mailbox can take the account back with the undo link (that is its purpose, and it removes two-factor sign in); the address the owner moved to now hears about it, with a way to write to support.
+- **The Google sync review is bounded.** Matching typed movements with calendar events compared every pair and held the database write lock for about a minute with a thousand stays and ten thousand events, so logins failed with "database is locked". The keys are worked out once, the exact day passes use an index, and the passes on shared days stop after 300,000 comparisons (a real year needs a few thousand): the worst case takes under a tenth of a second.
+- **Receipts are capped:** 1,000 a year and 5,000 an account. The quota counted bytes of ZIP only, so tens of thousands of tiny files could fill the disk and every page listing them rendered a row for each. Checked before the file is processed and again under the write lock.
+- **Confirming a new email address needs the account's owner.** The link in the new mailbox now asks for the account's current password unless it is opened in a browser signed in to that account (then nothing changes). A mistyped address (alice@gmial.com) belongs to a stranger, who could otherwise confirm it and reset the password there. Wrong passwords count as failed sign ins.
+- **hCaptcha answers are limited per network before hCaptcha is asked:** 30 in 15 minutes. A bot posting made up answers tied up a worker per request and could get the server rate limited by hCaptcha, which refuses every real visitor.
+- **Signing up with someone's address no longer blocks their Forgot password.** The "You already have an account" email spent the account's one minute email cooldown, so anyone sending a sign up a minute made the owner's reset email silently not go out. It has its own limit now (2 per address in 15 minutes).
+- **Securing the account ends a Google Calendar link made before.** Connecting Google needs only a session, so a stolen session could connect someone else's Google account, and the link, with AUTO writing its events into your stays, survived a password reset. A password reset or change, and "Sign out everywhere else", now disconnect Google Calendar and put AUTO years back to MANUAL (movements kept); connect again in Settings if the connection was yours.
+- **A form too large from another site can no longer sign a visitor out.** The "too large" answer flashed a message, which sends a new session cookie that replaces the real one, and redirected to the sender's Referer. It now answers like a failed CSRF check from another site: no cookie, back to the home page.
+- **Receipts that are mostly empty space are refused** (1 MB or more that shrinks more than 25 times: a 25 MB file of zeros is a 25 KB ZIP, and the accountant package unpacked, hashed and repacked each one, sending 1000 times what was stored). Package downloads are limited to 6 per account in 15 minutes.
+- **Checkout and portal are limited** to 10 a quarter of an hour per account: each asks Stripe (whose quota everyone shares) and holds a worker.
+- **The Stripe webhook never raises on a bad header.** A signature header with a superscript digit or a non ASCII character made an unauthenticated 500 with a traceback in the log; it is a 400 now.
+- **Logs keep addresses and links out.** A refused recipient (which SMTP errors name in full) is logged by its domain, so are the addresses in ticket, audit and alert failures, and `/reset/`, `/verify/` and `/account/email/` links in a failing request's log line read `<token>`.
+- **Per network limits count an IPv6 /64** (what one subscriber or server is handed) instead of the single address, so rotating the end of the address no longer gives a thousand "networks" for sign in, sign up, reset and captcha limits. An IPv4 address mapped into IPv6 counts as that IPv4 address.
+- **The Google sync leaves out invitations you declined or never answered.** Anyone who knew your address could send a calendar invitation named "Thailand" that Google added to your calendar and AUTO turned into a stay, taking days from a real one. The sync reads your own answer (and nothing about other guests) and skips "declined" and "needs action"; your own events, accepted and tentative ones, and calendars without guests are synced as before.
+
+### Fixed
+
+Delegates:
+
+- **Send again used up the invitation limit without sending anything.** A press inside the one minute wait was answered with the wait but still counted against the 3 invitations an address can get in 15 minutes (and the owner's 10), so after a few early presses, or after sending kept failing, the owner was blocked for 15 minutes with nothing delivered. The wait is now checked before anything is counted.
+- **Inviting an address that is already a delegate (or past the limit of 5) used up the same limits.** Retyping the address three times locked it out for every owner for 15 minutes. These refusals are now answered before anything is counted.
+- **Send again said nothing when the invitation was removed in another tab at the same moment.** It now says the invitation was withdrawn.
+
 ## [2.1.2] - 2026-11-09
 
 ### Added
 
-- **Send emails through any SMTP mailbox, not only Gmail.** `SMTP_HOST` and `SMTP_PORT` in `config.env` choose the server (default `smtp.gmail.com`, `587`); `GMAIL_USER` and `GMAIL_APP_PASSWORD` stay the mailbox address and password. Port 465 uses TLS at once, any other port STARTTLS, and the certificate is always checked. Needed when the Gmail account cannot make an App Password (Google's Advanced Protection blocks them). Hostinger: `SMTP_HOST=smtp.hostinger.com`, `SMTP_PORT=465`.
+- **Send emails through any SMTP mailbox, not only Gmail.** `SMTP_HOST` and `SMTP_PORT` in `config.env` choose the server (default `smtp.gmail.com`, `587`); `GMAIL_USER` and `GMAIL_APP_PASSWORD` stay the mailbox address and password. Port 465 uses TLS at once, any other port STARTTLS, and the certificate is always checked. Needed when the Gmail account cannot make an App Password (Google's Advanced Protection blocks them). Hostinger: `SMTP_HOST=smtp.hostinger.com`, `SMTP_PORT=587` (many hosts, Hetzner for one, block outgoing port 465).
 - **A log file for email.** Every email attempt is logged to `data/nomadlife.log` (`LOG_FILE`, rotating, owner only): the server and mailbox used, the stage that failed (connect, login or send), the server's own answer and a plain hint at the likely cause (wrong password, a blocked login, a wrong port). The recipient's domain is logged, never the address or the password. The app's other warnings and errors go to the same file. At start the log says which mail settings were loaded.
 - **`flask --app app test-email [address]`** checks the mail settings step by step (DNS, connect, login, send) and stops at the step that fails, saying why.
 

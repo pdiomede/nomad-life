@@ -60,7 +60,12 @@ class EmailLinkTests(AppTestCase):
         self.request_change("new@example.com")
         link = self.last_link("new@example.com", kind="account/email")
         other = self.signup("b@example.com", client=self.app.test_client())
+        # Since 2.1.3 someone signed in to another account must know this account's password.
         html = other.post(link, follow_redirects=True).data.decode()
+        self.assertIn("Your current password is not correct.", html)
+        self.assertEqual(self.email(), "a@example.com")
+        html = other.post(link, data={"current_password": "password1"},
+                          follow_redirects=True).data.decode()
         self.assertIn("That link was for another account", html)
         self.assertNotIn("Your email address is now", html)
 

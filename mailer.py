@@ -2,6 +2,7 @@
 import logging
 import logging.handlers
 import os
+import re
 import smtplib
 import socket
 import ssl
@@ -23,6 +24,38 @@ LOG_FILE_BYTES = 1_000_000
 LOG_FILE_KEEP = 5
 
 
+# Personal data stays out of the log: an address is cut to its domain, and the signed links
+# that grant access (reset, confirmation, email change and its undo) to "<token>". Flask logs
+# the path of a request that fails ("Exception on /reset/<token> [POST]"), and servers
+# answer with the address in some refusals ("<ada@example.com>: Recipient address rejected").
+EMAIL_RE = re.compile(r"[\w.+\-']+@([\w\-]+(?:\.[\w\-]+)+)")
+TOKEN_RE = re.compile(r"(/(?:reset|verify|account/email/undo|account/email)/)[^\s\"'?#]+")
+
+
+def redact_emails(text):
+    """text with every address replaced by @domain."""
+    return EMAIL_RE.sub(lambda m: "@" + m.group(1), text)
+
+
+def mail_domain(address):
+    """"@domain" of an address, for a log line."""
+    return "@" + address.rpartition("@")[2] if "@" in (address or "") else "(no address)"
+
+
+class RedactTokens(logging.Filter):
+    """Replaces the signed links in a log record, wherever they appear in its message."""
+
+    def filter(self, record):
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001 - a bad format string is logged as it is
+            return True
+        clean = TOKEN_RE.sub(r"\1<token>", message)
+        if clean != message:
+            record.msg, record.args = clean, ()
+        return True
+
+
 def setup_logging(app):
     """Send the app's own log (the mail lines at INFO, everything else from WARNING up) to a
     rotating file too: LOG_FILE in config.env, data/nomadlife.log next to the database by
@@ -33,6 +66,10 @@ def setup_logging(app):
             if getattr(h, "nomadlife", False):
                 logger.removeHandler(h)
                 h.close()
+        for f in list(logger.filters):
+            if isinstance(f, RedactTokens):
+                logger.removeFilter(f)
+        logger.addFilter(RedactTokens())
     log.setLevel(logging.INFO)
     log.propagate = False  # not through the app logger: no line twice
     console = logging.StreamHandler()
@@ -101,6 +138,7 @@ def smtp_failure(stage, exc):
         error = getattr(exc, "smtp_error", b"")
         error = error.decode("utf-8", "replace") if isinstance(error, bytes) else str(error)
         detail += f" (server answer {code} {error.strip()})"
+    detail = redact_emails(detail)  # a refusal names the recipient: SMTPRecipientsRefused does
     hint = ""
     if isinstance(exc, smtplib.SMTPAuthenticationError):
         hint = ("the server refused the user name or password: check GMAIL_USER and "

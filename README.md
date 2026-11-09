@@ -1,6 +1,6 @@
 # Nomad Life
 
-> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v2.1.2**.
+> See [CHANGELOG.md](CHANGELOG.md) for the release history. Current version: **v2.1.3**.
 
 Nomad Life is a small self-hosted web app that helps digital nomads keep track of where they spend each solar year, which matters when establishing a fiscal residence. It also stores the receipts that prove it.
 
@@ -42,7 +42,7 @@ All settings live in `config.env` (see `config.env.example`), which is git ignor
 | `SECRET_KEY` | Random secret for sessions and links. Generated on first run if empty. |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD` | Gmail address and [App Password](https://myaccount.google.com/apppasswords) used to send emails (or, with `SMTP_HOST`, the address and password of another mailbox). Without them, links are printed in the terminal. |
 | `LOG_FILE` | Where emails (sent, or failed and why) and the app's errors and warnings are logged. Default `data/nomadlife.log`; empty turns it off. Test the mail settings with `.venv/bin/flask --app app test-email`. |
-| `SMTP_HOST`, `SMTP_PORT` | The mail server behind those two (default `smtp.gmail.com`, `587`). Port 465 uses TLS at once, any other STARTTLS. Hostinger: `smtp.hostinger.com`, `465`. |
+| `SMTP_HOST`, `SMTP_PORT` | The mail server behind those two (default `smtp.gmail.com`, `587`). Port 465 uses TLS at once, any other STARTTLS. Hostinger: `smtp.hostinger.com`, `587` (use 587 rather than 465: many hosts, such as Hetzner, block outgoing port 465). |
 | `DATABASE_PATH` | SQLite file. Default `data/nomad.db`. |
 | `UPLOAD_DIR` | Folder for uploaded files. Default `uploads`. |
 | `MAX_RECEIPT_MB` | Max size of a receipt on the Free plan. Default `10`. (`MAX_UPLOAD_MB` still works.) |

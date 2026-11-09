@@ -54,9 +54,10 @@ class BackupTests(unittest.TestCase):
     def archives(self):
         return sorted(n for n in os.listdir(self.dest) if backup.ARCHIVE.match(n))
 
-    def test_archive_holds_database_and_key_but_not_receipts(self):
+    def test_archive_holds_the_database_only(self):
         # Since 1.2.15: every nightly archive held every receipt, so --keep 14 stored them
         # 14 times on the server's own disk. The off-site copy takes UPLOAD_DIR directly.
+        # Since 2.1.3 the secret key stays out too (see test_secret_key_only_on_request).
         code, out = self.run_backup()
         self.assertEqual(code, 0, out)
         self.assertNotIn("receipt", out)
@@ -64,7 +65,7 @@ class BackupTests(unittest.TestCase):
         path = os.path.join(self.dest, name)
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
         with tarfile.open(path) as tar:
-            self.assertEqual(sorted(tar.getnames()), [".secret_key", "nomad.db"])
+            self.assertEqual(sorted(tar.getnames()), ["nomad.db"])
             restored = os.path.join(self.tmp, "restored.db")
             with open(restored, "wb") as fh:
                 fh.write(tar.extractfile("nomad.db").read())
@@ -73,13 +74,21 @@ class BackupTests(unittest.TestCase):
                              [("ada@example.com",)])
         self.assertEqual([n for n in os.listdir(self.dest) if n.endswith(".partial")], [])
 
+    def test_secret_key_only_on_request(self):
+        # With the key and a copy of the users table anyone can forge a session for any
+        # account: the two must not travel together unless asked for.
+        code, out = self.run_backup("--with-secret-key")
+        self.assertEqual(code, 0, out)
+        with tarfile.open(os.path.join(self.dest, self.archives()[0])) as tar:
+            self.assertEqual(sorted(tar.getnames()), [".secret_key", "nomad.db"])
+
     def test_with_receipts_adds_every_receipt(self):
         code, out = self.run_backup("--with-receipts")
         self.assertEqual(code, 0, out)
         self.assertIn("1 receipt files", out)
         with tarfile.open(os.path.join(self.dest, self.archives()[0])) as tar:
             self.assertEqual(sorted(tar.getnames()),
-                             [".secret_key", "nomad.db", "uploads/1/a.zip"])
+                             ["nomad.db", "uploads/1/a.zip"])
             self.assertEqual(tar.extractfile("uploads/1/a.zip").read(), b"receipt")
 
     def test_partial_archive_of_a_killed_run_is_removed_once_stale(self):
@@ -149,7 +158,7 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         with tarfile.open(os.path.join(self.dest, self.archives()[0])) as tar:
             self.assertEqual(sorted(tar.getnames()),
-                             [".secret_key", "nomad.db", "uploads/1/a.zip"])
+                             ["nomad.db", "uploads/1/a.zip"])
 
     def test_relative_paths_start_at_the_app_folder(self):
         self.assertEqual(backup.resolve("data/nomad.db"),

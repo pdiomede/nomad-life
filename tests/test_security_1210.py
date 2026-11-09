@@ -62,7 +62,9 @@ class SessionTests(AppTestCase):
         with self.db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM user_sessions").fetchone()[0], 1)
 
-    def test_sessions_from_older_versions_still_work(self):
+    def test_cookies_without_a_session_id_are_refused(self):
+        # Until 2.1.2 these (from before 1.2.10) still loaded; they were never checked against
+        # user_sessions, so signing out could not end them (see test_security_213.py).
         self.signup()
         with self.db() as conn:
             row = conn.execute("SELECT * FROM users").fetchone()
@@ -70,7 +72,7 @@ class SessionTests(AppTestCase):
         with legacy.session_transaction() as sess:
             sess["_user_id"] = f"{row['id']}:{appmod.password_fingerprint(row['password_hash'])}"
             sess["_fresh"] = True
-        self.assertEqual(legacy.get("/settings").status_code, 200)
+        self.assertEqual(legacy.get("/settings").status_code, 302)
 
     def test_idle_sessions_are_pruned(self):
         self.signup()
