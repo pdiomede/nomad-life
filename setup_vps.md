@@ -18,7 +18,7 @@ Everything the app uses comes either with Python or as a Python package (a "whee
 | Two-factor sign in | TOTP from Python's standard library, QR codes from segno (pure Python) | pip |
 | Two-factor codes being accepted | **an accurate clock** (codes change every 30 seconds) | chrony, see section 10 |
 | Breached password check | HTTPS requests to `api.pwnedpasswords.com` | outbound port 443 open |
-| Emails (confirmations, resets, security alerts) | Gmail over SMTP with an App Password | outbound port 587 open to `smtp.gmail.com` |
+| Emails (confirmations, resets, security alerts) | SMTP: Gmail with an App Password (default), or any mailbox through `SMTP_HOST` and `SMTP_PORT` | outbound port 587 (or 465) open to the mail server |
 | HTTPS certificates | Let's Encrypt through certbot | apt |
 
 Python 3.11 or newer is required; Ubuntu 24.04 ships 3.12, which the tests also run on. HEIC photos (iPhone) are stored as uploaded: they are zipped but not resized, because Pillow cannot read HEIC without extra libraries.
@@ -65,6 +65,9 @@ DATABASE_PATH=/var/www/nomad-life/data/nomad.db
 UPLOAD_DIR=/var/www/nomad-life/uploads
 GMAIL_USER=you@gmail.com
 GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
+# Another provider instead (Hostinger): the mailbox in GMAIL_USER, its password above, and
+# SMTP_HOST=smtp.hostinger.com
+# SMTP_PORT=465
 ADMIN_EMAILS=admin@example.com
 PROXY_COUNT=1
 PWNED_CHECK=1
@@ -559,6 +562,7 @@ The database is upgraded by the app on start (new columns are added automaticall
 - **2.0.1**: nothing to install.
 - **2.1.0** adds the `delegates` table on start; nothing to install.
 - **2.1.1** adds the `movements.city_from_event` column on start; nothing to install. Deleting a movement's event asks Google for `calendar.events`: add that scope to the OAuth consent screen (google_calendar.md).
+- **2.1.2** lets `config.env` choose the mail server (`SMTP_HOST`, `SMTP_PORT`: a mailbox that is not Gmail, such as Hostinger, `smtp.hostinger.com` and `465`; before 2.1.2 the server ignores both and always logs in to Gmail) and writes a log file, `data/nomadlife.log` (emails sent or failed with the reason). After the upgrade, check the mail settings with `.venv/bin/flask --app app test-email you@example.com`; nothing to install.
 - **1.12.15** needs nothing beyond the usual upgrade steps.
 - **1.12.14** needs nothing beyond the usual upgrade steps.
 - **1.12.13** adds the `scopes` column to `calendar_links` on start. In Google Cloud, add the scope `calendar.events.readonly` to the consent screen (Data access, see google_calendar.md); each user who connected before presses **Allow events** once in the dashboard's Google Calendar tab.
@@ -594,7 +598,8 @@ The database is upgraded by the app on start (new columns are added automaticall
 
 | Task | Command |
 |---|---|
-| See the app's log | `journalctl -u nomad-life -f` |
+| See the app's log | `journalctl -u nomad-life -f` (also `data/nomadlife.log` in the app folder: emails sent or failed with the reason, errors, warnings) |
+| Test the email settings | `sudo -u <app user> .venv/bin/flask --app app test-email you@example.com` (DNS, connect, login, send, one step at a time) |
 | Watch CPU, memory and disk, with alerts | Beszel, private through an SSH tunnel: [beszel.md](beszel.md) |
 | Restart after changing config.env | `sudo systemctl restart nomad-life` |
 | Someone lost the phone with their authenticator app | `.venv/bin/flask --app app reset-2fa someone@example.com` (from `/var/www/nomad-life`; they get an email about it) |

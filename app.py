@@ -52,9 +52,10 @@ import db
 import package
 from countries import COUNTRIES, COUNTRY_CODES, COUNTRY_DATA, flag_emoji
 from countries_geo import COUNTRY_POINTS
+import mailer
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "2.1.1"
+APP_VERSION = "2.1.2"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -534,6 +535,14 @@ def proxy_count():
     return int(raw)
 
 
+def smtp_port():
+    raw = (os.getenv("SMTP_PORT") or "").strip() or "587"
+    if not raw.isdigit() or not 0 < int(raw) < 65536:
+        raise SystemExit(f"config.env: SMTP_PORT must be a port number, 465 or 587 for most "
+                         f"providers (got '{raw}').")
+    return int(raw)
+
+
 def hcaptcha_settings():
     """(site key, secret) from config.env: both empty turns the captcha off, one alone is a
     mistake that would either show a widget nobody can pass or check nothing."""
@@ -640,6 +649,9 @@ def create_app(overrides=None):
         APP_PORT=port_setting(),
         APP_BASE_URL=os.getenv("APP_BASE_URL", ""),
         GMAIL_USER=os.getenv("GMAIL_USER", ""),
+        # The SMTP server behind GMAIL_USER and GMAIL_APP_PASSWORD (Gmail unless changed).
+        SMTP_HOST=os.getenv("SMTP_HOST", "").strip() or "smtp.gmail.com",
+        SMTP_PORT=smtp_port(),
         # Accounts that may open /admin. Only config.env can grant it, never the app itself.
         ADMIN_EMAILS=admin_emails(os.getenv("ADMIN_EMAILS", "")),
         # Reverse proxies in front of the app (0 when it is reached directly). The sign in
@@ -654,6 +666,9 @@ def create_app(overrides=None):
         **google_settings(),
         GMAIL_APP_PASSWORD=os.getenv("GMAIL_APP_PASSWORD", "").replace(" ", ""),
         DATABASE_PATH=_abs(os.getenv("DATABASE_PATH", "data/nomad.db")),
+        # The log file (see mailer.setup_logging); None until the database folder is known.
+        LOG_FILE=_abs(os.getenv("LOG_FILE")) if os.getenv("LOG_FILE") else
+        ("" if os.getenv("LOG_FILE") is not None else None),
         UPLOAD_DIR=_abs(os.getenv("UPLOAD_DIR", "uploads")),
         # MAX_UPLOAD_MB is the pre 0.0.4 name of MAX_RECEIPT_MB.
         MAX_RECEIPT_BYTES=mb_setting("MAX_RECEIPT_MB", 10, legacy="MAX_UPLOAD_MB"),
@@ -684,6 +699,10 @@ def create_app(overrides=None):
     )
     if overrides:
         app.config.update(overrides)
+    if app.config["LOG_FILE"] is None:  # next to the database, also for a test's own folder
+        app.config["LOG_FILE"] = os.path.join(
+            os.path.dirname(app.config["DATABASE_PATH"]), "nomadlife.log")
+    mailer.setup_logging(app)
     # Reject oversized request bodies before reading them. The extra megabyte leaves room for
     # the other form fields; the exact per receipt limit of the user's plan is checked in
     # save_upload.
@@ -970,6 +989,18 @@ def create_app(overrides=None):
                       else "") + (f" {failed} failed." if failed else "")
                    + (f" {skipped} changed meanwhile, run the command again." if skipped
                       else ""))
+
+    @app.cli.command("test-email")
+    @click.argument("to", required=False)
+    def test_email(to):
+        """Send a test email step by step (DNS, connect, login, send), saying which step
+        fails and why. TO defaults to the mailbox that sends (GMAIL_USER)."""
+        to = (to or app.config["GMAIL_USER"] or "").strip()
+        if not to:
+            raise click.ClickException("Give an address: flask --app app test-email you@example.com")
+        if not mailer.diagnose(app.config, to, say=click.echo):
+            click.echo(f"Details are also in the log file: {app.config['LOG_FILE'] or '(off)'}")
+            raise SystemExit(1)
 
     @app.cli.command("reset-2fa")
     @click.argument("email")
@@ -8973,6 +9004,8 @@ def register_routes(app):
 
 
 app = create_app()
+mailer.log.info("Started. %s Log file: %s", mailer.describe_settings(app.config),
+                app.config["LOG_FILE"] or "(off)")
 
 if __name__ == "__main__":
     os.umask(0o077)  # the database and receipts are private to the account running the app

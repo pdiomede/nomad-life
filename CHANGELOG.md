@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.2] - 2026-11-09
+
+### Added
+
+- **Send emails through any SMTP mailbox, not only Gmail.** `SMTP_HOST` and `SMTP_PORT` in `config.env` choose the server (default `smtp.gmail.com`, `587`); `GMAIL_USER` and `GMAIL_APP_PASSWORD` stay the mailbox address and password. Port 465 uses TLS at once, any other port STARTTLS, and the certificate is always checked. Needed when the Gmail account cannot make an App Password (Google's Advanced Protection blocks them). Hostinger: `SMTP_HOST=smtp.hostinger.com`, `SMTP_PORT=465`.
+- **A log file for email.** Every email attempt is logged to `data/nomadlife.log` (`LOG_FILE`, rotating, owner only): the server and mailbox used, the stage that failed (connect, login or send), the server's own answer and a plain hint at the likely cause (wrong password, a blocked login, a wrong port). The recipient's domain is logged, never the address or the password. The app's other warnings and errors go to the same file. At start the log says which mail settings were loaded.
+- **`flask --app app test-email [address]`** checks the mail settings step by step (DNS, connect, login, send) and stops at the step that fails, saying why.
+
 ## [2.1.1] - 2026-11-08
 
 ### Added
