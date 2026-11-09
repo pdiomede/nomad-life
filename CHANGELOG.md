@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.7] - 2026-11-09
+
+### Fixed
+
+- **Turning the public calendar link on was slow:** the request waited for the security alert email to be delivered (a connection, TLS and sign in to the mail server, a few seconds). The alert is sent from a thread now, as the other emails that do not need an answer from the mail server (`security_alert(..., background=True)`); a failed send is still logged. Tests: `tests/test_fixes_217.py`.
+
 ## [2.1.6] - 2026-11-09
 
 ### Changed

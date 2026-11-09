@@ -55,7 +55,7 @@ from countries_geo import COUNTRY_POINTS
 import mailer
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "2.1.6"
+APP_VERSION = "2.1.7"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -2125,14 +2125,20 @@ def audit_rows(rows):
     return [dict(r, label=AUDIT_LABELS.get(r["event"], r["event"])) for r in rows]
 
 
-def security_alert(email, what, account=None, link=None, advice=None, button=None, ip=None):
+def security_alert(email, what, account=None, link=None, advice=None, button=None, ip=None,
+                   background=False):
     """Tell the account's mailbox that something important changed, with a way to act if it
     was not them. Sent every time (no cooldown): each change needs the password or a link.
     By default the way out is a password reset; callers may give another link and wording.
     ip="" leaves the network address out (a change someone else made, such as a delegate
-    accepting: their address is not the owner's to see)."""
+    accepting: their address is not the owner's to see). background=True sends it from a
+    thread (the answer does not wait for the mail server) and returns True."""
     if ip is None:
         ip = client_ip() if has_request_context() else ""
+
+    def failed():
+        current_app.logger.error("Could not send the security alert to %s",
+                                 mailer.mail_domain(email))
     ok = send_template_email(email, "Security alert for your Nomad Life account",
                              "security_alert", email=email, account=account or email, what=what,
                              ip=ip, when=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -2144,9 +2150,10 @@ def security_alert(email, what, account=None, link=None, advice=None, button=Non
                              button=button or "Reset my password",
                              # Never text the account holder typed: whoever took over an
                              # account could otherwise write "ignore this alert" into it.
-                             first_name="")
+                             first_name="", background=background,
+                             on_failure=failed if background else None)
     if not ok:
-        current_app.logger.error("Could not send the security alert to %s", mailer.mail_domain(email))
+        failed()
     return ok
 
 
@@ -4254,7 +4261,8 @@ def public_calendar_action(row, on):
                        "countries and how many days you spent in each.",
                        link=email_link("settings", _anchor="calendar"), button="Open Settings",
                        advice=("If this was you, there is nothing to do. If it was not you, turn "
-                               "the link off in Settings and change your password."))
+                               "the link off in Settings and change your password."),
+                       background=True)
     elif on:
         flash("The public calendar link is already on." if exists else
               "Your password or sessions were changed elsewhere in the meantime, so the link "
