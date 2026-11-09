@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.5] - 2026-11-09
+
+### Added
+
+- **Public calendar link.** Settings > Calendar has a **Generate public calendar URL** switch, off by default. On, it gives a secret link (shown in full, with a **Copy** button) to a page anyone can open without signing in: your calendar of every year, with year tabs and a light / dark switch, read only. It shows only what the dashboard calendar shows, the countries with their days and each day's country, nothing else of the account: no name, email, city, note, receipt or Google data. Turn it off and the link stops working for good; turning it on again makes a new one. Your mailbox gets a security alert when it is turned on.
+- **Copy the link from the calendar.** A link icon next to **Calendar (2027)** on the dashboard copies the public link, with a tooltip, for you and for your delegates on your shared view, while the link is on.
+- The public link is turned off by a password reset or change, "Sign out everywhere else" and undoing an email change, and goes with the account when it is deleted.
+
+### Fixed
+
+- After the switch, the page jumped to the Calendar card, below the message saying what happened.
+- A copy button whose clipboard access the browser refused said "Copy failed" without trying the older way of copying, which works there (also the landing page's Copy link).
+- The new messages after a password change or reset came before the main one ("Your password has been changed").
+- "Link copied" was not read out by screen readers on the icon button: it is now said in a live region.
+- The space kept for the calendar's icons in its head was a few pixels wider than the icons.
+
+### Security
+
+The public page and its link were audited before release; these were found and fixed:
+
+- **A session ended meanwhile could make the link again.** Turning it on now repeats the password and the sessions the request saw, so a password change or "Sign out everywhere else" that has just ended the link (and that session) wins.
+- **Turning it on was silent.** It needs no password (it only shows the calendar), so a session someone else held could have opened a lasting view unnoticed: the mailbox now gets a security alert.
+- **A removed delegate may keep the link** (delegates see its copy button): removing one while the link is on now says so, with how to end it (off, then on for a new link).
+- **robots.txt no longer lists `/c/`.** A crawler kept out never reads the page's noindex and may list a linked address, with its secret, in search results; the page says noindex in its header and its HTML.
+- **A country typed as free text is shown as "Other place"** on the public page: that field accepts anything, such as a city or a person's name. Known countries show as they are; your own dashboard keeps what you typed.
+
+Checked and sound: nothing private in the page or its headers, even for a signed in visitor (no menu, flash message, cookie or CSRF token); names escaped; a 192 bit token checked before any query, every wrong link the same 404; not cached, no Referer, not indexed, not framed; a strict script policy; no Google call.
+
 ## [2.1.4] - 2026-11-09
 
 ### Added

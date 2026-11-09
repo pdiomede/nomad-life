@@ -204,7 +204,7 @@
   {% set cal_page = cal_page if cal_page > 1 else none %}
   {% if cal_link %}
   <div class="fold-tools fold-head-grid">
-    <span class="fold-start"><span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar ({{ y.year }})</span><a class="fold-gear" href="{{ url_for('settings', _anchor='calendar') }}" data-tip="Calendar Integration" aria-label="Calendar Integration"></a></span>
+    <span class="fold-start"><span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar ({{ y.year }})</span><a class="fold-gear" href="{{ url_for('settings', _anchor='calendar') }}" data-tip="Calendar Integration" aria-label="Calendar Integration"></a>{% if public_link %}<button type="button" class="fold-gear fold-copy" data-copy-link="{{ public_link }}" data-copy-icon data-tip="Copy the public calendar link" aria-label="Copy the public calendar link"></button>{% endif %}</span>
     <nav class="cal-tabs" aria-label="Calendar to show" data-cal-tabs>
       <a class="cal-tab" href="{{ url_for('dashboard', year=y.year, page=cal_page, cal='local', _anchor='calendar') }}" data-cal-tab="local" data-tip="Nomad Life local calendar"{% if not google_view %} aria-current="page"{% endif %}>Nomad Life</a>
       <a class="cal-tab" href="{{ url_for('dashboard', year=y.year, page=cal_page, cal='google', _anchor='calendar') }}" data-cal-tab="google" data-src="{{ url_for('calendar_google', year=y.year) }}" data-tip="This is the Google calendar &quot;{{ cal_link.calendar_name }}&quot;" aria-label="Google Calendar: {{ cal_link.calendar_name }}"{% if google_view %} aria-current="page"{% endif %}>Google Calendar</a>
@@ -214,16 +214,17 @@
     <span class="muted small fold-sub fold-ghost-text" aria-hidden="true">Your {{ y.year }} day-by-day plan</span>
   </div>
   <p class="visually-hidden" aria-live="polite" data-cal-status></p>
-  {% elif not share %}
+  {% elif not share or public_link %}
   <div class="fold-tools">
     <span class="fold-ghost title-icon icon-calendar" aria-hidden="true">Calendar ({{ y.year }})</span>
-    <a class="fold-gear" href="{{ url_for('settings', _anchor='calendar') }}" data-tip="Calendar Integration" aria-label="Calendar Integration"></a>
+    {% if not share %}<a class="fold-gear" href="{{ url_for('settings', _anchor='calendar') }}" data-tip="Calendar Integration" aria-label="Calendar Integration"></a>{% endif %}
+    {% if public_link %}<button type="button" class="fold-gear fold-copy" data-copy-link="{{ public_link }}" data-copy-icon data-tip="Copy the public calendar link" aria-label="Copy the public calendar link"></button>{% endif %}
   </div>
   {% endif %}
   <details class="card fold-card cal-card" open>
     {% if cal_link %}
     <summary class="card-head fold-summary fold-head-grid">
-      <h2 id="calendar-title" class="title-icon icon-calendar">Calendar ({{ y.year }})<span class="fold-gear-space" aria-hidden="true"></span></h2>
+      <h2 id="calendar-title" class="title-icon icon-calendar">Calendar ({{ y.year }})<span class="fold-gear-space" aria-hidden="true"></span>{% if public_link %}<span class="fold-gear-space fold-copy-space" aria-hidden="true"></span>{% endif %}</h2>
       <span class="cal-tabs cal-tabs-ghost" aria-hidden="true"><span class="cal-tab">Nomad Life</span><span class="cal-tab">Google Calendar</span><span class="cal-refresh cal-icon"></span><span class="cal-open cal-icon"></span></span>
       <span class="muted small fold-sub">Your {{ y.year }} day-by-day plan</span>
     </summary>
@@ -238,6 +239,7 @@
     <summary class="card-head fold-summary">
       <h2 id="calendar-title" class="title-icon icon-calendar">Calendar ({{ y.year }})</h2>
       {% if not share %}<span class="fold-gear-space" aria-hidden="true"></span>{% endif %}
+      {% if public_link %}<span class="fold-gear-space fold-copy-space" aria-hidden="true"></span>{% endif %}
       <span class="muted small">{{ 'The' if share else 'Your' }} {{ y.year }} day-by-day plan</span>
     </summary>
     {# A delegate sees the owner's colors without the picker. #}

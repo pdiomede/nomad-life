@@ -965,25 +965,47 @@
   });
 
   // Share buttons: copy the landing page link, and use the device share sheet when available.
+  // An icon button (data-copy-icon) keeps its icon: its tooltip and accessible name say it.
   document.querySelectorAll("[data-copy-link]").forEach(function (btn) {
-    // Read the label once: a second click within 2 s would otherwise keep "Link copied".
-    var label = btn.textContent, timer = null;
+    // Read the labels once: a second click within 2 s would otherwise keep "Link copied".
+    var label = btn.textContent, timer = null, icon = btn.hasAttribute("data-copy-icon");
+    var aria = btn.getAttribute("aria-label"), tip = btn.getAttribute("data-tip");
     btn.addEventListener("click", function () {
       var url = btn.getAttribute("data-copy-link");
       var done = function (ok) {
-        btn.textContent = ok ? "Link copied" : "Copy failed";
+        var say = ok ? "Link copied" : "Copy failed";
+        // Said aloud too: a screen reader does not read out a name change of the button it is on.
+        var live = document.querySelector("[data-copy-status]");
+        if (!live) {
+          live = document.createElement("p");
+          live.className = "visually-hidden"; live.setAttribute("aria-live", "polite");
+          live.setAttribute("data-copy-status", ""); document.body.appendChild(live);
+        }
+        live.textContent = "";
+        setTimeout(function () { live.textContent = say; }, 50);
+        if (!icon) btn.textContent = say;
+        if (aria !== null) btn.setAttribute("aria-label", say);
+        if (tip !== null) btn.setAttribute("data-tip", say);
         clearTimeout(timer);
-        timer = setTimeout(function () { btn.textContent = label; }, 2000);
+        timer = setTimeout(function () {
+          if (!icon) btn.textContent = label;
+          if (aria !== null) btn.setAttribute("aria-label", aria);
+          if (tip !== null) btn.setAttribute("data-tip", tip);
+        }, 2000);
       };
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(url).then(function () { done(true); }, function () { done(false); });
-      } else {
+      var bySelection = function () {
         var field = document.createElement("textarea");
         field.value = url; field.setAttribute("readonly", ""); field.style.position = "fixed"; field.style.opacity = "0";
         document.body.appendChild(field); field.select();
         var ok = false;
         try { ok = document.execCommand("copy"); } catch (e) {}
         document.body.removeChild(field); done(ok);
+      };
+      // A refused clipboard (no permission, the page not focused) still gets the old way.
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url).then(function () { done(true); }, bySelection);
+      } else {
+        bySelection();
       }
     });
   });

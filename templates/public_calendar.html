@@ -1,0 +1,54 @@
+<!doctype html>
+{# The public calendar link (/c/<token>): only the calendar, read only, with the light and dark
+   switch. It shows what the dashboard calendar shows (countries, their days, each day's
+   country) and nothing else of the account: no name, email, city, note or receipt. It does
+   not extend base.html, so no menu, banner, flash message or form reaches it. #}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if year %}Calendar {{ year }}{% else %}Calendar{% endif %} | Nomad Life</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#2B2D3C" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1B2030" media="(prefers-color-scheme: dark)">
+  <script src="{{ url_for('static', filename='js/theme-init.js', v=asset_version) }}"></script>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/web/inter-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v=asset_version) }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32.png') }}">
+</head>
+<body class="public-calendar">
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <span class="brand">
+        <img class="brand-logo" src="{{ url_for('static', filename='img/logo-mark.png') }}" alt="" width="25" height="30">
+        <span>Nomad Life</span>
+      </span>
+      <nav class="topnav">{% include "_theme_toggle.html" %}</nav>
+    </div>
+  </header>
+  <main class="container main">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Day-by-day calendar</p>
+        <h1>{% if year %}Calendar ({{ year }}){% else %}Calendar{% endif %}</h1>
+      </div>
+      {% if years | length > 1 %}
+      <nav class="year-tabs" aria-label="Years">
+        {% for each in years %}
+          <a class="year-tab {% if each == year %}active{% endif %}" href="{{ url_for('public_calendar', token=token, year=each) }}"{% if each == year %} aria-current="page"{% endif %}>{{ each }}</a>
+        {% endfor %}
+      </nav>
+      {% endif %}
+    </div>
+    <section class="card cal-card public-cal" aria-label="{% if year %}Calendar {{ year }}{% else %}Calendar{% endif %}">
+      {% if cal %}
+      {% with cal=cal, empty_label="Not logged", picker=false, keyed=false %}{% include "_calendar_grid.html" %}{% endwith %}
+      {% else %}
+      <p class="empty">No calendar yet.</p>
+      {% endif %}
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='js/theme.js', v=asset_version) }}"></script>
+</body>
+</html>

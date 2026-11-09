@@ -297,6 +297,15 @@ CREATE INDEX IF NOT EXISTS idx_ticket_messages_author ON ticket_messages(author_
 -- invitation waits), so access stays with that account when it changes its email later.
 -- invited_at is the last invitation email (the Send again cooldown); last_viewed_at is stamped
 -- at most once an hour while the delegate views.
+-- Public calendar link (2.1.5): a row while the owner's switch is on. The token is the secret
+-- part of /c/<token>; turning the switch off deletes the row, so the link dies for good, and
+-- turning it on again makes a new token.
+CREATE TABLE IF NOT EXISTS public_calendars (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS delegates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

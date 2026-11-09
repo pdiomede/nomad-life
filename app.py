@@ -55,7 +55,7 @@ from countries_geo import COUNTRY_POINTS
 import mailer
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "2.1.4"
+APP_VERSION = "2.1.5"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -239,6 +239,8 @@ DOCS_TOC = [
 # Paths that need an account. Kept out of search engines via robots.txt.
 PRIVATE_PATHS = ["/app", "/year/", "/movements/", "/documents/", "/reset/", "/verify/", "/admin",
                  "/account", "/settings", "/plan", "/support", "/shared"]
+# Not /c/ (the public calendar links): a crawler kept out by robots.txt never reads their
+# noindex, and may list a linked address (with its secret) without its contents.
 ADMIN_USERS_PER_PAGE = 10
 # Free page that shows where an IP address is (city, country, network owner), opened from the
 # admin account page.
@@ -2035,6 +2037,8 @@ AUDIT_LABELS = {
     "delegate_declined": "Delegate invitation declined",
     "delegate_removed": "Delegate removed",
     "delegate_left": "Delegate stopped viewing",
+    "public_calendar_on": "Public calendar link turned on",
+    "public_calendar_off": "Public calendar link turned off",
     "account_deleted": "Account deleted",
     "admin_plan": "Plan changed by an admin",
     "admin_quota": "Storage quota changed by an admin",
@@ -4196,6 +4200,90 @@ def flash_manual_years(years):
               "to the year to review the changes.", "info")
 
 
+# ---------- public calendar link (2.1.5) ----------
+# A secret link (/c/<token>) to a read only page with the calendar of every year: the legend
+# (countries and days) and the months, each day's country in its tooltip. Nothing else of the
+# account is on that page: no name, email, city, note, receipt or Google data.
+
+PUBLIC_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{32}")
+
+
+def public_calendar_token(user_id):
+    row = db.query("SELECT token FROM public_calendars WHERE user_id = ?", (user_id,), one=True)
+    return row["token"] if row else None
+
+
+def public_calendar_url(user_id):
+    """The full public link of the account's calendar, or None while the switch is off."""
+    token = public_calendar_token(user_id)
+    if not token:
+        return None
+    base = (current_app.config["APP_BASE_URL"] or request.host_url).rstrip("/")
+    return base + url_for("public_calendar", token=token)
+
+
+def public_calendar_action(row, on):
+    """Settings > Calendar > Generate public calendar URL: on makes a new link (two tabs
+    pressing On at once keep one), off deletes it, so it never works again."""
+    with db.transaction() as conn:
+        if on:
+            # Only while the account is as this request read it: a password change or "Sign
+            # out everywhere else" finishing meanwhile (secure_account_links() ending the link)
+            # must not see the link made again by the session it was ending.
+            changed = conn.execute(
+                "INSERT OR IGNORE INTO public_calendars (user_id, token) SELECT ?, ? WHERE "
+                "EXISTS (SELECT 1 FROM users WHERE id = ? AND password_hash = ? AND "
+                "session_version = ? AND disabled = 0)",
+                (row["id"], secrets.token_urlsafe(24), row["id"], row["password_hash"],
+                 row["session_version"])).rowcount
+            exists = conn.execute("SELECT 1 FROM public_calendars WHERE user_id = ?",
+                                  (row["id"],)).fetchone() is not None
+        else:
+            changed = conn.execute("DELETE FROM public_calendars WHERE user_id = ?",
+                                   (row["id"],)).rowcount
+        if changed:
+            audit("public_calendar_on" if on else "public_calendar_off", row["id"], row["email"],
+                  conn=conn)
+    if on and changed:
+        flash("Your public calendar link is ready. Anyone with it sees your calendar: the "
+              "countries and their days, nothing else.", "success")
+        # It shows the calendar to anyone and needs no password: the mailbox hears about it,
+        # so a session someone else held cannot open a lasting view unnoticed.
+        security_alert(row["email"], "A public link to the calendar of your Nomad Life account "
+                       "was turned on. Anyone who has the link can see your calendar: the "
+                       "countries and how many days you spent in each.",
+                       link=email_link("settings", _anchor="calendar"), button="Open Settings",
+                       advice=("If this was you, there is nothing to do. If it was not you, turn "
+                               "the link off in Settings and change your password."))
+    elif on:
+        flash("The public calendar link is already on." if exists else
+              "Your password or sessions were changed elsewhere in the meantime, so the link "
+              "was not made. Please try again.", "info" if exists else "error")
+    else:
+        flash("The public calendar link was turned off: it no longer works." if changed else
+              "The public calendar link was already off.", "success" if changed else "info")
+
+
+def end_public_calendar(user_id, email):
+    """Turn the public link off (the account is being secured): returns True when it was on."""
+    with db.transaction() as conn:
+        gone = conn.execute("DELETE FROM public_calendars WHERE user_id = ?",
+                            (user_id,)).rowcount
+        if gone:
+            audit("public_calendar_off", user_id, email, "account secured", conn=conn)
+    return bool(gone)
+
+
+def secure_account_links(user_id, email):
+    """What a password reset or change and "Sign out everywhere else" end besides the
+    sessions: a Google Calendar link and the public calendar link, either of which a session
+    someone else held could have made."""
+    end_google_link(user_id, email)
+    if end_public_calendar(user_id, email):
+        flash("The public calendar link was turned off too, as a precaution: turn it on again "
+              "in Settings for a new link.", "info")
+
+
 def end_google_link(user_id, email):
     """Disconnect Google Calendar, and put the AUTO years back to MANUAL, when the account is
     secured (a password reset or change, "Sign out everywhere else"). Connecting Google needs
@@ -4546,21 +4634,30 @@ def calendar_palette(movements, colors):
     return palette
 
 
-def year_calendar(year_row, movements, stats, chosen=None):
+PUBLIC_OTHER_PLACE = "Other place"
+COUNTRY_SET = frozenset(COUNTRIES)
+
+
+def year_calendar(year_row, movements, stats, chosen=None, public=False):
     """The dashboard calendar: the year's 12 months (Monday first), each day with the color of
     the country it counts for, from compute_stats (day_owner), so it never disagrees with
     "Days per country". A day without a stay counts nowhere and is grey ("not logged"). The
     legend lists the base country first, then the others as the Days per country rows (most
-    days first), like the Google tab's legend."""
+    days first), like the Google tab's legend. public: the public calendar link's page, where a
+    country typed as free text that is not a known country (it can hold anything, a city or a
+    person's name) shows as PUBLIC_OTHER_PLACE."""
+    def shown(name):
+        return name if not public or name in COUNTRY_SET else PUBLIC_OTHER_PLACE
+
     y = year_row["year"]
     by_id = {m["id"]: m for m in movements}
     colors, legend = year_colors(stats, chosen or {}), []
     for r in sorted(stats["rows"], key=lambda r: not r["is_base"]):  # stable: days order kept
         key = fold(r["country"])
         if r["days"]:
-            legend.append({"country": r["country"], "days": r["days"], "is_base": r["is_base"],
+            legend.append({"country": shown(r["country"]), "days": r["days"], "is_base": r["is_base"],
                            "color": colors[key], "key": key})
-    names = {fold(r["country"]): r["country"] for r in stats["rows"]}
+    names = {fold(r["country"]): shown(r["country"]) for r in stats["rows"]}
     today, owner = user_today(), stats["day_owner"]
     months, none = [], 0
     for month in range(1, 13):
@@ -5865,8 +5962,9 @@ def register_routes(app):
                     audit("password_reset", row["id"], row["email"])
                     security_alert(row["email"], "The password of your Nomad Life account was "
                                    "reset with a link sent to this address.")
-                    end_google_link(row["id"], row["email"])
                 flash("Your password has been updated. Please sign in.", "success")
+                if row["verified_at"] is not None:  # the main message first, then what it ended
+                    secure_account_links(row["id"], row["email"])
                 return redirect(url_for("login"))
         return render_template("auth/reset.html", token=token)
 
@@ -6404,6 +6502,9 @@ def register_routes(app):
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
                                movement_order=order, share=share,
                                share_notice=None if share else share_notice(current_user),
+                               # The owner's public calendar link (their own, or the account
+                               # a delegate views), for the copy button next to the title.
+                               public_link=public_calendar_url(owner_id),
                                # The owner's plan decides, also for a delegate.
                                package_ok=plan_named(share["plan"] if share
                                                      else current_user.plan)["package"],
@@ -7159,7 +7260,7 @@ def register_routes(app):
                     return account_gone()
                 audit("sessions_revoked", row["id"], row["email"])
                 flash("Every other browser and device has been signed out.", "success")
-                end_google_link(row["id"], row["email"])
+                secure_account_links(row["id"], row["email"])
                 return redirect(url_for("settings"))
             if action == "passkey_rename":  # only a label: no password needed
                 name = clean_name(request.form.get("name", ""))
@@ -7194,7 +7295,16 @@ def register_routes(app):
                         audit("delegate_removed", row["id"], row["email"], who)
                         flash(f"{who} can no longer view your account." if gone["delegate_id"]
                               else f"The invitation to {who} was withdrawn.", "success")
+                        if gone["delegate_id"] and public_calendar_token(row["id"]):
+                            # Delegates see the public link (its copy button): it outlives
+                            # their access, and only a new link ends what they may have kept.
+                            flash(f"{who} may still have your public calendar link. To end it, "
+                                  "turn the link off (and on again for a new one) in Settings, "
+                                  "under Calendar.", "info")
                 return redirect(url_for("settings"))
+            if action == "public_calendar":  # no password: it only shows the calendar
+                public_calendar_action(row, request.form.get("value") == "on")
+                return redirect(url_for("settings"))  # no anchor: the message stays in view
             if action in ("calendar_choose", "calendar_unchoose", "calendar_refresh",
                           "calendar_disconnect"):
                 # No password: these only pick from the stored list or take access away.
@@ -7231,10 +7341,10 @@ def register_routes(app):
                     audit("password_changed", row["id"], row["email"])
                     security_alert(row["email"], "The password of your Nomad Life account was "
                                    "changed.")
-                    end_google_link(row["id"], row["email"])
                     flash("Your password has been changed. Other devices have been signed out."
                           + (f" Your change of email to {row['pending_email']} was cancelled: ask "
                              "for it again." if row["pending_email"] else ""), "success")
+                    secure_account_links(row["id"], row["email"])
             elif action == "email":
                 new = request.form.get("email", "").strip().lower()
                 if err:
@@ -7542,7 +7652,8 @@ def register_routes(app):
                                passkeys=passkeys, has_2fa=bool(row["totp_secret"] or passkeys),
                                passkeys_max=PASSKEYS_MAX, passkey_name=default_passkey_name(),
                                idle_days=SESSION_IDLE_DAYS, name_max=NAME_MAX,
-                               delegates=delegate_rows(row["id"]), delegates_max=DELEGATES_MAX)
+                               delegates=delegate_rows(row["id"]), delegates_max=DELEGATES_MAX,
+                               public_url=public_calendar_url(row["id"]))
 
     @app.route("/settings/calendar/google/connect", methods=["POST"])
     @login_required
@@ -7878,6 +7989,8 @@ def register_routes(app):
                 # And delegates: one of them could be whoever changed the address, keeping a
                 # view of the account after the owner takes it back.
                 conn.execute("DELETE FROM delegates WHERE owner_id = ?", (row["id"],))
+                # And the public calendar link: they may have turned it on to keep a view.
+                conn.execute("DELETE FROM public_calendars WHERE user_id = ?", (row["id"],))
                 # And a Google Calendar they connected: the owner's stays could go to it.
                 gcal = conn.execute("SELECT account, refresh_token FROM calendar_links WHERE "
                                     "user_id = ?", (row["id"],)).fetchone()
@@ -8944,6 +9057,46 @@ def register_routes(app):
         return render_template("support_ticket.html", ticket=ticket, back_url=back_url, messages=messages,
                                admin_view=True, kinds=TICKET_KINDS, body_max=TICKET_BODY_MAX,
                                draft="", owner_name=full_name(ticket))
+
+    # --- the public calendar link (no sign in) ---
+
+    @app.route("/c/<token>")
+    @app.route("/c/<token>/<int:year>")
+    def public_calendar(token, year=None):
+        """The calendar of an account whose owner turned the public link on: the years as
+        tabs, each with its legend and months, and nothing else of the account. Every way it
+        can fail (no such link, turned off, owner disabled or unconfirmed, no such year) is
+        the same 404."""
+        if not PUBLIC_TOKEN_RE.fullmatch(token):
+            abort(404)
+        owner = db.query("SELECT u.id FROM public_calendars p JOIN users u ON u.id = p.user_id "
+                         "WHERE p.token = ? AND u.verified_at IS NOT NULL AND u.disabled = 0",
+                         (token,), one=True)
+        if owner is None:
+            abort(404)
+        years = [r["year"] for r in db.query("SELECT year FROM years WHERE user_id = ? "
+                                             "ORDER BY year", (owner["id"],))]
+        cal = None
+        if year is None and years:
+            today = user_today().year
+            year = today if today in years else years[-1]
+        if year is not None:
+            year_row = db.query("SELECT * FROM years WHERE user_id = ? AND year = ?",
+                                (owner["id"], year), one=True)
+            if year_row is None:
+                abort(404)
+            movements = db.query("SELECT * FROM movements WHERE year_id = ? "
+                                 "ORDER BY start_date, end_date DESC, id", (year_row["id"],))
+            cal = year_calendar(year_row, movements, compute_stats(year_row, movements),
+                                country_colors(owner["id"]), public=True)
+        resp = Response(render_template("public_calendar.html", token=token, year=year,
+                                             years=years, cal=cal))
+        # Never kept by a cache (a link turned off must stop showing), never sent on as a
+        # Referer (the address is the secret), never indexed.
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Referrer-Policy"] = "no-referrer"
+        resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+        return resp
 
     # --- delegates: the accounts shared with me (read only) ---
 

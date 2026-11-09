@@ -559,6 +559,18 @@ main:focus { outline: none; }
   --gear: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/></svg>");
 }
 .fold-gear:hover { color: var(--text); background: var(--surface-2); text-decoration: none; }
+/* The public calendar link's copy button, next to the gear: the same round icon button. */
+button.fold-gear { border: 0; padding: 0; background: none; font: inherit; cursor: pointer; }
+button.fold-gear:hover { background: var(--surface-2); }
+.fold-copy::before {
+  --gear: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/><path d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/></svg>");
+}
+/* Settings > Calendar: the public calendar link. */
+.public-cal-setting { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.public-cal-title { margin: 0; font-size: 15px; }
+.public-switch { margin-left: 0; color: var(--text); font-size: 14px; }
+.public-cal-link { display: flex; gap: 8px; min-width: 0; }
+.public-cal-url { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 .fold-gear:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 /* Tooltips: every tooltip of the app is CSS, never the title attribute. class "tip" and
    data-tip; tip-end aligns it to the right edge, tip-up puts it above, tip-side to the left.

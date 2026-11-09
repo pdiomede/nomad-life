@@ -116,6 +116,23 @@
       </form>
     </div>
     {% endif %}
+    {# The public calendar link (2.1.5): off by default; off kills the link, on makes a new one. #}
+    <div class="public-cal-setting" id="public-calendar">
+      <h3 class="public-cal-title">Public calendar link</h3>
+      <form method="post" action="{{ url_for('settings') }}" class="public-cal-switch" data-submit-once>
+        {{ ui.csrf() }}
+        <input type="hidden" name="action" value="public_calendar">
+        <input type="hidden" name="value" value="{{ 'off' if public_url else 'on' }}">
+        <button type="submit" class="switch public-switch" role="switch" aria-checked="{{ 'true' if public_url else 'false' }}"><span class="switch-label">Generate public calendar URL</span><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span></button>
+      </form>
+      <p class="muted small">{% if public_url %}Anyone with this link sees your calendar, every year, without signing in: the countries and how many days you spent in each, nothing else (no name, email, city, note or receipt). Turn it off and the link stops working; turning it on again makes a new one.{% else %}Off: nobody can see your calendar without signing in. Turn it on for a link to a read only page with your calendar (countries and days only) to share with anyone.{% endif %}</p>
+      {% if public_url %}
+      <div class="public-cal-link">
+        <input class="public-cal-url" type="text" value="{{ public_url }}" readonly aria-label="Public calendar link" dir="ltr" spellcheck="false">
+        <button class="btn btn-ghost tip tip-end" type="button" data-copy-link="{{ public_url }}" data-tip="Copy the public calendar link" aria-label="Copy the public calendar link">Copy</button>
+      </div>
+      {% endif %}
+    </div>
   </section>
 
   {# Delegates: other Nomad Life accounts that may view this one, read only. Inviting needs the
