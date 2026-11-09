@@ -562,6 +562,7 @@ The database is upgraded by the app on start (new columns are added automaticall
 - **2.0.1**: nothing to install.
 - **2.1.0** adds the `delegates` table on start; nothing to install.
 - **2.1.1** adds the `movements.city_from_event` column on start; nothing to install. Deleting a movement's event asks Google for `calendar.events`: add that scope to the OAuth consent screen (google_calendar.md).
+- **2.1.6**: nothing to install.
 - **2.1.5** creates the `public_calendars` table on start; nothing to install.
 - **2.1.4**: nothing to install.
 - **2.1.3**: nothing to install. `scripts/backup.py` no longer puts `data/.secret_key` in its archives (add `--with-secret-key` for one that does): copy the key once into your password manager (`cat /var/www/nomad-life/data/.secret_key`), and take it out of any off-site copy you made earlier. Session cookies without a session id stop working, so anyone signed in before 1.2.10 (none, after 30 days) signs in again.

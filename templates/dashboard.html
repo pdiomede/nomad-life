@@ -8,13 +8,13 @@
 {% if pend %}
 <div class="share-banner share-notice" role="note">
   <span class="share-banner-text">{% if pend | length == 1 %}<strong dir="auto">{{ pend[0] }}</strong> invited you to view their Nomad Life account.{% else %}{{ pend | length }} people invited you to view their Nomad Life accounts.{% endif %}</span>
-  <span class="share-banner-links"><a href="{{ url_for('shared') }}">Review invitation{{ '' if pend | length == 1 else 's' }}</a></span>
+  <span class="share-banner-links"><a class="btn btn-ghost btn-sm tip tip-end share-btn" href="{{ url_for('shared') }}" data-tip="Accept or decline on Shared with you"><span class="btn-icon icon-mail" aria-hidden="true"></span>Review invitation{{ '' if pend | length == 1 else 's' }}</a></span>
 </div>
 {% endif %}
 {% if views %}
 <div class="share-banner share-notice" role="note">
   <span class="share-banner-text">{% if views | length == 1 %}<strong dir="auto">{{ views[0].label }}</strong> shared their account with you.{% else %}{{ views | length }} accounts are shared with you.{% endif %}</span>
-  <span class="share-banner-links">{% if views | length == 1 %}<a href="{{ url_for('shared_home', share_id=views[0].id, _anchor='calendar') }}">View shared calendar</a>{% else %}<a href="{{ url_for('shared') }}">View shared calendars</a>{% endif %}</span>
+  <span class="share-banner-links">{% if views | length == 1 %}<a class="btn btn-ghost btn-sm tip tip-end share-btn" href="{{ url_for('shared_home', share_id=views[0].id, _anchor='calendar') }}" data-tip="Open the calendar of {{ views[0].label }}, read only"><span class="btn-icon icon-eye" aria-hidden="true"></span>View shared calendar</a>{% else %}<a class="btn btn-ghost btn-sm tip tip-end share-btn" href="{{ url_for('shared') }}" data-tip="Choose which shared account to open"><span class="btn-icon icon-eye" aria-hidden="true"></span>View shared calendars</a>{% endif %}</span>
 </div>
 {% endif %}
 {% endif %}

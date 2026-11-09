@@ -88,7 +88,7 @@
     {# A delegate viewing someone else's account: always said, on every shared page. #}
     <div class="share-banner" role="note">
       <span class="share-banner-text">You are viewing the account of <strong dir="auto">{{ share.label }}</strong>. Read only.</span>
-      <span class="share-banner-links"><a href="{{ url_for('shared') }}">Shared with you</a> {% if own_years() %}<a href="{{ url_for('index') }}">Switch back</a>{% else %}<a href="{{ url_for('new_year') }}">Start your own year</a>{% endif %}</span>
+      <span class="share-banner-links"><a class="btn btn-ghost btn-sm tip tip-end share-btn" href="{{ url_for('shared') }}" data-tip="All the accounts shared with you"><span class="btn-icon icon-people" aria-hidden="true"></span>Shared with you</a> {% if own_years() %}<a class="btn btn-ghost btn-sm tip tip-end share-btn" href="{{ url_for('index') }}" data-tip="Back to your own account"><span class="btn-icon icon-back" aria-hidden="true"></span>Switch back</a>{% else %}<a class="btn btn-ghost btn-sm tip tip-end share-btn" href="{{ url_for('new_year') }}" data-tip="Track your own days in your own account"><span class="btn-icon icon-plus" aria-hidden="true"></span>Start your own year</a>{% endif %}</span>
     </div>
     {% endif %}
     {% with messages = get_flashed_messages(with_categories=true) %}

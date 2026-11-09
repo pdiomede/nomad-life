@@ -464,7 +464,9 @@ main:focus { outline: none; }
 .side.side-shared > .package-card { grid-column: 2 / span 2; }
 /* The account a delegate is viewing, above every shared page. */
 .share-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; margin-bottom: 16px; padding: 10px 14px; border-radius: 6px; border: 1px solid rgba(0, 98, 210, 0.2); background: var(--info-bg); color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
-.share-banner-links { display: flex; flex-wrap: wrap; gap: 4px 16px; font-weight: 600; }
+.share-banner-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-btn { gap: 6px; background: var(--surface); }
+.share-btn:hover { text-decoration: none; }
 .share-list .passkey-info strong { overflow-wrap: anywhere; }
 /* A delegate's read only movement page: the fields as text. */
 .detail-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; margin: 0; }
@@ -567,7 +569,9 @@ button.fold-gear:hover { background: var(--surface-2); }
 }
 /* Settings > Calendar: the public calendar link. */
 .public-cal-setting { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
-.public-cal-title { margin: 0; font-size: 15px; }
+.public-cal-title { margin: 0; font-size: 16px; font-weight: 700; }
+/* Settings: each card's title bold and larger than the text under it. */
+.settings-page .card-head h2 { font-size: 20px; font-weight: 700; }
 .public-switch { margin-left: 0; color: var(--text); font-size: 14px; }
 .public-cal-link { display: flex; gap: 8px; min-width: 0; }
 .public-cal-url { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
@@ -604,6 +608,11 @@ button.fold-gear:hover { background: var(--surface-2); }
 .fold-gear[data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
 @media (prefers-reduced-motion: reduce) { .fold-gear[data-tip]::after { transition: none; } }
 @media (forced-colors: active) { .fold-gear::before { forced-color-adjust: none; background-color: LinkText; } }
+/* The copy button's tooltip: shown only on hover or focus (an invisible one past the edge
+   widened 320 px phones by 21 px), aligned to the button's right edge, inside the card. */
+.fold-copy[data-tip]::after { display: none; left: auto; right: 0; transform: none; transition: none; }
+@media (hover: hover) { .fold-copy[data-tip]:hover::after { display: block; opacity: 1; transform: none; } }
+.fold-copy[data-tip]:focus-visible::after { display: block; opacity: 1; transform: none; }
 /* With a Google Calendar connected: the Nomad Life and Google Calendar tabs in the middle of the
    head. The summary and the overlay share this grid, each with invisible copies of what the
    other shows, so the real tabs (overlay) land on their copy (summary): the outer columns
@@ -1201,7 +1210,7 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .tfa-method { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-top: 16px; }
 .tfa-method-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .tfa-method-head p { margin: 2px 0 0; }
-.tfa-method-title { margin: 0; font-size: 16px; }
+.tfa-method-title { margin: 0; font-size: 16px; font-weight: 700; }
 .tfa-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: none; border-radius: 8px; background: var(--surface-2); color: var(--muted); }
 .passkey-list { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 8px; }
 .passkey-item { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
@@ -1347,6 +1356,12 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
 .btn-icon { flex: none; width: 16px; height: 16px; background-color: currentColor;
   -webkit-mask: var(--btn-icon) center / contain no-repeat; mask: var(--btn-icon) center / contain no-repeat; }
 .icon-download { --btn-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3v12M7 10l5 5 5-5'/><path d='M4 17v2.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V17'/></svg>"); }
+/* The delegate banners' buttons (Shared with you, Switch back, View shared calendar...). */
+.icon-people { --btn-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='9' cy='8' r='3.5'/><path d='M2.5 20a6.5 6.5 0 0 1 13 0'/><path d='M16 4.5a3.5 3.5 0 0 1 0 7'/><path d='M18.5 14.2A6.5 6.5 0 0 1 21.5 20'/></svg>"); }
+.icon-back { --btn-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M19 12H5M11 6l-6 6 6 6'/></svg>"); }
+.icon-plus { --btn-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M5 12h14'/></svg>"); }
+.icon-eye { --btn-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z'/><circle cx='12' cy='12' r='3'/></svg>"); }
+.icon-mail { --btn-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='5' width='18' height='14' rx='2'/><path d='m3 7 9 6 9-6'/></svg>"); }
 @media (forced-colors: active) { .btn-icon { forced-color-adjust: none; background-color: ButtonText; } }
 /* CSS tooltips: header icon buttons and buttons with a short label ("Download"). */
 .icon-btn[data-tip], .btn[data-tip] { position: relative; text-decoration: none; }

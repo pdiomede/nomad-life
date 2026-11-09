@@ -10,6 +10,22 @@
   <title>{% if year %}Calendar {{ year }}{% else %}Calendar{% endif %} | Nomad Life</title>
   <meta name="robots" content="noindex, nofollow">
   <meta name="referrer" content="no-referrer">
+  {# Link previews (WhatsApp, iMessage, Slack, X...): the same words and image for every link,
+     never the owner's name or anything of the account (scripts/make_og_calendar.py). #}
+  <meta name="description" content="View my shared calendar">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Nomad Life">
+  <meta property="og:title" content="My Nomad Life calendar">
+  <meta property="og:description" content="View my shared calendar">
+  <meta property="og:image" content="{{ image_base }}{{ url_for('static', filename='img/og-calendar.png') }}">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The Nomad Life logo and a month of a calendar, each day in the color of a country">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="My Nomad Life calendar">
+  <meta name="twitter:description" content="View my shared calendar">
+  <meta name="twitter:image" content="{{ image_base }}{{ url_for('static', filename='img/og-calendar.png') }}">
   <meta name="theme-color" content="#2B2D3C" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1B2030" media="(prefers-color-scheme: dark)">
   <script src="{{ url_for('static', filename='js/theme-init.js', v=asset_version) }}"></script>
@@ -20,17 +36,17 @@
 <body class="public-calendar">
   <header class="topbar">
     <div class="container topbar-inner">
-      <span class="brand">
+      {# To the landing page; the page sends no Referer, so the link's secret stays here. #}
+      <a class="brand" href="{{ url_for('landing') }}" aria-label="Nomad Life home page">
         <img class="brand-logo" src="{{ url_for('static', filename='img/logo-mark.png') }}" alt="" width="25" height="30">
         <span>Nomad Life</span>
-      </span>
+      </a>
       <nav class="topnav">{% include "_theme_toggle.html" %}</nav>
     </div>
   </header>
   <main class="container main">
     <div class="page-head">
       <div>
-        <p class="eyebrow">Day-by-day calendar</p>
         <h1>{% if year %}Calendar ({{ year }}){% else %}Calendar{% endif %}</h1>
       </div>
       {% if years | length > 1 %}

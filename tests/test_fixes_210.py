@@ -45,7 +45,7 @@ class ServerFixTests(DelegateCase):
         self.assertIn("Start your own year", page)
         self.assertNotIn("Back to my account", page)
         banner = self.text(self.d.get(f"/shared/{self.share_id()}/year/2026"))
-        self.assertIn('<a href="/year/new">Start your own year</a>', banner)
+        self.assertIn('<a class="btn btn-ghost btn-sm tip tip-end share-btn" href="/year/new" data-tip="Track your own days in your own account"><span class="btn-icon icon-plus" aria-hidden="true"></span>Start your own year</a>', banner)
         # With a year of their own, Back goes home.
         self.new_year(2026, client=self.d)
         self.assertIn("Back to my account", self.text(self.d.get("/shared")))

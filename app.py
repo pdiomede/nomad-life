@@ -55,7 +55,7 @@ from countries_geo import COUNTRY_POINTS
 import mailer
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "2.1.5"
+APP_VERSION = "2.1.6"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -4646,8 +4646,16 @@ def year_calendar(year_row, movements, stats, chosen=None, public=False):
     days first), like the Google tab's legend. public: the public calendar link's page, where a
     country typed as free text that is not a known country (it can hold anything, a city or a
     person's name) shows as PUBLIC_OTHER_PLACE."""
+    others = {}
+
     def shown(name):
-        return name if not public or name in COUNTRY_SET else PUBLIC_OTHER_PLACE
+        if not public or name in COUNTRY_SET:
+            return name
+        # Two places typed as free text stay apart in the legend (they have their own
+        # colors): "Other place", then "Other place 2".
+        if name not in others:
+            others[name] = PUBLIC_OTHER_PLACE + (f" {len(others) + 1}" if others else "")
+        return others[name]
 
     y = year_row["year"]
     by_id = {m["id"]: m for m in movements}
@@ -7990,7 +7998,10 @@ def register_routes(app):
                 # view of the account after the owner takes it back.
                 conn.execute("DELETE FROM delegates WHERE owner_id = ?", (row["id"],))
                 # And the public calendar link: they may have turned it on to keep a view.
-                conn.execute("DELETE FROM public_calendars WHERE user_id = ?", (row["id"],))
+                if conn.execute("DELETE FROM public_calendars WHERE user_id = ?",
+                                (row["id"],)).rowcount:
+                    audit("public_calendar_off", row["id"], data["old"], "email change undone",
+                          conn=conn)
                 # And a Google Calendar they connected: the owner's stays could go to it.
                 gcal = conn.execute("SELECT account, refresh_token FROM calendar_links WHERE "
                                     "user_id = ?", (row["id"],)).fetchone()
@@ -9090,7 +9101,10 @@ def register_routes(app):
             cal = year_calendar(year_row, movements, compute_stats(year_row, movements),
                                 country_colors(owner["id"]), public=True)
         resp = Response(render_template("public_calendar.html", token=token, year=year,
-                                             years=years, cal=cal))
+                                             years=years, cal=cal,
+                                             # link previews need an absolute image address
+                                             image_base=(app.config["APP_BASE_URL"]
+                                                         or request.host_url).rstrip("/")))
         # Never kept by a cache (a link turned off must stop showing), never sent on as a
         # Referer (the address is the secret), never indexed.
         resp.headers["Cache-Control"] = "no-store"

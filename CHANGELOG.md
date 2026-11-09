@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.6] - 2026-11-09
+
+### Changed
+
+- **The delegate banners' links are buttons, each with an icon and a tooltip:** Shared with you, Switch back and Start your own year while viewing a shared account; View shared calendar(s) and Review invitation(s) on your own dashboard.
+- **Settings titles are bold and larger** (Profile, Calendar Integration, Delegates and the rest), and so are the Public calendar link, Passkeys and Authenticator app titles.
+- **The public calendar page:** the Nomad Life logo links to the home page (the page sends no Referer, so the link's secret stays with it), and the "Day-by-day calendar" line above the title is gone.
+
+### Added
+
+- **A link preview for the public calendar link.** Shared in WhatsApp, iMessage, Slack, X and the like, the link shows "My Nomad Life calendar", "View my shared calendar" and an image of the Nomad Life logo with a month of the calendar (`static/img/og-calendar.png`, drawn by `scripts/make_og_calendar.py`). Every link shows the same preview: nothing of the account is in it, and the page does not repeat its own secret address in its tags.
+
+### Fixed
+
+Bug hunt over the public calendar link:
+
+- The copy icon's tooltip, hidden only by being transparent, widened 320 px phones by 21 px (a sideways scroll on the dashboard). It is hidden until shown now, and aligned inside the card.
+- Two places typed as free text both showed as "Other place" in the public legend, with two colors and no way to tell them apart: they are "Other place" and "Other place 2" now.
+- Undoing an email change turned the link off without a line in the security activity: it records "Public calendar link turned off" now, as the other ways do.
+- Without `APP_BASE_URL` (a local server), the preview image's address was relative, which link previews cannot load: it is always absolute now.
+
 ## [2.1.5] - 2026-11-09
 
 ### Added

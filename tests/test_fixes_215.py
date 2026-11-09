@@ -46,3 +46,43 @@ class CopyAnnouncedTests(PublicCalendarCase):
             js = fh.read()
         self.assertIn('live.setAttribute("aria-live", "polite");', js)
         self.assertIn('live.setAttribute("data-copy-status", "")', js)
+
+
+class PublicLinkHuntTests(PublicCalendarCase):
+    """2.1.6 bug hunt over the public calendar link."""
+
+    def test_the_copy_tooltip_never_widens_a_phone(self):
+        # Hidden only with opacity, it stuck 21 px out of a 320 px screen.
+        with open(os.path.join(ROOT, "static", "css", "style.css"), encoding="utf-8") as fh:
+            css = fh.read()
+        self.assertIn(".fold-copy[data-tip]::after { display: none; left: auto; right: 0; "
+                      "transform: none; transition: none; }", css)
+
+    def test_two_free_text_places_keep_two_names_in_the_legend(self):
+        self.switch("on")
+        self.add_movement(2026, "", "Home with Marco", "2026-05-01", "2026-05-03")
+        self.add_movement(2026, "", "Grandma's farm", "2026-06-01", "2026-06-02")
+        html = self.text(self.page())
+        self.assertIn("Other place</span>", html)
+        self.assertIn("Other place 2</span>", html)
+        self.assertNotIn("Marco", html)
+        self.assertNotIn("Grandma", html)
+
+    def test_an_email_undo_records_that_it_ended_the_link(self):
+        self.switch("on")
+        self.age_emails()
+        self.client.post("/settings", data={"action": "email", "email": "b@example.com",
+                                            "current_password": "password1"})
+        self.client.post(self.last_link("b@example.com", kind="account/email"))
+        self.app.test_client().post(self.last_link("a@example.com", kind="account/email/undo"))
+        with self.db() as conn:
+            details = [r[0] for r in conn.execute("SELECT detail FROM audit_log WHERE event = "
+                                                  "'public_calendar_off'")]
+        self.assertEqual(details, ["email change undone"])
+
+    def test_the_preview_image_address_is_absolute_without_app_base_url(self):
+        self.switch("on")
+        self.app.config["APP_BASE_URL"] = ""
+        html = self.text(self.page())
+        self.assertIn('<meta property="og:image" content="http://localhost/static/img/'
+                      'og-calendar.png">', html)

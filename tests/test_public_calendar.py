@@ -83,6 +83,9 @@ class PageTests(PublicCalendarCase):
         self.assertIn("Italy</span> <span class=\"muted\">10 days</span>", html)
         self.assertIn("January", html)
         self.assertIn('id="theme-toggle"', html)
+        self.assertNotIn("Day-by-day calendar", html)  # removed in 2.1.6
+        # The logo goes to the landing page (2.1.6).
+        self.assertIn('<a class="brand" href="/" aria-label="Nomad Life home page">', html)
 
     def test_years_have_tabs_and_their_own_address(self):
         self.new_year(2027)
@@ -192,3 +195,27 @@ class SecuringEndsItTests(PublicCalendarCase):
         self.client.post(self.last_link("b@example.com", kind="account/email"))
         self.app.test_client().post(self.last_link("a@example.com", kind="account/email/undo"))
         self.assertIsNone(self.token())
+
+
+class LinkPreviewTests(PublicCalendarCase):
+    """2.1.6: the link shows a preview in chats, the same for every link (no owner data)."""
+
+    def test_the_page_carries_open_graph_tags(self):
+        self.switch("on")
+        html = self.text(self.page())
+        self.assertIn('<meta property="og:title" content="My Nomad Life calendar">', html)
+        self.assertIn('<meta property="og:description" content="View my shared calendar">', html)
+        self.assertIn('<meta property="og:image" content="http://localhost:5050/static/img/'
+                      'og-calendar.png">', html)
+        self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
+        self.assertNotIn("og:url", html)  # the secret address is not repeated in the page
+
+    def test_the_image_exists_and_has_its_size(self):
+        import os
+        from PIL import Image
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with Image.open(os.path.join(root, "static", "img", "og-calendar.png")) as img:
+            self.assertEqual(img.size, (1200, 630))
+        resp = self.app.test_client().get("/static/img/og-calendar.png")
+        self.assertEqual(resp.status_code, 200)
+        resp.close()
