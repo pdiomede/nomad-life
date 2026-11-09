@@ -2,6 +2,22 @@
 {% import "_macros.html" as ui with context %}
 {% block title %}{{ y.year }} | Nomad Life{% endblock %}
 {% block content %}
+{% if share_notice %}
+{# Accounts shared with this one: a way there from the own dashboard (share_notice()). #}
+{% set pend = share_notice.pending %}{% set views = share_notice.views %}
+{% if pend %}
+<div class="share-banner share-notice" role="note">
+  <span class="share-banner-text">{% if pend | length == 1 %}<strong dir="auto">{{ pend[0] }}</strong> invited you to view their Nomad Life account.{% else %}{{ pend | length }} people invited you to view their Nomad Life accounts.{% endif %}</span>
+  <span class="share-banner-links"><a href="{{ url_for('shared') }}">Review invitation{{ '' if pend | length == 1 else 's' }}</a></span>
+</div>
+{% endif %}
+{% if views %}
+<div class="share-banner share-notice" role="note">
+  <span class="share-banner-text">{% if views | length == 1 %}<strong dir="auto">{{ views[0].label }}</strong> shared their account with you.{% else %}{{ views | length }} accounts are shared with you.{% endif %}</span>
+  <span class="share-banner-links">{% if views | length == 1 %}<a href="{{ url_for('shared_home', share_id=views[0].id, _anchor='calendar') }}">View shared calendar</a>{% else %}<a href="{{ url_for('shared') }}">View shared calendars</a>{% endif %}</span>
+</div>
+{% endif %}
+{% endif %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Solar year</p>

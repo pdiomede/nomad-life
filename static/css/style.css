@@ -1012,6 +1012,9 @@ a.cal-icon:hover { text-decoration: none; background: var(--surface-2); color: v
   border-radius: 8px; border: 1px solid transparent; color: #A5A8B6; font-size: 14px; cursor: pointer; list-style: none;
 }
 .user-menu-trigger::-webkit-details-marker { display: none; }
+/* An invitation waiting: a red dot on the email (its tooltip says what it is). */
+.user-menu-trigger.has-news { position: relative; }
+.user-menu-dot { position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; border-radius: 50%; background: #E5484D; border: 2px solid var(--topbar); }
 .user-menu-trigger:hover, .user-menu[open] .user-menu-trigger { color: var(--topbar-text); background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); }
 .user-menu-trigger:focus-visible { outline: 2px solid var(--topbar-text); outline-offset: 2px; }
 .user-menu-arrow { flex: none; transition: transform 0.15s; }

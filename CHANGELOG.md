@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.4] - 2026-11-09
+
+### Added
+
+- **A delegate sees what is shared with them.** While an invitation waits, a red dot sits on their email at the top of every page, with a tooltip ("1 new notification: an account was shared with you"); it goes once they accept or decline.
+- **View shared calendar on the delegate's own dashboard.** A banner names who invited them, with **Review invitation**; once accepted it stays as a switch, **View shared calendar**, straight to the owner's Calendar card (with several shared accounts, to Shared with you).
+
+### Changed
+
+- While viewing a shared account, the banner's **Back to my account** is now **Switch back**.
+
 ## [2.1.3] - 2026-11-09
 
 Fifteen security fixes from an audit of 2.1.2, and three delegate fixes.

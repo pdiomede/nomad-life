@@ -55,7 +55,7 @@ from countries_geo import COUNTRY_POINTS
 import mailer
 from mailer import LOGO_CID, send_email
 
-APP_VERSION = "2.1.3"
+APP_VERSION = "2.1.4"
 # "Contact Us" in the footer of every page, the landing page included (static/404.html, a
 # standalone file, repeats the address).
 CONTACT_EMAIL = "info@nomadlife.pro"
@@ -2464,6 +2464,20 @@ def shared_counts(user):
         "AND (d.delegate_id = ? OR (d.delegate_id IS NULL AND d.email = ?))",
         (user.id, user.id, user.email), one=True)
     return {"total": row["n"], "pending": row["pending"]} if row and row["n"] else None
+
+
+def share_notice(user):
+    """The banner on the account's own dashboard about accounts shared with it: {"pending":
+    [owner emails], "views": [{"id", "label"}]}, or None (most accounts, without a query
+    beyond shared_counts()). A waiting invitation names the owner by email only, as on
+    Shared with you; an accepted one links straight to that account's calendar."""
+    if not shared_counts(user):
+        return None
+    pending, views = shared_with(user)
+    if not pending and not views:
+        return None
+    return {"pending": [r["owner_email"] for r in pending],
+            "views": [{"id": r["id"], "label": owner_label(r)} for r in views]}
 
 
 def owner_label(row):
@@ -6389,6 +6403,7 @@ def register_routes(app):
             sync = sync_status(year_row, link, read)
         return render_template("dashboard.html", y=year_row, movements=movements, pager=pager,
                                movement_order=order, share=share,
+                               share_notice=None if share else share_notice(current_user),
                                # The owner's plan decides, also for a delegate.
                                package_ok=plan_named(share["plan"] if share
                                                      else current_user.plan)["package"],

@@ -55,7 +55,11 @@
         {% include "_theme_toggle.html" %}
         {% if current_user.is_authenticated %}
           <details class="user-menu" data-user-menu>
-            <summary class="user-menu-trigger tip tip-end" aria-label="Account menu for {{ current_user.name ~ " (" ~ current_user.email ~ ")" if current_user.name else current_user.email }}" data-tip="{{ current_user.email }}">
+            {# A red dot while an invitation to view another account waits (shared_counts()). #}
+            {% set invites = shared_menu.pending if shared_menu else 0 %}
+            {% set news = (invites ~ ' new notification' ~ ('' if invites == 1 else 's') ~ ': ' ~ ('an account was' if invites == 1 else 'accounts were') ~ ' shared with you') if invites else '' %}
+            <summary class="user-menu-trigger tip tip-end{% if invites %} has-news{% endif %}" aria-label="Account menu for {{ current_user.name ~ " (" ~ current_user.email ~ ")" if current_user.name else current_user.email }}{% if invites %} ({{ news }}){% endif %}" data-tip="{{ news or current_user.email }}">
+              {% if invites %}<span class="user-menu-dot" aria-hidden="true"></span>{% endif %}
               <span class="topnav-email" dir="auto">{{ current_user.name or current_user.email }}</span>
               <svg class="user-menu-arrow" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </summary>
@@ -84,7 +88,7 @@
     {# A delegate viewing someone else's account: always said, on every shared page. #}
     <div class="share-banner" role="note">
       <span class="share-banner-text">You are viewing the account of <strong dir="auto">{{ share.label }}</strong>. Read only.</span>
-      <span class="share-banner-links"><a href="{{ url_for('shared') }}">Shared with you</a> {% if own_years() %}<a href="{{ url_for('index') }}">Back to my account</a>{% else %}<a href="{{ url_for('new_year') }}">Start your own year</a>{% endif %}</span>
+      <span class="share-banner-links"><a href="{{ url_for('shared') }}">Shared with you</a> {% if own_years() %}<a href="{{ url_for('index') }}">Switch back</a>{% else %}<a href="{{ url_for('new_year') }}">Start your own year</a>{% endif %}</span>
     </div>
     {% endif %}
     {% with messages = get_flashed_messages(with_categories=true) %}

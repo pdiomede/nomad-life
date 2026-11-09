@@ -562,6 +562,7 @@ The database is upgraded by the app on start (new columns are added automaticall
 - **2.0.1**: nothing to install.
 - **2.1.0** adds the `delegates` table on start; nothing to install.
 - **2.1.1** adds the `movements.city_from_event` column on start; nothing to install. Deleting a movement's event asks Google for `calendar.events`: add that scope to the OAuth consent screen (google_calendar.md).
+- **2.1.4**: nothing to install.
 - **2.1.3**: nothing to install. `scripts/backup.py` no longer puts `data/.secret_key` in its archives (add `--with-secret-key` for one that does): copy the key once into your password manager (`cat /var/www/nomad-life/data/.secret_key`), and take it out of any off-site copy you made earlier. Session cookies without a session id stop working, so anyone signed in before 1.2.10 (none, after 30 days) signs in again.
 - **2.1.2** lets `config.env` choose the mail server (`SMTP_HOST`, `SMTP_PORT`: a mailbox that is not Gmail, such as Hostinger, `smtp.hostinger.com` and `587`; before 2.1.2 the server ignores both and always logs in to Gmail) and writes a log file, `data/nomadlife.log` (emails sent or failed with the reason). After the upgrade, check the mail settings with `.venv/bin/flask --app app test-email you@example.com`; nothing to install.
 - **1.12.15** needs nothing beyond the usual upgrade steps.
